@@ -191,6 +191,7 @@ fn imported_conversation(interaction_node_id: &str) -> ImportedConversation {
                                 y: 0.75,
                             }],
                             edge_shape: None,
+                            edge_routes: Vec::new(),
                         }),
                     },
                     nodes: vec![ImportedNode {
@@ -4086,6 +4087,7 @@ async fn rejects_missing_and_malformed_layouts_with_repairable_field_paths() {
                     },
                 ],
                 edge_shape: Some("sideways".into()),
+                edge_routes: Vec::new(),
             }),
             size_justification: None,
         })
@@ -4135,6 +4137,124 @@ async fn rejects_missing_and_malformed_layouts_with_repairable_field_paths() {
             && issue.message.contains("elbow-horizontal")),
         "{issues:?}"
     );
+}
+
+#[tokio::test]
+async fn edge_routes_are_validated_on_submit_and_read_back_exactly() {
+    let (database, interaction) = setup(Some(project(1)), thread(1)).await;
+    let writer = database.writer_for_subgraph(interaction.id).await.unwrap();
+    let [a, b, c] = [
+        node(&writer, "a").await,
+        node(&writer, "b").await,
+        node(&writer, "c").await,
+    ];
+    let edge = |client_key: &str, left: NodeId, right: NodeId| EdgeDraft {
+        client_key: client_key.into(),
+        endpoints: [left, right],
+    };
+    let ab = writer.create_edge(&edge("ab", a.id, b.id)).await.unwrap();
+    let bc = writer.create_edge(&edge("bc", b.id, c.id)).await.unwrap();
+    let ca = writer.create_edge(&edge("ca", c.id, a.id)).await.unwrap();
+    let end = |node_id: NodeId, side: Option<&str>| EdgeEnd {
+        node_id,
+        side: side.map(Into::into),
+    };
+    let point = |x: f64, y: f64| LayoutPoint { x, y };
+    let submit = |routes: Vec<EdgeRoute>| {
+        let draft = LayerDraft {
+            default_node_id: None,
+            client_key: "routed".into(),
+            nodes: vec![a.id, b.id, c.id],
+            edges: vec![ab.id, bc.id],
+            layout: Some(
+                authored_layout([a.id, b.id, c.id])
+                    .unwrap()
+                    .with_edge_routes(routes),
+            ),
+            size_justification: None,
+        };
+        let writer = &writer;
+        async move { writer.submit_layer(&draft).await }
+    };
+
+    let GraphError::ValidationIssues { issues, .. } = submit(vec![
+        EdgeRoute {
+            edge_id: ca.id,
+            shape: None,
+            ends: vec![],
+            waypoints: vec![],
+        },
+        EdgeRoute {
+            edge_id: ab.id,
+            shape: Some("flow".into()),
+            ends: vec![],
+            waypoints: vec![point(0.5, 0.5)],
+        },
+        EdgeRoute {
+            edge_id: ab.id,
+            shape: None,
+            ends: vec![end(a.id, Some("north")), end(b.id, None)],
+            waypoints: vec![point(0.1, 0.1); 5]
+                .into_iter()
+                .chain([point(1.5, 0.2)])
+                .collect(),
+        },
+    ])
+    .await
+    .unwrap_err() else {
+        panic!("expected repairable route issues");
+    };
+    for (code, path) in [
+        ("edge_route_outside_layer", "layout.edgeRoutes[0].edgeId"),
+        ("unsupported_edge_shape", "layout.edgeRoutes[1].shape"),
+        ("edge_route_ends_required", "layout.edgeRoutes[1].ends"),
+        ("duplicate_edge_route", "layout.edgeRoutes[2].edgeId"),
+        ("unsupported_node_side", "layout.edgeRoutes[2].ends[0].side"),
+        ("too_many_waypoints", "layout.edgeRoutes[2].waypoints"),
+        (
+            "layout_coordinate_out_of_range",
+            "layout.edgeRoutes[2].waypoints[5].x",
+        ),
+    ] {
+        assert!(
+            issues
+                .iter()
+                .any(|issue| issue.code == code && issue.path == path),
+            "missing {code} at {path}: {issues:?}"
+        );
+    }
+
+    // Ends must be the edge's own two nodes.
+    let mismatch = submit(vec![EdgeRoute {
+        edge_id: ab.id,
+        shape: None,
+        ends: vec![end(a.id, None), end(c.id, None)],
+        waypoints: vec![],
+    }])
+    .await
+    .unwrap_err();
+    assert!(matches!(
+        mismatch,
+        GraphError::ValidationIssues { ref issues, .. }
+            if issues.iter().any(|issue| issue.code == "edge_route_ends_mismatch" && issue.path == "layout.edgeRoutes[0].ends")
+    ));
+
+    let routes = vec![EdgeRoute {
+        edge_id: bc.id,
+        shape: Some("elbow-vertical".into()),
+        ends: vec![end(c.id, Some("top")), end(b.id, Some("bottom"))],
+        waypoints: vec![point(0.9, 0.1), point(0.2, 0.1)],
+    }];
+    let layer = submit(routes.clone()).await.unwrap();
+    let stored = writer
+        .get_layer(layer.id)
+        .await
+        .unwrap()
+        .layer
+        .layout
+        .unwrap();
+    assert_eq!(stored.edge_routes, routes);
+    assert_eq!(stored, layer.layout.unwrap());
 }
 
 #[tokio::test]

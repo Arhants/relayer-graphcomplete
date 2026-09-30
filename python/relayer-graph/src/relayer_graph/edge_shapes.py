@@ -16,3 +16,16 @@ EdgeShape = Literal[
 ]
 
 EDGE_SHAPES: tuple[str, ...] = get_args(EdgeShape)
+
+# The side of a node where an edge attaches.
+NodeSide = Literal[
+    "top",
+    "right",
+    "bottom",
+    "left",
+]
+
+NODE_SIDES: tuple[str, ...] = get_args(NodeSide)
+
+# The most waypoints one edge route may pass through.
+MAX_EDGE_ROUTE_WAYPOINTS = 4

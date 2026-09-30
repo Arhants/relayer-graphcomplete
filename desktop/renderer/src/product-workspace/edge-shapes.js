@@ -16,6 +16,11 @@ export const EDGE_SHAPES = Object.freeze([
   "elbow-vertical",
 ]);
 
+// The side of a node where an edge attaches, and the most waypoints one edge route may
+// pass through. Keep both aligned with the other languages, like EDGE_SHAPES.
+export const NODE_SIDES = Object.freeze(["top", "right", "bottom", "left"]);
+export const MAX_EDGE_ROUTE_WAYPOINTS = 4;
+
 // The design owns what "default" draws. Design-config step B2 moves this into
 // the structure file as edge.defaultShape.
 export const DESIGN_DEFAULT_EDGE_SHAPE = "arc-outward";
@@ -179,4 +184,136 @@ function elbowPath(p, q, boxP, boxQ, axis, zoom) {
       + `L${point(turn, b[cross] - step)}Q${point(turn, b[cross])} ${point(turn + corner, b[cross])}L${point(end, b[cross])}`,
     middle,
   };
+}
+
+// Waypoints follow a dragged node: each moves by a blend of its two ends' movement,
+// weighted by its place along the route, so the route stretches but never turns.
+export function graphFollowWaypoints(waypoints, [authoredStart, authoredEnd], [start, end]) {
+  return waypoints.map((point, index) => {
+    const along = (index + 1) / (waypoints.length + 1);
+    return {
+      x: point.x + (1 - along) * (start.x - authoredStart.x) + along * (end.x - authoredEnd.x),
+      y: point.y + (1 - along) * (start.y - authoredStart.y) + along * (end.y - authoredEnd.y),
+    };
+  });
+}
+
+// An edge with its own route, given in its drawing order: `start` and `end` are
+// { point, box, side } and `waypoints` are screen points between them. The shape
+// styles the path between points: straight segments, one smooth curve for arcs, or
+// right-angle segments for elbows. Elbows and arcs leave a chosen side at a right angle.
+export function graphRoutedEdgePath(shape, { start, end, waypoints = [] }, { circle = null, zoom = 1 } = {}) {
+  const startSide = NODE_SIDES.includes(start.side) ? start.side : null;
+  const endSide = NODE_SIDES.includes(end.side) ? end.side : null;
+  if (!waypoints.length && !startSide && !endSide) {
+    return graphEdgePath(shape, start.point, end.point, { sourceBox: start.box, targetBox: end.box, circle, zoom });
+  }
+  const first = routeEnd(start, startSide, waypoints[0] ?? end.point);
+  const last = routeEnd(end, endSide, waypoints[waypoints.length - 1] ?? start.point);
+  const points = [first, ...waypoints, last];
+  const resolved = resolveEdgeShape(shape);
+  if (resolved === "straight") return polylinePath(points, 0);
+  if (resolved === "elbow-horizontal" || resolved === "elbow-vertical") {
+    const axis = resolved === "elbow-horizontal" ? "x" : "y";
+    const route = [first];
+    for (let index = 1; index < points.length; index += 1) {
+      const leave = (index === 1 && sideAxis(startSide)) || axis;
+      const arrive = (index === points.length - 1 && sideAxis(endSide)) || (leave === "x" ? "y" : "x");
+      route.push(...rightAngleLeg(points[index - 1], points[index], leave, arrive));
+    }
+    return polylinePath(route, ELBOW_CORNER * zoom);
+  }
+  if (!waypoints.length) return sidedCurve(first, startSide, last, endSide, zoom);
+  return smoothPath(points);
+}
+
+// An arc between chosen sides leaves each side at a right angle and bows out from it
+// by a quarter of the edge's length, at least the design's bend. An end without a side
+// heads straight for the other end.
+function sidedCurve(start, startSide, end, endSide, zoom) {
+  const reach = Math.max(0.25 * Math.hypot(end.x - start.x, end.y - start.y), ARC_MAX_BEND * zoom);
+  const control = (point, side, toward) => {
+    const normal = { top: [0, -1], bottom: [0, 1], left: [-1, 0], right: [1, 0] }[side];
+    if (normal) return { x: point.x + normal[0] * reach, y: point.y + normal[1] * reach };
+    return { x: point.x + (toward.x - point.x) / 3, y: point.y + (toward.y - point.y) / 3 };
+  };
+  const c1 = control(start, startSide, end);
+  const c2 = control(end, endSide, start);
+  return {
+    d: `M${start.x} ${start.y}C${c1.x} ${c1.y} ${c2.x} ${c2.y} ${end.x} ${end.y}`,
+    middle: { x: (start.x + 3 * c1.x + 3 * c2.x + end.x) / 8, y: (start.y + 3 * c1.y + 3 * c2.y + end.y) / 8 },
+  };
+}
+
+function sideAxis(side) {
+  if (side === "top" || side === "bottom") return "y";
+  if (side === "left" || side === "right") return "x";
+  return null;
+}
+
+// Where a routed edge meets its node: the middle of a chosen side (a downward exit
+// clears the node's caption), or the pill outline towards the next point.
+function routeEnd({ point, box }, side, toward) {
+  if (side === "top") return { x: point.x, y: point.y - box.halfHeight };
+  if (side === "bottom") return { x: point.x, y: point.y + (box.bottom ?? box.halfHeight) };
+  if (side === "left") return { x: point.x - box.halfWidth, y: point.y };
+  if (side === "right") return { x: point.x + box.halfWidth, y: point.y };
+  return graphPillExit(point, toward, box);
+}
+
+// From p to q in right angles: one turn when leaving and arriving on different axes,
+// otherwise a Z through the midpoint.
+function rightAngleLeg(p, q, leave, arrive) {
+  if (leave !== arrive) return [leave === "x" ? { x: q.x, y: p.y } : { x: p.x, y: q.y }, q];
+  if (leave === "x") {
+    const middle = (p.x + q.x) / 2;
+    return [{ x: middle, y: p.y }, { x: middle, y: q.y }, q];
+  }
+  const middle = (p.y + q.y) / 2;
+  return [{ x: p.x, y: middle }, { x: q.x, y: middle }, q];
+}
+
+// Straight segments through the points, with corners rounded to `radius`. The middle
+// is halfway along the drawn length.
+function polylinePath(points, radius) {
+  const pts = points.filter((point, index) => index === 0 || Math.hypot(point.x - points[index - 1].x, point.y - points[index - 1].y) > 0.5);
+  let d = `M${pts[0].x} ${pts[0].y}`;
+  for (let index = 1; index < pts.length - 1; index += 1) {
+    const [previous, corner, next] = [pts[index - 1], pts[index], pts[index + 1]];
+    const inLength = Math.hypot(corner.x - previous.x, corner.y - previous.y);
+    const outLength = Math.hypot(next.x - corner.x, next.y - corner.y);
+    const r = Math.min(radius, inLength / 2, outLength / 2);
+    if (r < 0.5) {
+      d += `L${corner.x} ${corner.y}`;
+      continue;
+    }
+    d += `L${corner.x - (corner.x - previous.x) / inLength * r} ${corner.y - (corner.y - previous.y) / inLength * r}`
+      + `Q${corner.x} ${corner.y} ${corner.x + (next.x - corner.x) / outLength * r} ${corner.y + (next.y - corner.y) / outLength * r}`;
+  }
+  const last = pts[pts.length - 1];
+  return { d: `${d}L${last.x} ${last.y}`, middle: halfway(pts) };
+}
+
+// One smooth curve through every point (Catmull-Rom as cubic Béziers).
+function smoothPath(points) {
+  const padded = [points[0], ...points, points[points.length - 1]];
+  let d = `M${points[0].x} ${points[0].y}`;
+  for (let index = 1; index < padded.length - 2; index += 1) {
+    const [before, from, to, after] = [padded[index - 1], padded[index], padded[index + 1], padded[index + 2]];
+    d += `C${from.x + (to.x - before.x) / 6} ${from.y + (to.y - before.y) / 6} ${to.x - (after.x - from.x) / 6} ${to.y - (after.y - from.y) / 6} ${to.x} ${to.y}`;
+  }
+  return { d, middle: halfway(points) };
+}
+
+function halfway(points) {
+  const lengths = points.slice(1).map((point, index) => Math.hypot(point.x - points[index].x, point.y - points[index].y));
+  let remaining = lengths.reduce((sum, length) => sum + length, 0) / 2;
+  for (const [index, length] of lengths.entries()) {
+    if (remaining <= length && length > 0) {
+      const t = remaining / length;
+      return { x: points[index].x + (points[index + 1].x - points[index].x) * t, y: points[index].y + (points[index + 1].y - points[index].y) * t };
+    }
+    remaining -= length;
+  }
+  return points[0];
 }

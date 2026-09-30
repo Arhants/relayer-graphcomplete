@@ -2323,6 +2323,36 @@ struct LayerLayoutRequest {
     placements: Vec<NodePlacementRequest>,
     #[serde(default)]
     edge_shape: Value,
+    #[serde(default)]
+    edge_routes: Vec<EdgeRouteRequest>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EdgeRouteRequest {
+    edge_id: relayer_graph_core::EdgeId,
+    #[serde(default)]
+    shape: Value,
+    #[serde(default)]
+    ends: Vec<EdgeEndRequest>,
+    #[serde(default)]
+    waypoints: Vec<PointRequest>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EdgeEndRequest {
+    node_id: NodeId,
+    #[serde(default)]
+    side: Value,
+}
+
+#[derive(Debug, Deserialize)]
+struct PointRequest {
+    #[serde(default)]
+    x: Value,
+    #[serde(default)]
+    y: Value,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2354,13 +2384,37 @@ impl From<LayerDraftRequest> for LayerDraft {
                     })
                     .collect(),
                 edge_shape: repairable_edge_shape(layout.edge_shape),
+                edge_routes: layout
+                    .edge_routes
+                    .into_iter()
+                    .map(|route| relayer_graph_core::EdgeRoute {
+                        edge_id: route.edge_id,
+                        shape: repairable_edge_shape(route.shape),
+                        ends: route
+                            .ends
+                            .into_iter()
+                            .map(|end| relayer_graph_core::EdgeEnd {
+                                node_id: end.node_id,
+                                side: repairable_edge_shape(end.side),
+                            })
+                            .collect(),
+                        waypoints: route
+                            .waypoints
+                            .into_iter()
+                            .map(|point| relayer_graph_core::LayoutPoint {
+                                x: repairable_coordinate(&point.x),
+                                y: repairable_coordinate(&point.y),
+                            })
+                            .collect(),
+                    })
+                    .collect(),
             }),
             size_justification: input.size_justification,
         }
     }
 }
 
-// A non-string shape is kept as its JSON text so validation names it as unsupported.
+// A non-string shape or side is kept as its JSON text so validation names it as unsupported.
 fn repairable_edge_shape(value: Value) -> Option<String> {
     match value {
         Value::Null => None,
@@ -5233,6 +5287,7 @@ mod tests {
                         y: 0.5,
                     }],
                     edge_shape: Some("default".into()),
+                    edge_routes: Vec::new(),
                 }),
                 size_justification: None,
             })
@@ -5368,6 +5423,7 @@ mod tests {
                         y: 0.5,
                     }],
                     edge_shape: Some("default".into()),
+                    edge_routes: Vec::new(),
                 }),
                 size_justification: None,
             })

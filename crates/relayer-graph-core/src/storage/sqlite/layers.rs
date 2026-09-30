@@ -115,6 +115,7 @@ struct LayerRow {
     owner_interaction_id: i64,
     layout_schema_version: Option<i64>,
     layout_edge_shape: Option<String>,
+    layout_edge_routes: Option<String>,
 }
 
 #[derive(FromRow)]
@@ -135,7 +136,7 @@ impl<'connection> LayerTable<'connection> {
         id: LayerId,
     ) -> Result<Option<LayerRecord>, GraphError> {
         let row = sqlx::query_as::<_, LayerRow>(
-            "SELECT id,COALESCE((SELECT k.client_key FROM imported_layer_client_keys k WHERE k.layer_id=layers.id),client_key) AS client_key,state,owner_interaction_id,layout_schema_version,layout_edge_shape,default_node_id FROM layers WHERE id=?1 AND NOT EXISTS(SELECT 1 FROM imported_provenance_layers p WHERE p.layer_id=layers.id) AND ((?2 IS NOT NULL AND project_id=?2) OR (?2 IS NULL AND project_id IS NULL AND thread_id=?3))",
+            "SELECT id,COALESCE((SELECT k.client_key FROM imported_layer_client_keys k WHERE k.layer_id=layers.id),client_key) AS client_key,state,owner_interaction_id,layout_schema_version,layout_edge_shape,layout_edge_routes,default_node_id FROM layers WHERE id=?1 AND NOT EXISTS(SELECT 1 FROM imported_provenance_layers p WHERE p.layer_id=layers.id) AND ((?2 IS NOT NULL AND project_id=?2) OR (?2 IS NULL AND project_id IS NULL AND thread_id=?3))",
         )
         .bind(id.value())
         .bind(scope.project_id.map(ProjectId::value))
@@ -182,8 +183,10 @@ impl<'connection> LayerTable<'connection> {
             row.id,
             row.layout_schema_version,
             row.layout_edge_shape,
+            row.layout_edge_routes,
             placement_rows,
             &nodes,
+            &edges,
         )?;
         Ok(Some(LayerRecord {
             layer: GraphLayer {
@@ -323,12 +326,13 @@ impl<'connection> LayerTable<'connection> {
                     .execute(&mut *self.connection)
                     .await?;
                 sqlx::query(
-                    "UPDATE layers SET layout_schema_version=?1,default_node_id=?3,layout_edge_shape=?4 WHERE id=?2",
+                    "UPDATE layers SET layout_schema_version=?1,default_node_id=?3,layout_edge_shape=?4,layout_edge_routes=?5 WHERE id=?2",
                 )
                 .bind(layout(draft)?.version as i64)
                 .bind(id.value())
                 .bind(draft.default_node_id.map(NodeId::value))
                 .bind(layout(draft)?.edge_shape.as_deref())
+                .bind(stored_routes(layout(draft)?)?)
                 .execute(&mut *self.connection)
                 .await?;
                 id
@@ -349,7 +353,7 @@ impl<'connection> LayerTable<'connection> {
             }
             None => {
                 let result = sqlx::query(
-                    "INSERT INTO layers(project_id,thread_id,state,owner_interaction_id,client_key,layout_schema_version,default_node_id,layout_edge_shape) VALUES (?1,?2,'draft',?3,?4,?5,?6,?7)",
+                    "INSERT INTO layers(project_id,thread_id,state,owner_interaction_id,client_key,layout_schema_version,default_node_id,layout_edge_shape,layout_edge_routes) VALUES (?1,?2,'draft',?3,?4,?5,?6,?7,?8)",
                 )
                 .bind(scope.project_id.map(ProjectId::value))
                 .bind(scope.thread_id.value())
@@ -358,6 +362,7 @@ impl<'connection> LayerTable<'connection> {
                 .bind(layout(draft)?.version as i64)
                 .bind(draft.default_node_id.map(NodeId::value))
                 .bind(layout(draft)?.edge_shape.as_deref())
+                .bind(stored_routes(layout(draft)?)?)
                 .execute(&mut *self.connection)
                 .await?;
                 valid_layer_id(result.last_insert_rowid())?
@@ -452,12 +457,24 @@ fn layout(draft: &LayerDraft) -> Result<&LayerLayout, GraphError> {
         .ok_or_else(|| GraphError::Internal("validated layer draft has no layout".into()))
 }
 
+/// Routes are stored as their JSON array, or NULL when the layout has none.
+pub(crate) fn stored_routes(layout: &LayerLayout) -> Result<Option<String>, GraphError> {
+    if layout.edge_routes.is_empty() {
+        return Ok(None);
+    }
+    serde_json::to_string(&layout.edge_routes)
+        .map(Some)
+        .map_err(|error| GraphError::Internal(format!("could not store edge routes: {error}")))
+}
+
 fn stored_layout(
     layer_id: i64,
     version: Option<i64>,
     edge_shape: Option<String>,
+    edge_routes: Option<String>,
     rows: Vec<PlacementRow>,
     nodes: &[NodeId],
+    edges: &[EdgeId],
 ) -> Result<Option<LayerLayout>, GraphError> {
     let Some(version) = version else {
         if rows.is_empty() {
@@ -482,12 +499,22 @@ fn stored_layout(
             })
         })
         .collect::<Result<Vec<_>, GraphError>>()?;
+    let edge_routes = edge_routes
+        .map(|routes| serde_json::from_str(&routes))
+        .transpose()
+        .map_err(|error| {
+            GraphError::Internal(format!(
+                "layer {layer_id} has unreadable stored edge routes: {error}"
+            ))
+        })?
+        .unwrap_or_default();
     let layout = LayerLayout {
         version,
         placements,
         edge_shape,
+        edge_routes,
     };
-    validate_authored_layout(Some(&layout), nodes).map_err(|error| {
+    validate_authored_layout(Some(&layout), nodes, edges).map_err(|error| {
         GraphError::Internal(format!(
             "layer {layer_id} has invalid stored layout: {error}"
         ))

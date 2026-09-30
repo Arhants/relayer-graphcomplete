@@ -1245,7 +1245,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn edge_shape_migration_keeps_existing_layouts_shape_free() {
+    async fn edge_layout_migrations_keep_existing_layouts_shape_and_route_free() {
         use std::borrow::Cow;
         let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
         Migrator {
@@ -1267,12 +1267,12 @@ mod tests {
             INSERT INTO layer_placements(layer_id,node_id,position,x,y) VALUES (1,2,0,0.5,0.5);")
             .execute(&pool).await.unwrap();
         MIGRATOR.run(&pool).await.unwrap();
-        let shape = sqlx::query_scalar::<_, Option<String>>(
-            "SELECT layout_edge_shape FROM layers WHERE id=1",
+        let (shape, routes) = sqlx::query_as::<_, (Option<String>, Option<String>)>(
+            "SELECT layout_edge_shape,layout_edge_routes FROM layers WHERE id=1",
         )
         .fetch_one(&pool)
         .await
         .unwrap();
-        assert_eq!(shape, None);
+        assert_eq!((shape, routes), (None, None));
     }
 }

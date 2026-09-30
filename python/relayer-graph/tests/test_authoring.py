@@ -12,7 +12,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.request import HTTPRedirectHandler, Request
 
 from relayer_graph import (APIError, CompletionCurrentSnapshot, CompletionInputGraph, CompletionTerminalError, CompletionWatch, ConfigurationError, EdgeObject, GraphNode, GraphSession,
-                           LayerLayoutObject, LayerObject, NodeObject,
+                           EdgeEndObject, EdgeRouteObject, LayerLayoutObject, LayerObject, NodeObject,
                            NodePlacementObject,
                            RELAYER_ICON_NAMES, RelayerGraphClient, TransportError, ValidationError,
                            complete, is_supported_relayer_icon, resolve_relayer_icon_name)
@@ -219,7 +219,9 @@ class AuthoringClientTests(unittest.IsolatedAsyncioTestCase):
         layout = LayerLayoutObject((
             NodePlacementObject(queue, 0.25, 0.5),
             NodePlacementObject(worker, 0.75, 0.5),
-        ), "elbow-horizontal")
+        ), "elbow-horizontal", (
+            EdgeRouteObject(edge, ends=(EdgeEndObject(worker, "top"), EdgeEndObject(queue)), waypoints=((0.5, 0.1),)),
+        ))
         layer = LayerObject((queue, worker), (edge,), layout, client_key="root", default_node=worker)
         await self.client.submit_layer(layer)
         self.assertIsNotNone(queue.ref); self.assertIsNotNone(edge.ref); self.assertIsNotNone(layer.ref)
@@ -231,6 +233,11 @@ class AuthoringClientTests(unittest.IsolatedAsyncioTestCase):
                 {"nodeId": worker.ref.id, "x": 0.75, "y": 0.5},
             ],
             "edgeShape": "elbow-horizontal",
+            "edgeRoutes": [{
+                "edgeId": edge.ref.id, "shape": None,
+                "ends": [{"nodeId": worker.ref.id, "side": "top"}, {"nodeId": queue.ref.id, "side": None}],
+                "waypoints": [{"x": 0.5, "y": 0.1}],
+            }],
         })
         self.assertEqual(layer.ref.layout.version, 1)
         self.assertEqual(layer.ref.layout.edge_shape, "elbow-horizontal")

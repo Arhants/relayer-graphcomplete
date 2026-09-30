@@ -1,3 +1,5 @@
+import { MAX_EDGE_ROUTE_WAYPOINTS } from "../product-workspace/edge-shapes.js";
+
 const EXPORT_VERSIONS = new Set([1, 2, 3]);
 const MAX_EXPORT_BYTES = 16 * 1024 * 1024;
 const MAX_JSONL_LINE_BYTES = 16 * 1024 * 1024;
@@ -458,6 +460,41 @@ function validateLayer(resolved, path, allDefinitions, exportVersion) {
         if (typeof point !== "number" || !Number.isFinite(point) || point < 0 || point > 1) fail("layout_coordinate_invalid", `${placementPath}.${coordinate}`, "Layout coordinates must be finite numbers from zero through one.");
       }
     });
+    if (layout.edgeRoutes != null) {
+      const routesPath = `${path}.layer.layout.edgeRoutes`;
+      const routed = new Set();
+      requireArray(layout.edgeRoutes, routesPath).forEach((route, index) => {
+        const routePath = `${routesPath}[${index}]`;
+        const item = requireRecord(route, routePath);
+        const invalid = (field, message) => fail("layout_edge_route_invalid", `${routePath}${field}`, message);
+        const edgeId = requirePortableId(own(item, "edgeId", `${routePath}.edgeId`), "edge", `${routePath}.edgeId`);
+        const edge = edges.find((candidate) => candidate?.id === edgeId);
+        if (!edge || routed.has(edgeId)) invalid(".edgeId", "A route must name a distinct edge in its layer.");
+        routed.add(edgeId);
+        // Shapes and sides a newer build knows draw with defaults here, so only their type is checked.
+        if (item.shape != null && typeof item.shape !== "string") invalid(".shape", "An edge shape must be a string.");
+        if (item.ends != null) {
+          const ends = requireArray(item.ends, `${routePath}.ends`);
+          const nodes = ends.map((end, endIndex) => {
+            const endItem = requireRecord(end, `${routePath}.ends[${endIndex}]`);
+            if (endItem.side != null && typeof endItem.side !== "string") invalid(`.ends[${endIndex}].side`, "A side must be a string.");
+            return endItem.nodeId;
+          });
+          if (nodes.length !== 2 || [...nodes].sort().join("\u0000") !== [...edge.endpoints].sort().join("\u0000")) invalid(".ends", "A route's ends must be its edge's two nodes.");
+        }
+        if (item.waypoints != null) {
+          const waypoints = requireArray(item.waypoints, `${routePath}.waypoints`);
+          if (item.ends == null || waypoints.length > MAX_EDGE_ROUTE_WAYPOINTS) invalid(".waypoints", "Waypoints need both ends and number at most four.");
+          waypoints.forEach((point, pointIndex) => {
+            const pointItem = requireRecord(point, `${routePath}.waypoints[${pointIndex}]`);
+            for (const coordinate of ["x", "y"]) {
+              const value = pointItem[coordinate];
+              if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 1) fail("layout_coordinate_invalid", `${routePath}.waypoints[${pointIndex}].${coordinate}`, "Layout coordinates must be finite numbers from zero through one.");
+            }
+          });
+        }
+      });
+    }
   }
   return { layerId, value, actions };
 }

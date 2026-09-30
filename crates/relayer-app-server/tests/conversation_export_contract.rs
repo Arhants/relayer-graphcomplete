@@ -98,6 +98,7 @@ fn layer(id: &str, node_id: &str, actions: Vec<ExportAction>) -> ExportResolvedL
                     y: 0.5,
                 }],
                 edge_shape: Some("elbow-horizontal".into()),
+                edge_routes: Vec::new(),
             }),
             state: ExportRecordState::Accepted,
         },
@@ -2127,4 +2128,106 @@ fn reused_layer_cannot_claim_two_portable_owners() {
         third.contexts[0].source.owner_turn_id = Some("turn:2".into());
     }
     assert_rejected_with_parity(&fixture, "context_owner_conflict");
+}
+
+#[test]
+fn edge_routes_export_with_their_edge_and_reject_invalid_portable_routes() {
+    let routed = |route: ExportEdgeRoute| {
+        let mut records = records();
+        let ConversationExportRecord::Turn(turn) = &mut records[1] else {
+            unreachable!()
+        };
+        let resolved = &mut turn.accepted_view.as_mut().unwrap().layers[0];
+        let first = resolved.nodes[0].id.clone();
+        let mut second = resolved.nodes[0].clone();
+        second.id = "node:second".into();
+        resolved.layer.nodes.push(second.id.clone());
+        resolved.nodes.push(second);
+        let layout = resolved.layer.layout.as_mut().unwrap();
+        layout.placements.push(ExportNodePlacement {
+            node_id: "node:second".into(),
+            x: 0.8,
+            y: 0.5,
+        });
+        layout.edge_routes = vec![route];
+        resolved.edges.push(ExportEdge {
+            id: "edge:routed".into(),
+            endpoints: [first, "node:second".into()],
+            state: ExportRecordState::Accepted,
+        });
+        resolved.layer.edges.push("edge:routed".into());
+        records
+    };
+    let end = |node_id: &str, side: Option<&str>| ExportEdgeEnd {
+        node_id: node_id.into(),
+        side: side.map(Into::into),
+    };
+    let first = match &records()[1] {
+        ConversationExportRecord::Turn(turn) => turn.accepted_view.as_ref().unwrap().layers[0]
+            .nodes[0]
+            .id
+            .clone(),
+        _ => unreachable!(),
+    };
+    let route = ExportEdgeRoute {
+        edge_id: "edge:routed".into(),
+        shape: Some("elbow-vertical".into()),
+        ends: vec![end("node:second", Some("top")), end(&first, None)],
+        waypoints: vec![relayer_graph_core::LayoutPoint { x: 0.5, y: 0.1 }],
+    };
+    assert_validation_parity(&routed(route.clone()));
+
+    for (code, invalid) in [
+        (
+            "edge_route_outside_layer",
+            ExportEdgeRoute {
+                edge_id: "edge:elsewhere".into(),
+                ..route.clone()
+            },
+        ),
+        (
+            "unsupported_edge_shape",
+            ExportEdgeRoute {
+                shape: Some("flow".into()),
+                ..route.clone()
+            },
+        ),
+        (
+            "edge_route_ends_mismatch",
+            ExportEdgeRoute {
+                ends: vec![end(&first, None), end(&first, None)],
+                ..route.clone()
+            },
+        ),
+        (
+            "unsupported_node_side",
+            ExportEdgeRoute {
+                ends: vec![end("node:second", Some("north")), end(&first, None)],
+                ..route.clone()
+            },
+        ),
+        (
+            "edge_route_ends_required",
+            ExportEdgeRoute {
+                ends: vec![],
+                ..route.clone()
+            },
+        ),
+        (
+            "too_many_waypoints",
+            ExportEdgeRoute {
+                waypoints: vec![relayer_graph_core::LayoutPoint { x: 0.5, y: 0.1 }; 5],
+                ..route.clone()
+            },
+        ),
+        (
+            "layout_coordinate_invalid",
+            ExportEdgeRoute {
+                waypoints: vec![relayer_graph_core::LayoutPoint { x: 1.5, y: 0.1 }],
+                ..route.clone()
+            },
+        ),
+    ] {
+        assert_rejected_with_parity(&routed(invalid), code);
+    }
 }

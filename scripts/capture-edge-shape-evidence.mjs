@@ -31,6 +31,8 @@ const ring = Array.from({ length: 5 }, (_, index) => {
   const angle = -Math.PI / 2 + (index * 2 * Math.PI) / 5;
   return [`Peer ${index + 1}`, "users", .5 + .36 * Math.cos(angle), .5 + .4 * Math.sin(angle)];
 });
+const PIPELINE = [["Collect", "file-text", .08, .7], ["Clean", "workflow", .36, .7], ["Train", "layers", .64, .7], ["Evaluate", "check-circle", .92, .7]];
+const PIPELINE_LOOP = [[0, 1], [1, 2], [2, 3], [3, 0]];
 const SCENES = [
   { shape: "default", nodes: HUB, edges: HUB_EDGES },
   { shape: "arc-outward", nodes: HUB, edges: HUB_EDGES },
@@ -51,6 +53,19 @@ const SCENES = [
     edges: [[0, 1], [2, 3], [0, 2], [1, 3]],
   },
   { shape: null, label: "legacy", nodes: HUB, edges: HUB_EDGES },
+  // Per-edge routes: `edge` is an index into edges; ends are [node index, side?].
+  {
+    shape: "elbow-horizontal", label: "loop-routed", nodes: PIPELINE, edges: PIPELINE_LOOP,
+    routes: [{ edge: 3, ends: [[3, "top"], [0, "top"]], waypoints: [[.92, .15], [.08, .15]] }],
+  },
+  {
+    shape: "straight", label: "loop-sides", nodes: PIPELINE, edges: PIPELINE_LOOP,
+    routes: [{ edge: 3, shape: "arc-outward", ends: [[3, "top"], [0, "top"]] }],
+  },
+  {
+    shape: "arc-circle", label: "chord-routed", nodes: ring, edges: [[0, 1], [1, 2], [2, 3], [3, 4], [4, 0], [0, 2]],
+    routes: [{ edge: 5, ends: [[0], [2]], waypoints: [[.56, .42]] }],
+  },
 ];
 
 function sceneTurn(scene, index) {
@@ -63,6 +78,14 @@ function sceneTurn(scene, index) {
   const edges = scene.edges.map(([left, right]) => ({ id: `edge:${label}-${left}-${right}`, endpoints: [nodes[left].id, nodes[right].id], state: "accepted" }));
   const layout = { version: 1, placements: scene.nodes.map(([, , x, y], nodeIndex) => ({ nodeId: nodes[nodeIndex].id, x, y })) };
   if (scene.shape) layout.edgeShape = scene.shape;
+  if (scene.routes) {
+    layout.edgeRoutes = scene.routes.map((route) => ({
+      edgeId: edges[route.edge].id,
+      ...(route.shape ? { shape: route.shape } : {}),
+      ends: route.ends.map(([node, side]) => ({ nodeId: nodes[node].id, ...(side ? { side } : {}) })),
+      ...(route.waypoints ? { waypoints: route.waypoints.map(([x, y]) => ({ x, y })) } : {}),
+    }));
+  }
   const interactionNodeId = `node:interaction-${label}`;
   return {
     recordType: "turn",
@@ -159,19 +182,31 @@ function checkScene(scene, observed, theme) {
   const expected = resolveEdgeShape(scene.shape ?? undefined);
   const label = scene.label ?? scene.shape;
   const order = scene.nodes.map((_, index) => `node:${label}-${index}`);
-  // Commands each shape may draw, and the bend it must show somewhere; aligned nodes join straight.
-  const [allowed, bend] = { "arc-outward": ["MAL", "A"], "arc-circle": ["MAL", "A"], "elbow-horizontal": ["MLQ", "Q"], "elbow-vertical": ["MLQ", "Q"], straight: ["ML", null] }[expected];
+  // Commands each shape may draw (C for an arc through waypoints), and the bend it shows;
+  // aligned nodes join straight.
+  const drawing = { "arc-outward": ["MALC", /[AC]/], "arc-circle": ["MALC", /[AC]/], "elbow-horizontal": ["MLQ", /Q/], "elbow-vertical": ["MLQ", /Q/], straight: ["ML", null] };
   const commands = (path) => path.replace(/[^A-Za-z]/g, "");
   const failures = [];
   if (observed.theme !== theme) failures.push(`theme ${observed.theme}`);
   if (observed.shape !== expected) failures.push(`shape ${observed.shape}`);
   if (JSON.stringify(observed.nodeOrder) !== JSON.stringify(order)) failures.push(`node order ${observed.nodeOrder}`);
-  if (observed.paths.length !== scene.edges.length) failures.push(`${observed.paths.length} edges`);
-  if (observed.paths.some((path) => path.lastIndexOf("M") !== 0 || [...commands(path)].some((letter) => !allowed.includes(letter)))) failures.push(`paths ${observed.paths}`);
-  if (bend && !observed.paths.some((path) => path.includes(bend))) failures.push(`no ${bend} bend`);
+  if (observed.edges.length !== scene.edges.length) failures.push(`${observed.edges.length} edges`);
+  const routes = new Map((scene.routes ?? []).map((route) => [route.edge, route]));
+  observed.edges.forEach((edge, index) => {
+    const edgeShape = resolveEdgeShape(routes.get(index)?.shape ?? scene.shape ?? undefined);
+    if (edge.shape !== edgeShape) failures.push(`edge ${index} shape ${edge.shape}`);
+    if (edge.routed !== routes.has(index)) failures.push(`edge ${index} routed ${edge.routed}`);
+    if (edge.d.lastIndexOf("M") !== 0 || [...commands(edge.d)].some((letter) => !drawing[edgeShape][0].includes(letter))) failures.push(`edge ${index} path ${edge.d}`);
+  });
+  const bends = observed.edges.filter((edge) => drawing[edge.shape][1]?.test(edge.d));
+  if (drawing[expected][1] && !bends.length) failures.push("no bend");
+  for (const index of routes.keys()) {
+    const edge = observed.edges[index];
+    if (drawing[edge.shape][1] && !drawing[edge.shape][1].test(edge.d)) failures.push(`routed edge ${index} does not bend`);
+  }
   if (observed.markers) failures.push(`${observed.markers} direction markers`);
   if (failures.length) throw new Error(`${theme} ${label}: ${failures.join("; ")}`);
-  return { drawnShape: expected, readingOrder: "placements", edges: observed.paths.length, directionMarkers: 0 };
+  return { drawnShape: expected, routedEdges: routes.size, readingOrder: "placements", edges: observed.edges.length, directionMarkers: 0 };
 }
 
 async function main() {
@@ -215,7 +250,11 @@ async function main() {
             theme: document.documentElement.dataset.theme,
             shape: canvas.getAttribute('data-edge-shape'),
             nodeOrder: [...document.querySelectorAll('[data-node]')].map((node) => node.dataset.node),
-            paths: [...canvas.querySelectorAll('.graph-edge')].map((path) => path.getAttribute('d')),
+            edges: [...canvas.querySelectorAll('.graph-edge-group')].map((group) => ({
+              d: group.querySelector('.graph-edge').getAttribute('d'),
+              shape: group.getAttribute('data-edge-shape'),
+              routed: group.hasAttribute('data-edge-routed'),
+            })),
             markers: canvas.querySelectorAll('marker, [marker-start], [marker-mid], [marker-end]').length,
           };
         })()`);

@@ -12,5 +12,8 @@ describe("layer edge shape guidance", () => {
     const skill = readFileSync(new URL("../../../python/relayer-graph/SKILL.md", import.meta.url), "utf8").replace(/\n(?!\n|- |<)/g, " ");
     for (const bullet of bullets) expect(skill).toContain(bullet);
     expect(skill).toContain("List the placements in reading order; keyboard and screen-reader users follow that order.");
+    // The route guidance is mirrored sentence for sentence.
+    const routes = LAYER_EDGE_SHAPE_GUIDANCE.split("\n").find((line) => line.startsWith("Edge routes are optional"));
+    for (const sentence of routes!.split(/(?<=\.) /)) expect(skill).toContain(sentence);
   });
 });

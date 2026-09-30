@@ -13,3 +13,11 @@ export const EDGE_SHAPES = [
 ] as const;
 
 export type EdgeShape = typeof EDGE_SHAPES[number];
+
+/** The side of a node where an edge attaches. */
+export const NODE_SIDES = ["top", "right", "bottom", "left"] as const;
+
+export type NodeSide = typeof NODE_SIDES[number];
+
+/** The most waypoints one edge route may pass through. */
+export const MAX_EDGE_ROUTE_WAYPOINTS = 4;

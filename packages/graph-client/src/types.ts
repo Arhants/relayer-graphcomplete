@@ -1,4 +1,4 @@
-import type { EdgeShape } from "./edge-shapes.js";
+import type { EdgeShape, NodeSide } from "./edge-shapes.js";
 import type { RelayerIconName } from "./icons.js";
 import type { CompiledNodeDetail } from "./detail.js";
 
@@ -40,6 +40,14 @@ export interface LayerLayout {
   readonly placements: readonly NodePlacement[];
   /** Absent only on layers accepted before edge shapes existed; read it as "default". */
   readonly edgeShape?: EdgeShape;
+  readonly edgeRoutes?: readonly EdgeRoute[];
+}
+
+export interface EdgeRoute {
+  readonly edgeId: GraphId;
+  readonly shape?: EdgeShape;
+  readonly ends?: readonly { readonly nodeId: GraphId; readonly side?: NodeSide }[];
+  readonly waypoints?: readonly { readonly x: number; readonly y: number }[];
 }
 
 export interface GraphLayer {

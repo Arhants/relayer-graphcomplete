@@ -12,7 +12,7 @@
   },
   "rendererArtifact": {
     "directory": "desktop/renderer",
-    "digest": "b957dc1c4a6eb9f3023da83b6f8e1a9d3a620e8f939b3b6eee549374d84f6644",
+    "digest": "64e06c3ec603621cf217d41817229f0f1ef5545bccf93c6a3880e0d939ef8745",
     "files": {
       "assets/relayer-logo.svg": {
         "bytes": 31624,
@@ -199,12 +199,12 @@
         "sha256": "e480c7e854b010905c7ac8e9e3b31e9a6193035de7ed8cbadbf64645cc3a2b92"
       },
       "src/product-workspace/edge-shapes.js": {
-        "bytes": 9106,
-        "sha256": "a7e8ab5d7ce7b99690619d251b3c6ed3d7a05317c0ebaf95ba3a6bfbab42ab40"
+        "bytes": 16219,
+        "sha256": "dbc79fb35de91654c8c6bb76b72be289bebe9b2b19394d18eb87616497a032e6"
       },
       "src/product-workspace/graph-layout.js": {
-        "bytes": 6099,
-        "sha256": "4968c32141b288fdc38d9498dd6861581ff2c2c94a578e573738a0c97aa95575"
+        "bytes": 6746,
+        "sha256": "f11407542b0f7301e1cc44c12b59cdf3a603277d623aabfe65eefb16834601af"
       },
       "src/product-workspace/icons.js": {
         "bytes": 6324,
@@ -247,8 +247,8 @@
         "sha256": "8e5d307f95b1863fb995606ca32a832de088916716c39476f9d31f2174de002d"
       },
       "src/product-workspace/workspace.js": {
-        "bytes": 262835,
-        "sha256": "a66fd349d4dc7dc10fb2671c22cc944c2d41f1afc6a4e247c412309069a42397"
+        "bytes": 264372,
+        "sha256": "6844ac9b01cc43ba024b25eabd4cd37569e471405d76178165f34d5f1fa8e5db"
       },
       "src/project-composer-navigation.js": {
         "bytes": 282,
@@ -287,8 +287,8 @@
         "sha256": "c6f03f10e2c73fd0b1f99f17ea2aad98cda452403fab0ef8357e83dd0a588db0"
       },
       "src/public-share-viewer/snapshot.js": {
-        "bytes": 49385,
-        "sha256": "719d6d90cc1e93b2b280971b48ed4aa6ef1e93f506c042800951698942052625"
+        "bytes": 51900,
+        "sha256": "b0a3b2bba507c9045d2879c328dbbf40d7cf281390792303e1af0a86218efd9d"
       },
       "src/public-share-viewer/template.js": {
         "bytes": 7251,
