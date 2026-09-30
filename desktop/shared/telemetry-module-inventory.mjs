@@ -154,6 +154,7 @@ export const APPROVED_TELEMETRY_MODULES = Object.freeze({
     "packages/harness-host/dist/implementations/codex-basic.js",
     "packages/harness-host/dist/implementations/codex-option-types.js",
     "packages/harness-host/dist/implementations/graph-presentation-guidance.js",
+    "packages/harness-host/dist/implementations/layer-edge-shape-guidance.js",
     "packages/harness-host/dist/implementations/personal-presentation-guidance.js",
     "packages/harness-host/dist/implementations/prime-agent-workspace-boundary.js",
     "packages/harness-host/dist/implementations/prime-agent.js",
