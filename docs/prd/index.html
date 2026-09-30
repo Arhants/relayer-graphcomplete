@@ -2426,6 +2426,8 @@ settings:
 <li>confirmed attachments persist with the composer draft, survive navigation, and clear only after durable send or explicit removal;</li>
 <li>the next interaction node receives typed attachment edges carrying the selected node IDs and annotations.</li>
 </ul>
+<p>Annotation controls remain visible and allow editing and confirmation while a follow-up generates, including on its accepted current layer. Confirmed annotations wait for the next ordinary message under the existing Send rules. This applies to saved chats and new follow-ups. The Send request freezes its submitted annotations; read-only views confer no annotation authority.</p>
+<p>Deterministic follow-up annotation checkpoints use <code>test/workspace-followup-annotations.test.mjs</code>. This suite observes the production workspace's visible <code>+</code>, editing, discard, confirmation, exact occurrence, and retained attachment. It also verifies read-only denial, the Send request freeze, and the running Send lock. The draft-controller suite, <code>test/node-context-drafts.test.mjs</code>, covers confirmation failure, revision races, and durable replay. Graph and product persistence tests validate accepted-current occurrence authority and confirmation before completion settles. Required assembled commands remain those in section 7.</p>
 <p>Adding context alone does not invoke Complete.</p>
 <p>V1 has no separate feedback interaction. To correct, question, or expand a node, the user selects <code>+</code>. The user attaches the node and can add a note. The user then sends a normal message. The attachment edge stores the note. The interaction stays <code>kind = &quot;message&quot;</code>.</p>
 <h3>7.2 Authored node actions</h3>

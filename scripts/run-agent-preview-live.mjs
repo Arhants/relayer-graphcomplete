@@ -141,7 +141,9 @@ try {
 } finally {
   if (child.exitCode === null) {
     child.send("shutdown");
-    const timeout = setTimeout(() => child.kill("SIGKILL"), 30_000);
+    // A host that finishes a live turn can take longer to close; a forced kill
+    // would leave the Eval profile lock behind.
+    const timeout = setTimeout(() => child.kill("SIGKILL"), 120_000);
     await exited;
     clearTimeout(timeout);
   }
