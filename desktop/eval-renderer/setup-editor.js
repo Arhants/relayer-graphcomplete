@@ -3,20 +3,24 @@ export function initializeSetupEditor({ api, root, toast, changed }) {
   let catalog;
   let source;
   let feedback = [];
+  let judgeConfig;
   const run = async (work) => { try { await work(); } catch (error) { toast(error.message); } };
-  async function open(predecessorId) {
+  async function open(predecessorId, configFile) {
     catalog = await api.setupRevisions();
     source = catalog.revisions.find((item) => item.id === predecessorId) || catalog.revisions.at(-1);
     feedback = [];
+    judgeConfig = source.kind === "judge" ? catalog.judgeConfigs.find((item) => item.file === (configFile || source.configSource?.file)) || catalog.judgeConfigs[0] : null;
+    const definition = judgeConfig?.definition || source;
     root.innerHTML = `<h2>Setup revisions</h2><p>Publishing saves an immutable revision. Select it on a new run to execute it. Graph-presentation judging remains separate from overall trajectory judging.</p>
       <label>Predecessor<select id="setupPredecessor">${catalog.revisions.map((item) => `<option value="${escape(item.id)}">${escape(item.kind)} · ${escape(item.name)} · ${escape(item.id)}</option>`).join("")}</select></label>
-      <form id="setupPublish"><label>Revision name<input name="name" value="${escape(source.name)}" required maxlength="200"></label>
-      <label>Prompt version<input name="promptVersion" value="${escape(source.promptVersion)}" required maxlength="100"></label>
-      <label>Model<input name="model" value="${escape(source.settings.model)}" required></label>
-      <label>Reasoning<select name="modelReasoningEffort">${["low", "medium", "high"].map((value) => `<option ${source.settings.modelReasoningEffort === value ? "selected" : ""}>${value}</option>`).join("")}</select></label>
+      ${source.kind === "judge" ? `<label>Judge config file<select id="judgeConfigFile">${catalog.judgeConfigs.map((item) => `<option value="${escape(item.file)}">${escape(item.file)}</option>`).join("")}</select></label><p>Edit <code>${escape(judgeConfig.path)}</code>, then reload this panel. Publication pins its exact bytes and digest.</p>` : ""}
+      <form id="setupPublish"><label>Revision name<input name="name" value="${escape(definition.name)}" ${judgeConfig ? "readonly" : "required"} maxlength="200"></label>
+      ${judgeConfig ? `<p>Prompt version: <code>${escape(definition.promptVersion)}</code> · derived from config filename</p><p>Config digest: <code>${escape(judgeConfig.digest)}</code></p>` : `<label>Prompt version<input name="promptVersion" value="${escape(source.promptVersion)}" required maxlength="100"></label>`}
+      <label>Model<input name="model" value="${escape(definition.settings.model)}" ${judgeConfig ? "readonly" : "required"}></label>
+      <label>Reasoning<select name="modelReasoningEffort" ${judgeConfig ? "disabled" : ""}>${["low", "medium", "high"].map((value) => `<option ${definition.settings.modelReasoningEffort === value ? "selected" : ""}>${value}</option>`).join("")}</select></label>
       ${source.kind === "actor" ? `<label>Exploration<select name="exploration">${["low", "medium", "high"].map((value) => `<option ${source.settings.exploration === value ? "selected" : ""}>${value}</option>`).join("")}</select></label><label>Meticulousness<select name="meticulousness">${["low", "medium", "high"].map((value) => `<option ${source.settings.meticulousness === value ? "selected" : ""}>${value}</option>`).join("")}</select></label><label>Action limit<input name="maxActions" type="number" value="${source.settings.maxActions}" min="1" max="500"></label><label>Actor deadline (ms)<input name="timeoutMs" type="number" value="${source.settings.timeoutMs}" min="1000" max="3600000"></label>` : ""}
-      <label>Prompt template<textarea name="promptTemplate" rows="10" maxlength="100000" required>${escape(source.promptTemplate)}</textarea></label>
-      ${source.kind === "judge" ? `<label>Prompt with separately authorized input operator<textarea name="inputPromptTemplate" rows="10" maxlength="100000" required>${escape(source.inputPromptTemplate)}</textarea></label>` : ""}
+      <label>Prompt template<textarea name="promptTemplate" rows="10" maxlength="100000" ${judgeConfig ? "readonly" : "required"}>${escape(definition.promptTemplate)}</textarea></label>
+      ${source.kind === "judge" ? `<label>Prompt with separately authorized input operator<textarea name="inputPromptTemplate" rows="10" maxlength="100000" readonly>${escape(definition.inputPromptTemplate)}</textarea></label>` : ""}
       <p>Keep the {{runtime}} variables: task evidence is supplied at execution, without feedback lineage or human target grades. Behavior authority and the graph rubric/scoring contract remain pinned. This increment supports v11/v6 only; another rubric needs its own executable contract. Select motivating human feedback before publishing.</p>
       <label>Human feedback session<select id="setupFeedbackSession"><option value="">Choose…</option></select></label><div id="setupFeedbackRecords"></div>
       <button class="primary">Publish new revision</button><output id="setupPublished"></output></form>
@@ -24,6 +28,10 @@ export function initializeSetupEditor({ api, root, toast, changed }) {
       <form id="setupPromote"><p>Promotion changes the default for future runs. It does not certify calibration or change earlier evidence.</p><label>Human decision<textarea name="comment" required maxlength="8000"></textarea></label><button class="secondary">Promote this revision</button></form>`;
     root.querySelector("#setupPredecessor").value = source.id;
     root.querySelector("#setupPredecessor").onchange = (event) => run(() => open(event.target.value));
+    if (judgeConfig) {
+      root.querySelector("#judgeConfigFile").value = judgeConfig.file;
+      root.querySelector("#judgeConfigFile").onchange = (event) => run(() => open(source.id, event.target.value));
+    }
     const sessions = await api.humanTasks();
     root.querySelector("#setupFeedbackSession").innerHTML += sessions.map((item) => `<option value="${escape(item.id)}">${escape(item.name)} · ${escape(item.id)}</option>`).join("");
     root.querySelector("#setupFeedbackSession").onchange = (event) => run(async () => {
@@ -35,7 +43,7 @@ export function initializeSetupEditor({ api, root, toast, changed }) {
     });
     root.querySelector("#setupPublish").onsubmit = (event) => { event.preventDefault(); void run(async () => {
       const data = Object.fromEntries(new FormData(event.target));
-      const revision = await api.publishSetup({ ...source, name: data.name, promptVersion: data.promptVersion,
+      const revision = await api.publishSetup(judgeConfig ? { configFile: judgeConfig.file, configDigest: judgeConfig.digest, predecessorId: source.id, feedback } : { ...source, name: data.name, promptVersion: data.promptVersion,
         promptTemplate: data.promptTemplate, ...(source.kind === "judge" ? { inputPromptTemplate: data.inputPromptTemplate } : {}),
         settings: { ...source.settings, model: data.model, modelReasoningEffort: data.modelReasoningEffort,
           ...(source.kind === "actor" ? { exploration: data.exploration, meticulousness: data.meticulousness, maxActions: Number(data.maxActions), timeoutMs: Number(data.timeoutMs) } : {}) },
