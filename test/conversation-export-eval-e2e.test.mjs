@@ -197,6 +197,13 @@ describe("conversation export to Eval end to end", () => {
       byteLength: Buffer.from(contentRecords[0].contentBase64, "base64").length,
     });
     expect(exportedRoot.layer.layout).toMatchObject({ version: 1, edgeShape: "elbow-horizontal" });
+    const exportedEvidenceId = exportedRoot.nodes.find((node) => node.clientKey === "root-evidence").id;
+    expect(exportedRoot.layer.layout.edgeRoutes).toEqual([{
+      edgeId: exportedRoot.layer.edges[0],
+      shape: "arc-outward",
+      ends: [{ nodeId: exportedEvidenceId, side: "top" }, { nodeId: exportedRoot.nodes.find((node) => node.clientKey === "root").id }],
+      waypoints: [{ x: 0.5, y: 0.1 }],
+    }]);
     expect(exportedRoot.layer.layout.placements.map(({ x, y }) => [x, y])).toEqual([
       [0.8, 0.65],
       [0.2, 0.35],
@@ -481,6 +488,12 @@ describe("conversation export to Eval end to end", () => {
       contentBase64: contentRecords[0].contentBase64,
     });
     expect(rootLayer.layer.layout).toMatchObject({ version: 1, edgeShape: "elbow-horizontal" });
+    expect(rootLayer.layer.layout.edgeRoutes).toEqual([{
+      edgeId: rootLayer.layer.edges[0],
+      shape: "arc-outward",
+      ends: [{ nodeId: importedAssetNode.id, side: "top" }, { nodeId: rootLayer.nodes.find((node) => node.id !== importedAssetNode.id).id }],
+      waypoints: [{ x: 0.5, y: 0.1 }],
+    }]);
     expect(rootLayer.layer.layout.placements.map(({ x, y }) => [x, y])).toEqual([
       [0.8, 0.65],
       [0.2, 0.35],
@@ -663,7 +676,9 @@ function complexConversationFactory(projectPath) {
         new LayerLayoutObject([
           new NodePlacementObject(rootEvidenceNode, 0.8, 0.65),
           new NodePlacementObject(rootNode, 0.2, 0.35),
-        ], "elbow-horizontal"),
+        ], "elbow-horizontal", [
+          { edge: rootEdge, shape: "arc-outward", ends: [{ node: rootEvidenceNode, side: "top" }, { node: rootNode }], waypoints: [{ x: 0.5, y: 0.1 }] },
+        ]),
         "root-layer",
       );
       const expanded = new LayerObject([expandedNode], [], centeredLayout(expandedNode), "sk-proj-share-client-key-secret");

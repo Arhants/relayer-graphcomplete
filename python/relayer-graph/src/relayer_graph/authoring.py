@@ -15,7 +15,7 @@ from .exceptions import (APIError, AuthenticationError, ConfigurationError,
                          GraphQueryError, NotFound, TransportError,
                          ValidationError, ValidationIssue)
 from .detail import NodeDetailAuthoring, _create_owned_authoring
-from .edge_shapes import EdgeShape
+from .edge_shapes import EdgeShape, NodeSide
 from .visual_assets import GraphVisualAssets
 from .query import GraphSearchRequest, GraphSearchResult
 from .query_errors_generated import (GRAPH_QUERY_CONTRACT_VERSION,
@@ -144,6 +144,8 @@ class LayerLayout:
     placements: tuple[NodePlacement, ...]
     # Absent only on layers accepted before edge shapes existed; read it as "default".
     edge_shape: str | None = None
+    # Per-edge routes as the server returns them: edgeId, optional shape, ends and waypoints.
+    edge_routes: tuple[Mapping[str, Any], ...] = ()
 
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> "LayerLayout":
@@ -151,6 +153,7 @@ class LayerLayout:
             int(value["version"]),
             tuple(NodePlacement.from_dict(item) for item in value["placements"]),
             value.get("edgeShape"),
+            tuple(value.get("edgeRoutes") or ()),
         )
 
 
@@ -207,10 +210,31 @@ class NodePlacementObject:
 
 
 @dataclass(slots=True)
+class EdgeEndObject:
+    node: "NodeReference"
+    # Omit to let the renderer choose where the edge meets the node.
+    side: NodeSide | None = None
+
+
+@dataclass(slots=True)
+class EdgeRouteObject:
+    """One edge's own shape, attachment sides and waypoints.
+
+    Waypoints are 0..1 layout coordinates listed from ends[0] to ends[1]; that order is not a direction.
+    """
+
+    edge: "EdgeReference"
+    shape: EdgeShape | None = None
+    ends: tuple[EdgeEndObject, EdgeEndObject] | None = None
+    waypoints: Sequence[tuple[float, float]] = ()
+
+
+@dataclass(slots=True)
 class LayerLayoutObject:
-    # Placement order is the layer's reading order.
+    # Placement order is the layer's reading order. Edges without a route draw in the layer's edge shape.
     placements: Sequence[NodePlacementObject]
     edge_shape: EdgeShape
+    edge_routes: Sequence[EdgeRouteObject] = ()
     version: Literal[1] = field(default=1, init=False)
 
 
@@ -323,6 +347,17 @@ class RelayerGraphClient:
                     for item in layer.layout.placements
                 ],
                 "edgeShape": layer.layout.edge_shape,
+                **({"edgeRoutes": [
+                    {
+                        "edgeId": _edge_id(route.edge),
+                        "shape": route.shape,
+                        "ends": None if route.ends is None else [
+                            {"nodeId": _node_id(end.node), "side": end.side} for end in route.ends
+                        ],
+                        "waypoints": [{"x": x, "y": y} for x, y in route.waypoints],
+                    }
+                    for route in layer.layout.edge_routes
+                ]} if layer.layout.edge_routes else {}),
             },
             "sizeJustification": size_justification,
         })

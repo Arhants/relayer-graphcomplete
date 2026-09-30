@@ -21,7 +21,7 @@ import {
 import { createLucideIcon, createRelayerIcon, relayerIconFamily } from "./icons.js";
 import { interactionActivity, NODE_RUN_STATE, nodeRunState, THREAD_ACTIVITY } from "./run-state.js";
 import { graphLayoutSignature, nodesInReadingOrder, projectLayerNodePositions } from "./graph-layout.js";
-import { graphEdgePath, graphLayerCircle, resolveEdgeShape } from "./edge-shapes.js";
+import { graphEdgePath, graphFollowWaypoints, graphLayerCircle, graphRoutedEdgePath, resolveEdgeShape } from "./edge-shapes.js";
 import { renderMarkdown } from "./markdown.js";
 import { isResolvedInvokeAction, mountCompiledNodeDetail } from "./node-detail-runtime.js";
 import { productWorkspaceMarkup } from "./view.js";
@@ -1659,6 +1659,8 @@ export function createProductWorkspace({
   let graphNodes = [];
   let graphEdges = [];
   let graphEdgeShape = resolveEdgeShape(undefined);
+  // Agent-authored per-edge routes by edge ID, with waypoints projected into the world plane.
+  let graphEdgeRoutes = new Map();
   let graphSignature = "";
   let graphViewKey = "";
   // Advances on every view entry, so a request made in a view the user left
@@ -5298,6 +5300,10 @@ export function createProductWorkspace({
       }
     }
     const projected = projectLayerNodePositions(state.visibleLayer, graphNodes);
+    graphEdgeRoutes = new Map((state.visibleLayer?.layer?.layout?.edgeRoutes ?? []).map((route) => [String(route.edgeId), {
+      ...route,
+      worldWaypoints: (route.waypoints ?? []).map((point) => projected.project(point)),
+    }]));
     for (const node of graphNodes) {
       const canonical = projected.positions.get(String(node.id));
       if (!canonical) throw new Error(`Visible graph layout is missing node ${String(node.id)}.`);
@@ -5402,15 +5408,30 @@ export function createProductWorkspace({
       const annotatable = annotationEnabled && edge.id != null;
       const anchor = annotatable ? subjectAnchor("edge", { edgeId: edge.id }) : null;
       const count = anchor ? annotationCount(anchor) : 0;
-      const path = graphEdgePath(graphEdgeShape, graphScreenPoint(a, camera), graphScreenPoint(b, camera), {
-        sourceBox: pillBox(a),
-        targetBox: pillBox(b),
-        circle: layerCircle,
-        zoom: camera.zoom,
-      });
+      const route = graphEdgeRoutes.get(String(edge.id));
+      const shape = route?.shape ?? graphEdgeShape;
+      const routeEnds = route?.ends?.length === 2
+        ? route.ends.map((end) => ({ end, node: graphNodes.find((node) => String(node.id) === String(end.nodeId)) }))
+        : null;
+      const path = routeEnds?.every(({ node }) => node)
+        ? graphRoutedEdgePath(shape, {
+          start: { point: graphScreenPoint(routeEnds[0].node, camera), box: pillBox(routeEnds[0].node), side: routeEnds[0].end.side },
+          end: { point: graphScreenPoint(routeEnds[1].node, camera), box: pillBox(routeEnds[1].node), side: routeEnds[1].end.side },
+          waypoints: graphFollowWaypoints(
+            route.worldWaypoints.map((point) => graphScreenPoint(point, camera)),
+            routeEnds.map(({ node }) => graphScreenPoint({ x: node.canonicalX ?? node.x, y: node.canonicalY ?? node.y }, camera)),
+            routeEnds.map(({ node }) => graphScreenPoint(node, camera)),
+          ),
+        }, { circle: layerCircle, zoom: camera.zoom })
+        : graphEdgePath(shape, graphScreenPoint(a, camera), graphScreenPoint(b, camera), {
+          sourceBox: pillBox(a),
+          targetBox: pillBox(b),
+          circle: layerCircle,
+          zoom: camera.zoom,
+        });
       const middleX = path.middle.x;
       const middleY = path.middle.y;
-      return `<g class="graph-edge-group" data-edge="${edgeId}"><path class="graph-edge" aria-hidden="true" style="stroke-width:${graphEdgeStrokeWidth(camera.zoom)}" d="${path.d}"/><path class="graph-edge-hit ${annotatable ? "" : "hidden"}" tabindex="0" role="button" aria-label="Open relationship comments" d="${path.d}"/>${annotatable && count ? `<g class="edge-annotation-badge" aria-hidden="true" transform="translate(${middleX} ${middleY})"><circle r="9"></circle><text y="3">${count}</text></g>` : ""}</g>`;
+      return `<g class="graph-edge-group" data-edge="${edgeId}" data-edge-shape="${resolveEdgeShape(shape)}"${route ? " data-edge-routed" : ""}><path class="graph-edge" aria-hidden="true" style="stroke-width:${graphEdgeStrokeWidth(camera.zoom)}" d="${path.d}"/><path class="graph-edge-hit ${annotatable ? "" : "hidden"}" tabindex="0" role="button" aria-label="Open relationship comments" d="${path.d}"/>${annotatable && count ? `<g class="edge-annotation-badge" aria-hidden="true" transform="translate(${middleX} ${middleY})"><circle r="9"></circle><text y="3">${count}</text></g>` : ""}</g>`;
     }).join("");
     if (annotationEnabled) {
       $$("[data-edge]").forEach((group) => {

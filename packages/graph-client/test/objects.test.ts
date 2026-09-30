@@ -780,7 +780,9 @@ describe("agent-facing graph objects", () => {
     const layer = new LayerObject(
       [left, right],
       [],
-      new LayerLayoutObject([new NodePlacementObject(left, 0.2, 0.5), new NodePlacementObject(right, 0.8, 0.5)], "straight"),
+      new LayerLayoutObject([new NodePlacementObject(left, 0.2, 0.5), new NodePlacementObject(right, 0.8, 0.5)], "straight", [
+        { edge: 7, shape: "elbow-horizontal", ends: [{ node: right, side: "top" }, { node: left }], waypoints: [{ x: 0.5, y: 0.1 }] },
+      ]),
       "comparison",
     );
 
@@ -791,7 +793,12 @@ describe("agent-facing graph objects", () => {
 
     expect(request).toMatchObject({
       clientKey: "comparison",
-      layout: { version: 1, placements: [{ nodeId: 10, x: 0.2, y: 0.5 }, { nodeId: 11, x: 0.8, y: 0.5 }], edgeShape: "straight" },
+      layout: {
+        version: 1,
+        placements: [{ nodeId: 10, x: 0.2, y: 0.5 }, { nodeId: 11, x: 0.8, y: 0.5 }],
+        edgeShape: "straight",
+        edgeRoutes: [{ edgeId: 7, shape: "elbow-horizontal", ends: [{ nodeId: 11, side: "top" }, { nodeId: 10 }], waypoints: [{ x: 0.5, y: 0.1 }] }],
+      },
     });
     expect(layer.ref?.layout).toEqual(request?.layout);
   });

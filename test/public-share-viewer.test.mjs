@@ -1005,6 +1005,8 @@ describe("public share edge shapes", () => {
       version: 1,
       placements: [{ nodeId: "node:start", x: .1, y: .2 }, { nodeId: "node:root", x: .5, y: .6 }, { nodeId: "node:end", x: .9, y: .3 }],
       edgeShape: "arc-circle",
+      // One edge overrides the layer: straight, over the top through a waypoint.
+      edgeRoutes: [{ edgeId: "edge:root-end", shape: "straight", ends: [{ nodeId: "node:end", side: "top" }, { nodeId: "node:root" }], waypoints: [{ x: .5, y: .05 }] }],
     };
     return records;
   }
@@ -1018,6 +1020,9 @@ describe("public share edge shapes", () => {
     const malformed = shapedRecords();
     malformed[1].acceptedView.layers[0].layer.layout.edgeShape = 3;
     expect(() => parsePublicSnapshot(recordsJsonl(malformed))).toThrow(expect.objectContaining({ code: "layout_edge_shape_invalid" }));
+    const misrouted = shapedRecords();
+    misrouted[1].acceptedView.layers[0].layer.layout.edgeRoutes[0].ends[1].nodeId = "node:start";
+    expect(() => parsePublicSnapshot(recordsJsonl(misrouted))).toThrow(expect.objectContaining({ code: "layout_edge_route_invalid" }));
 
     const windowRef = new Window({ url: `https://share.example.test/t/${"b".repeat(32)}` });
     windowRef.document.write(renderPublicViewerTemplate({ snapshot: recordsJsonl(records), presentation: "standalone", sharePath: `/t/${"b".repeat(32)}`, theme: "system" }));
@@ -1035,7 +1040,11 @@ describe("public share edge shapes", () => {
       expect(canvas.getAttribute("data-edge-shape")).toBe("arc-circle");
       const edgePath = (id) => windowRef.document.querySelector(`[data-edge="${id}"] .graph-edge`).getAttribute("d");
       const [startRoot, rootEnd] = [edgePath("edge:start-root"), edgePath("edge:root-end")];
-      for (const path of [startRoot, rootEnd]) expect(path).toMatch(/^M[^MA]+A[^MA]+$/);
+      expect(startRoot).toMatch(/^M[^MA]+A[^MA]+$/);
+      // The routed edge draws in its own shape: two straight segments through its waypoint.
+      const routed = windowRef.document.querySelector('[data-edge="edge:root-end"]');
+      expect([routed.hasAttribute("data-edge-routed"), routed.getAttribute("data-edge-shape")]).toEqual([true, "straight"]);
+      expect(rootEnd).toMatch(/^M[^A-Z]+L[^A-Z]+L[^A-Z]+$/);
       expect(canvas.querySelector("marker, [marker-start], [marker-mid], [marker-end]")).toBeNull();
       // Dragging a node reshapes only the edges it is on.
       windowRef.HTMLElement.prototype.setPointerCapture ??= () => {};

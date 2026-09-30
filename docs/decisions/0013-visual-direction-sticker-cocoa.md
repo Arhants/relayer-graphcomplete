@@ -28,6 +28,7 @@ The owner chose **H**: structure B "Sticker" with palette K8 "Cocoa Bubblegum".
 
 - **Nodes** are 36px pills with a 28px solid family-colour disc and the label inside. Edges are 1.5px strokes. Gentle
   arcs (`arc-outward`) are the design's default shape; agents may choose another shape per layer (PRD §6.1, §11.2).
+  The design still owns stroke, colour, weight and the default bend. An agent's waypoints override the bend only for their edge.
   The canvas is flat, with no grid.
 - **Layout.** The inspector (340px) and the composer float as cards; the prompt card floats over the canvas.
 - **Density is comfortable:** 14px Figtree UI text, 36px rows, type scale 12/13/14/16/20/28/32, a 4px spacing grid.

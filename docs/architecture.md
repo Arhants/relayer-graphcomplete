@@ -124,7 +124,10 @@ order follow it. The layout also names one agent-chosen edge shape for all of th
 layer's edges (PRD §6.1, §11.2). It is required when a layer is submitted, but
 reads, the acceptance re-check, import, and share snapshots accept its absence on
 older layers as `default`, which the design resolves to a concrete shape at draw
-time only.
+time only. An optional list of edge routes lets the agent give a single edge its
+own shape, the side of each node where it attaches, and up to four waypoints.
+Graph core validates routes with the layout and stores them as JSON beside it;
+export, import, and share snapshots carry them unchanged.
 
 Layers may carry an explicit `defaultNodeId` chosen by the author from their member nodes. Graph core validates membership and preserves the choice through publication, persistence, and portable import/export. Missing values from older clients or accepted layers remain readable. Product opens the chosen detail automatically when no valid user selection exists; legacy layers use their first canonical member. Per-thread, interaction, and layer presentation memory preserves the user's later choice without mutating the accepted layer. Explicit history selection takes precedence. Empty layers do not fabricate a detail node.
 

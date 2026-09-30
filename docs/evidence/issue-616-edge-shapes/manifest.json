@@ -4,11 +4,11 @@
   "fixture": {
     "kind": "synthetic",
     "file": "docs/evidence/issue-616-edge-shapes/synthetic-snapshot.jsonl",
-    "sha256": "ecf8e7d1c2513c5947ae4ff0386235538333523882d9e693b271edac17a455c7"
+    "sha256": "14a8b3ef5d8354e7386f9147543d6e4e264f4687bb7f22e7f024cc3421c6f64a"
   },
   "source": {
-    "commit": "d40725c30bf1d52204d4914ed53d974942e8bc99",
-    "dirty": false,
+    "commit": "bbc1b46537e9b852c13db81ca0a3ff7e699d6691",
+    "dirty": true,
     "sourceFiles": {
       "desktop/renderer/design/design.css": "332eb1b0f3bd8b65b6207a2b4d080499b57ec548c7e3167b1f91c91893a90bf7",
       "desktop/renderer/design/fonts/bricolage-grotesque/bricolage-grotesque-latin-wght-normal.woff2": "a97804dc9fbe5fc972a08018c5eda4dab7ef2346f64c57e61419d05e6de4ea1c",
@@ -25,8 +25,8 @@
       "desktop/renderer/src/node-input-controls.js": "5d7bc5fee66a9ace45a01ef9dcebb20b39f1f0b94d7f35f1d61f1ef1f8672584",
       "desktop/renderer/src/product-workspace/annotations.js": "a6d06bc7f20dcb7116533198cb12702b790b9d724d3a08d8ebbc959bcb971510",
       "desktop/renderer/src/product-workspace/composer-submission.js": "e480c7e854b010905c7ac8e9e3b31e9a6193035de7ed8cbadbf64645cc3a2b92",
-      "desktop/renderer/src/product-workspace/edge-shapes.js": "a7e8ab5d7ce7b99690619d251b3c6ed3d7a05317c0ebaf95ba3a6bfbab42ab40",
-      "desktop/renderer/src/product-workspace/graph-layout.js": "4968c32141b288fdc38d9498dd6861581ff2c2c94a578e573738a0c97aa95575",
+      "desktop/renderer/src/product-workspace/edge-shapes.js": "dbc79fb35de91654c8c6bb76b72be289bebe9b2b19394d18eb87616497a032e6",
+      "desktop/renderer/src/product-workspace/graph-layout.js": "f11407542b0f7301e1cc44c12b59cdf3a603277d623aabfe65eefb16834601af",
       "desktop/renderer/src/product-workspace/icons.js": "fb39405f2b9bd7878f019958514f8f156fb3e16f730a48ab3ccf5619240d6014",
       "desktop/renderer/src/product-workspace/index.js": "997f671fdfa819657a691dd9e8f6741a4d07ca96dcdb7b8230c5e039353c9f7b",
       "desktop/renderer/src/product-workspace/interaction-graph.js": "2db93cdd4c3c790c2b9b87a4d13c89f17561c60a8a337b28ea68369f3e1f9424",
@@ -37,17 +37,17 @@
       "desktop/renderer/src/product-workspace/run-state.js": "51d1cf895a9f261ebf74d4cba3000897e37ab8571339a68a581390f847089c15",
       "desktop/renderer/src/product-workspace/view.js": "7739e58d295da3f9e41a2438551ced149c551c9866440d7925c12c0aaef8ad41",
       "desktop/renderer/src/product-workspace/workspace-layout.js": "8e5d307f95b1863fb995606ca32a832de088916716c39476f9d31f2174de002d",
-      "desktop/renderer/src/product-workspace/workspace.js": "a66fd349d4dc7dc10fb2671c22cc944c2d41f1afc6a4e247c412309069a42397",
+      "desktop/renderer/src/product-workspace/workspace.js": "6844ac9b01cc43ba024b25eabd4cd37569e471405d76178165f34d5f1fa8e5db",
       "desktop/renderer/src/public-share-viewer/adapter.js": "da4135effa876c2d8a58f7b650d2ac6c536f9eb8b0d3056e6630505d0a039021",
       "desktop/renderer/src/public-share-viewer/main.js": "c6f03f10e2c73fd0b1f99f17ea2aad98cda452403fab0ef8357e83dd0a588db0",
-      "desktop/renderer/src/public-share-viewer/snapshot.js": "719d6d90cc1e93b2b280971b48ed4aa6ef1e93f506c042800951698942052625",
+      "desktop/renderer/src/public-share-viewer/snapshot.js": "b0a3b2bba507c9045d2879c328dbbf40d7cf281390792303e1af0a86218efd9d",
       "desktop/renderer/src/public-share-viewer/viewer.css": "cb10f9e12bde18d5a86141835d9da5f79674830ebe2f96a672bdb63429917d80",
       "desktop/renderer/src/share-publish-ui.js": "3a07cbecaab629f54720575e5fea998694919f2fce15638d89bc025100a57904",
       "desktop/renderer/src/ui.js": "cc097502fc2edf38832715c536e356665e4564336441c89a2b655a5af019d53b",
       "desktop/renderer/styles.css": "232971ea9ebc838692339a64e6036a2c5b8e9132d40b0d2afd13332b878e82c3",
       "desktop/renderer/vendor/lucide.min.js": "534813d1da2f4d4550383d5db0879aedb2f74c2d0b8951ade277e8bcaea6df52",
       "desktop/renderer/vendor/marked.umd.js": "2e20e86f0a13107ae9bf00675894bbb573716a8e5b4fde612eacaff1e404c128",
-      "scripts/capture-edge-shape-evidence.mjs": "3ccde1f1d6bdacf225cd3a5dbf70946f354887a8b00508741284a4da81aa1f3a"
+      "scripts/capture-edge-shape-evidence.mjs": "11ac7662e4410847e06234a548b2ab03cf816165072e09565da39f16595f9872"
     }
   },
   "browser": {
@@ -67,6 +67,7 @@
       },
       "assertions": {
         "drawnShape": "arc-outward",
+        "routedEdges": 0,
         "readingOrder": "placements",
         "edges": 4,
         "directionMarkers": 0
@@ -88,6 +89,7 @@
       },
       "assertions": {
         "drawnShape": "arc-outward",
+        "routedEdges": 0,
         "readingOrder": "placements",
         "edges": 4,
         "directionMarkers": 0
@@ -109,6 +111,7 @@
       },
       "assertions": {
         "drawnShape": "arc-circle",
+        "routedEdges": 0,
         "readingOrder": "placements",
         "edges": 5,
         "directionMarkers": 0
@@ -130,6 +133,7 @@
       },
       "assertions": {
         "drawnShape": "elbow-horizontal",
+        "routedEdges": 0,
         "readingOrder": "placements",
         "edges": 5,
         "directionMarkers": 0
@@ -151,6 +155,7 @@
       },
       "assertions": {
         "drawnShape": "elbow-vertical",
+        "routedEdges": 0,
         "readingOrder": "placements",
         "edges": 4,
         "directionMarkers": 0
@@ -172,6 +177,7 @@
       },
       "assertions": {
         "drawnShape": "straight",
+        "routedEdges": 0,
         "readingOrder": "placements",
         "edges": 4,
         "directionMarkers": 0
@@ -193,11 +199,78 @@
       },
       "assertions": {
         "drawnShape": "arc-outward",
+        "routedEdges": 0,
         "readingOrder": "placements",
         "edges": 4,
         "directionMarkers": 0
       },
       "sha256": "05e049f9af42032a43be37a6f8c9423c409663d77c005624cb05a9226ad8e407",
+      "sourcePixelSize": {
+        "width": 2560,
+        "height": 1600
+      }
+    },
+    {
+      "scene": "loop-routed",
+      "authoredShape": "elbow-horizontal",
+      "theme": "light",
+      "file": "docs/evidence/issue-616-edge-shapes/loop-routed-light.png",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "assertions": {
+        "drawnShape": "elbow-horizontal",
+        "routedEdges": 1,
+        "readingOrder": "placements",
+        "edges": 4,
+        "directionMarkers": 0
+      },
+      "sha256": "fa08557ddfd7c741764fd3c2ae9984c48e361ef73d67182fd153e121da416a1f",
+      "sourcePixelSize": {
+        "width": 2560,
+        "height": 1600
+      }
+    },
+    {
+      "scene": "loop-sides",
+      "authoredShape": "straight",
+      "theme": "light",
+      "file": "docs/evidence/issue-616-edge-shapes/loop-sides-light.png",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "assertions": {
+        "drawnShape": "straight",
+        "routedEdges": 1,
+        "readingOrder": "placements",
+        "edges": 4,
+        "directionMarkers": 0
+      },
+      "sha256": "a81c83d56093b1af73861656284d16cf3ee6197557ce65740949bf3c25ffeffd",
+      "sourcePixelSize": {
+        "width": 2560,
+        "height": 1600
+      }
+    },
+    {
+      "scene": "chord-routed",
+      "authoredShape": "arc-circle",
+      "theme": "light",
+      "file": "docs/evidence/issue-616-edge-shapes/chord-routed-light.png",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "assertions": {
+        "drawnShape": "arc-circle",
+        "routedEdges": 1,
+        "readingOrder": "placements",
+        "edges": 6,
+        "directionMarkers": 0
+      },
+      "sha256": "170fc616f2098dcff6701ff1288d5665dffb81abaf79b9a49ab08d42cb0b6502",
       "sourcePixelSize": {
         "width": 2560,
         "height": 1600
@@ -214,6 +287,7 @@
       },
       "assertions": {
         "drawnShape": "arc-outward",
+        "routedEdges": 0,
         "readingOrder": "placements",
         "edges": 4,
         "directionMarkers": 0
@@ -235,6 +309,7 @@
       },
       "assertions": {
         "drawnShape": "arc-outward",
+        "routedEdges": 0,
         "readingOrder": "placements",
         "edges": 4,
         "directionMarkers": 0
@@ -256,6 +331,7 @@
       },
       "assertions": {
         "drawnShape": "arc-circle",
+        "routedEdges": 0,
         "readingOrder": "placements",
         "edges": 5,
         "directionMarkers": 0
@@ -277,6 +353,7 @@
       },
       "assertions": {
         "drawnShape": "elbow-horizontal",
+        "routedEdges": 0,
         "readingOrder": "placements",
         "edges": 5,
         "directionMarkers": 0
@@ -298,6 +375,7 @@
       },
       "assertions": {
         "drawnShape": "elbow-vertical",
+        "routedEdges": 0,
         "readingOrder": "placements",
         "edges": 4,
         "directionMarkers": 0
@@ -319,6 +397,7 @@
       },
       "assertions": {
         "drawnShape": "straight",
+        "routedEdges": 0,
         "readingOrder": "placements",
         "edges": 4,
         "directionMarkers": 0
@@ -340,11 +419,78 @@
       },
       "assertions": {
         "drawnShape": "arc-outward",
+        "routedEdges": 0,
         "readingOrder": "placements",
         "edges": 4,
         "directionMarkers": 0
       },
       "sha256": "590a15f27690f454c94ee2f4e63727d4f09eb5711093d74169ae42d354ba1267",
+      "sourcePixelSize": {
+        "width": 2560,
+        "height": 1600
+      }
+    },
+    {
+      "scene": "loop-routed",
+      "authoredShape": "elbow-horizontal",
+      "theme": "dark",
+      "file": "docs/evidence/issue-616-edge-shapes/loop-routed-dark.png",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "assertions": {
+        "drawnShape": "elbow-horizontal",
+        "routedEdges": 1,
+        "readingOrder": "placements",
+        "edges": 4,
+        "directionMarkers": 0
+      },
+      "sha256": "1083fe7f805db4e73fed86bcfb949417bce606d965138fe52716bf54b11940ea",
+      "sourcePixelSize": {
+        "width": 2560,
+        "height": 1600
+      }
+    },
+    {
+      "scene": "loop-sides",
+      "authoredShape": "straight",
+      "theme": "dark",
+      "file": "docs/evidence/issue-616-edge-shapes/loop-sides-dark.png",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "assertions": {
+        "drawnShape": "straight",
+        "routedEdges": 1,
+        "readingOrder": "placements",
+        "edges": 4,
+        "directionMarkers": 0
+      },
+      "sha256": "85fbfacdf8afbbbb82934d7f1c43ed7a9226213992262d4da267437c21121773",
+      "sourcePixelSize": {
+        "width": 2560,
+        "height": 1600
+      }
+    },
+    {
+      "scene": "chord-routed",
+      "authoredShape": "arc-circle",
+      "theme": "dark",
+      "file": "docs/evidence/issue-616-edge-shapes/chord-routed-dark.png",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "assertions": {
+        "drawnShape": "arc-circle",
+        "routedEdges": 1,
+        "readingOrder": "placements",
+        "edges": 6,
+        "directionMarkers": 0
+      },
+      "sha256": "ccc23ac247c24d6fbcf46d7a7a8c3a57a52063214d2f755993a664de6c9cb721",
       "sourcePixelSize": {
         "width": 2560,
         "height": 1600

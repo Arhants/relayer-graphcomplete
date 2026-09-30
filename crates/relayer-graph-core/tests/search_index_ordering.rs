@@ -1235,6 +1235,7 @@ fn imported_conversation() -> ImportedConversation {
                                 y: 0.75,
                             }],
                             edge_shape: None,
+                            edge_routes: Vec::new(),
                         }),
                     },
                     nodes: vec![ImportedNode {

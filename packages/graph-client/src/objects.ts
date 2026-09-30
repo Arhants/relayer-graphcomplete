@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { createOwnedNodeDetailAuthoring, NodeDetailAuthoring } from "./detail.js";
-import type { EdgeShape } from "./edge-shapes.js";
+import type { EdgeShape, NodeSide } from "./edge-shapes.js";
 import { acceptedNodeResponse } from "./node-response.js";
 import type { GraphAction, GraphEdge, GraphId, GraphLayer, GraphNode, InputControl, InputOption, NavigateRelation } from "./types.js";
 
@@ -46,13 +46,31 @@ export class NodePlacementObject {
   ) {}
 }
 
+export interface EdgeEndObject {
+  readonly node: NodeReference;
+  /** Omit to let the renderer choose where the edge meets the node. */
+  readonly side?: NodeSide;
+}
+
+/**
+ * One edge's own shape, attachment sides and waypoints. Waypoints are 0..1 layout
+ * coordinates listed from ends[0] to ends[1]; that order is not a direction.
+ */
+export interface EdgeRouteObject {
+  readonly edge: EdgeReference;
+  readonly shape?: EdgeShape;
+  readonly ends?: readonly [EdgeEndObject, EdgeEndObject];
+  readonly waypoints?: readonly { readonly x: number; readonly y: number }[];
+}
+
 export class LayerLayoutObject {
   readonly version = 1 as const;
 
-  /** Placement order is the layer's reading order. */
+  /** Placement order is the layer's reading order. Edges without a route draw in the layer's edge shape. */
   constructor(
     public placements: readonly NodePlacementObject[],
     public edgeShape: EdgeShape,
+    public edgeRoutes: readonly EdgeRouteObject[] = [],
   ) {}
 }
 
