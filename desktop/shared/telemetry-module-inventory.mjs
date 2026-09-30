@@ -146,6 +146,7 @@ export const APPROVED_TELEMETRY_MODULES = Object.freeze({
     "desktop/main/services/share-source-thread-identity.mjs",
     "desktop/main/services/tutorial-lifecycle.mjs",
     "desktop/main/services/update-restart.mjs",
+    "desktop/main/services/updater-diagnostics.mjs",
     "desktop/main/services/updater.mjs",
     "desktop/main/services/worktree-service.mjs",
     "desktop/main/single-instance.mjs",

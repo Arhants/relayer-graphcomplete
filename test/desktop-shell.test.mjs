@@ -1946,7 +1946,7 @@ describe("desktop skeleton", () => {
       emit: (state) => states.push(state),
     });
     autoUpdater.checkForUpdates.mockRejectedValueOnce(new Error("offline"));
-    await expect(updater.check()).resolves.toMatchObject({ phase: "failed", error: "offline" });
+    await expect(updater.check()).resolves.toMatchObject({ phase: "failed", errorCode: "UNKNOWN", errorStage: "check" });
     expect(autoUpdater.allowDowngrade).toBe(false);
     expect(updater.setChannel("preview")).toMatchObject({ phase: "idle", channel: "preview" });
     expect(autoUpdater.channel).toBe("beta");
