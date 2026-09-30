@@ -1,0 +1,273 @@
+<!doctype html>
+<!--
+  THROWAWAY PROTOTYPE: what cycles look like under each layer edge shape (#616, PR #621).
+  Draws with the real renderer geometry (src/product-workspace/edge-shapes.js) and the
+  real design tokens. ?variant=compare|default|arc-outward|arc-circle|straight|elbow-horizontal|elbow-vertical,
+  ?theme=light|dark, ?follow=blend|rotate (how waypoints follow a dragged node).
+  Drag any node; double-click a scene to reset it.
+
+  Verdict (Vishal, 2026-09-30): one shape per layer hides loop-backs and skip edges in
+  cycles laid out in a row. Agents get per-edge routes: own shape, sides, up to 4
+  waypoints, layer shape as default; waypoints follow drags by the "blend" rule.
+  Implemented in PR #621 (commit 2d802e00). The product later made sides-only arcs leave
+  their sides at right angles, which this prototype's quadratic bow does not show.
+  Run: python3 -m http.server 8765 --directory desktop/renderer, then open
+  http://127.0.0.1:8765/edge-shape-cycles.prototype.html (module imports need http, not file://).
+-->
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Edge shape cycles prototype</title>
+  <link rel="stylesheet" href="./design/design.css" />
+  <style>
+    body { margin: 0; background: var(--bg); color: var(--text); font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; padding: 20px 20px 90px; }
+    h1 { font-size: 18px; margin: 0 0 4px; }
+    .lede { color: var(--text-muted); margin: 0 0 16px; max-width: 900px; }
+    .grid { display: grid; gap: 14px; }
+    .grid.one { grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); }
+    .grid.compare { grid-template-columns: 150px repeat(6, minmax(0, 1fr)); gap: 8px; align-items: stretch; }
+    .head { font-weight: 600; color: var(--text-muted); font-size: 12px; align-self: end; }
+    .rowlabel { font-size: 12px; color: var(--text-muted); align-self: center; }
+    .rowlabel b { color: var(--text); display: block; font-size: 13px; }
+    figure { margin: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 8px; }
+    figcaption { color: var(--text-muted); font-size: 12px; padding: 4px 4px 0; }
+    figcaption b { color: var(--text); }
+    svg { display: block; width: 100%; height: auto; background: var(--canvas-bg); border-radius: 8px; touch-action: none; }
+    .edge { fill: none; stroke: var(--edge); stroke-width: 1.5; stroke-linecap: round; }
+    .pill rect { fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1; }
+    .pill circle { fill: var(--family-f6); }
+    .pill text { fill: var(--text); font-weight: 600; font-size: 12px; dominant-baseline: central; }
+    .pill { cursor: grab; }
+    .order { fill: var(--text-faint); font-size: 10px; dominant-baseline: central; text-anchor: middle; }
+    .bar { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; gap: 6px; align-items: center; background: #111; color: #fff; padding: 6px 8px; border-radius: 999px; box-shadow: 0 6px 24px rgba(0,0,0,.35); font: 600 13px -apple-system, sans-serif; z-index: 10; }
+    .bar button { background: #2a2a2a; color: #fff; border: 0; border-radius: 999px; padding: 6px 12px; font: inherit; cursor: pointer; }
+    .bar span { min-width: 210px; text-align: center; }
+  </style>
+</head>
+<body>
+  <h1>Cycles under each edge shape</h1>
+  <p class="lede">Real geometry from <code>edge-shapes.js</code> (PR #621). Small numbers mark reading order (placement order). Drag nodes to see edges respond; the layer centre stays at the authored layout, as in the app. Double-click a scene to reset it.</p>
+  <div id="root"></div>
+  <div class="bar">
+    <button id="prev" title="Previous (←)">←</button>
+    <span id="label"></span>
+    <button id="next" title="Next (→)">→</button>
+    <button id="theme">Theme</button>
+    <button id="follow"></button>
+  </div>
+  <script type="module">
+    import { EDGE_SHAPES, graphEdgePath, graphLayerCircle, graphPillExit, resolveEdgeShape } from "./src/product-workspace/edge-shapes.js";
+
+    const ring = (count, rx = .36, ry = .38, start = -90) => Array.from({ length: count }, (_, i) => {
+      const a = (start + i * 360 / count) * Math.PI / 180;
+      return [.5 + rx * Math.cos(a), .5 + ry * Math.sin(a)];
+    });
+    const cycle = (n) => Array.from({ length: n }, (_, i) => [i, (i + 1) % n]);
+    const labels = (names) => names;
+    // Each scene: node labels, normalized placements (reading order), edges by index.
+    const SCENES = [
+      { name: "Triangle", note: "3-cycle, equilateral", labels: ["Plan", "Build", "Review"], points: ring(3), edges: cycle(3) },
+      { name: "Diamond ring", note: "4-cycle on a ring", labels: ["North", "East", "South", "West"], points: ring(4), edges: cycle(4) },
+      { name: "Square corners", note: "4-cycle on grid corners", labels: ["Draft", "Test", "Ship", "Learn"], points: [[.2, .22], [.8, .22], [.8, .78], [.2, .78]], edges: cycle(4) },
+      { name: "Pentagon", note: "5-cycle on a ring", labels: ["Sense", "Decide", "Act", "Measure", "Adjust"], points: ring(5), edges: cycle(5) },
+      { name: "Hexagon", note: "6-cycle on a ring", labels: ["Water", "Cloud", "Rain", "River", "Sea", "Vapour"], points: ring(6), edges: cycle(6) },
+      { name: "Racetrack", note: "6-cycle in two rows", labels: ["Ask", "Search", "Read", "Answer", "Check", "Refine"], points: [[.12, .25], [.5, .25], [.88, .25], [.88, .75], [.5, .75], [.12, .75]], edges: cycle(6) },
+      { name: "Pipeline with feedback", note: "row of 4, last loops back to first", labels: ["Collect", "Clean", "Train", "Evaluate"], points: [[.08, .5], [.36, .5], [.64, .5], [.92, .5]], edges: cycle(4) },
+      { name: "Ring with a chord", note: "6-cycle plus one skip edge", labels: ["A", "B", "C", "D", "E", "F"], points: ring(6), edges: [...cycle(6), [0, 2]] },
+      // Routed scenes: per-edge routes as proposed for #616. A route is keyed by its edge index.
+      { name: "Feedback loop, routed", note: "loop-back leaves both tops and passes two waypoints", labels: ["Collect", "Clean", "Train", "Evaluate"], points: [[.08, .62], [.36, .62], [.64, .62], [.92, .62]], edges: cycle(4),
+        routes: { 3: { ends: [{ node: 3, side: "top" }, { node: 0, side: "top" }], waypoints: [[.92, .12], [.08, .12]] } } },
+      { name: "Feedback loop, sides only", note: "loop-back overridden to arc-outward, tops only, no waypoints", labels: ["Collect", "Clean", "Train", "Evaluate"], points: [[.08, .62], [.36, .62], [.64, .62], [.92, .62]], edges: cycle(4),
+        routes: { 3: { shape: "arc-outward", ends: [{ node: 3, side: "top" }, { node: 0, side: "top" }] } } },
+      { name: "Ring chord, routed", note: "skip edge A–C bent through one waypoint inside the ring", labels: ["A", "B", "C", "D", "E", "F"], points: ring(6), edges: [...cycle(6), [0, 2]],
+        routes: { 6: { ends: [{ node: 0 }, { node: 2 }], waypoints: [[.55, .45]] } } },
+    ];
+
+    // PROTOTYPE route geometry (not the product implementation).
+    const axisOf = (side) => (side === "top" || side === "bottom" ? "y" : "x");
+    function attach(p, box, side, toward) {
+      if (side === "top") return { x: p.x, y: p.y - box.halfHeight };
+      if (side === "bottom") return { x: p.x, y: p.y + box.halfHeight };
+      if (side === "left") return { x: p.x - box.halfWidth, y: p.y };
+      if (side === "right") return { x: p.x + box.halfWidth, y: p.y };
+      return graphPillExit(p, toward, box);
+    }
+    // Waypoints follow the edge: map the authored end positions onto the current ones.
+    function follow(w, a0, b0, a, b) {
+      const dx0 = b0.x - a0.x, dy0 = b0.y - a0.y, dx = b.x - a.x, dy = b.y - a.y;
+      const d = dx0 * dx0 + dy0 * dy0 || 1;
+      const re = (dx * dx0 + dy * dy0) / d, im = (dy * dx0 - dx * dy0) / d;
+      const rx = w.x - a0.x, ry = w.y - a0.y;
+      return { x: a.x + rx * re - ry * im, y: a.y + rx * im + ry * re };
+    }
+    function roundedPolyline(points, radius) {
+      const pts = points.filter((p, i) => i === 0 || Math.hypot(p.x - points[i - 1].x, p.y - points[i - 1].y) > .5);
+      let d = `M${pts[0].x} ${pts[0].y}`;
+      for (let i = 1; i < pts.length - 1; i += 1) {
+        const [p, c, n] = [pts[i - 1], pts[i], pts[i + 1]];
+        const r = Math.min(radius, Math.hypot(c.x - p.x, c.y - p.y) / 2, Math.hypot(n.x - c.x, n.y - c.y) / 2);
+        const inx = c.x - (c.x - p.x) / (Math.hypot(c.x - p.x, c.y - p.y) || 1) * r, iny = c.y - (c.y - p.y) / (Math.hypot(c.x - p.x, c.y - p.y) || 1) * r;
+        const outx = c.x + (n.x - c.x) / (Math.hypot(n.x - c.x, n.y - c.y) || 1) * r, outy = c.y + (n.y - c.y) / (Math.hypot(n.x - c.x, n.y - c.y) || 1) * r;
+        d += `L${inx} ${iny}Q${c.x} ${c.y} ${outx} ${outy}`;
+      }
+      const last = pts[pts.length - 1];
+      return d + `L${last.x} ${last.y}`;
+    }
+    function orthLeg(p, q, first, final) {
+      if (first !== final) return [first === "x" ? { x: q.x, y: p.y } : { x: p.x, y: q.y }, q];
+      const mid = first === "x" ? (p.x + q.x) / 2 : (p.y + q.y) / 2;
+      return first === "x" ? [{ x: mid, y: p.y }, { x: mid, y: q.y }, q] : [{ x: p.x, y: mid }, { x: q.x, y: mid }, q];
+    }
+    function smooth(points) {
+      const P = [points[0], ...points, points[points.length - 1]];
+      let d = `M${points[0].x} ${points[0].y}`;
+      for (let i = 1; i < P.length - 2; i += 1) {
+        const c1 = { x: P[i].x + (P[i + 1].x - P[i - 1].x) / 6, y: P[i].y + (P[i + 1].y - P[i - 1].y) / 6 };
+        const c2 = { x: P[i + 1].x - (P[i + 2].x - P[i].x) / 6, y: P[i + 1].y - (P[i + 2].y - P[i].y) / 6 };
+        d += `C${c1.x} ${c1.y} ${c2.x} ${c2.y} ${P[i + 1].x} ${P[i + 1].y}`;
+      }
+      return d;
+    }
+    function routedPath(layerShape, route, at, authored, box, circle) {
+      const shape = resolveEdgeShape(route.shape ?? layerShape);
+      const [e0, e1] = route.ends;
+      const a = at(e0.node), b = at(e1.node);
+      const authoredWaypoints = (route.waypoints ?? []).map(world);
+      const n = authoredWaypoints.length;
+      const waypoints = authoredWaypoints.map((w, k) => FOLLOW === "rotate"
+        ? follow(w, authored[e0.node], authored[e1.node], a, b)
+        // Blend: each waypoint moves by a mix of its ends' movement, weighted by its place along the route.
+        : { x: w.x + (1 - (k + 1) / (n + 1)) * (a.x - authored[e0.node].x) + ((k + 1) / (n + 1)) * (b.x - authored[e1.node].x),
+            y: w.y + (1 - (k + 1) / (n + 1)) * (a.y - authored[e0.node].y) + ((k + 1) / (n + 1)) * (b.y - authored[e1.node].y) });
+      const start = attach(a, box(e0.node), e0.side, waypoints[0] ?? b);
+      const end = attach(b, box(e1.node), e1.side, waypoints[waypoints.length - 1] ?? a);
+      const pts = [start, ...waypoints, end];
+      if (shape === "straight") return pts.map((p, i) => `${i ? "L" : "M"}${p.x} ${p.y}`).join("");
+      if (shape.startsWith("elbow")) {
+        const axis = shape === "elbow-horizontal" ? "x" : "y";
+        const route = [start];
+        for (let i = 1; i < pts.length; i += 1) {
+          const first = i === 1 && e0.side ? axisOf(e0.side) : axis;
+          const final = i === pts.length - 1 && e1.side ? axisOf(e1.side) : (first === "x" ? "y" : "x");
+          route.push(...orthLeg(pts[i - 1], pts[i], first, final));
+        }
+        return roundedPolyline(route, 8);
+      }
+      if (pts.length === 2) {
+        // Sides only: one gentle bow away from the layer centre, capped like arc-outward.
+        const chord = Math.hypot(end.x - start.x, end.y - start.y) || 1;
+        const n = { x: (end.y - start.y) / chord, y: -(end.x - start.x) / chord };
+        const mid = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
+        const away = (circle.centre.x - mid.x) * n.x + (circle.centre.y - mid.y) * n.y > 0 ? -1 : 1;
+        const bow = Math.min(.12 * chord, 24);
+        return `M${start.x} ${start.y}Q${mid.x + away * n.x * bow * 2} ${mid.y + away * n.y * bow * 2} ${end.x} ${end.y}`;
+      }
+      return smooth(pts);
+    }
+
+    const WIDTH = 480, HEIGHT = 320, PAD = 56;
+    const VARIANTS = ["compare", ...EDGE_SHAPES];
+    const params = new URLSearchParams(location.search);
+    let FOLLOW = params.get("follow") === "rotate" ? "rotate" : "blend";
+    let variant = VARIANTS.includes(params.get("variant")) ? params.get("variant") : "compare";
+    document.documentElement.dataset.theme = params.get("theme") === "dark" ? "dark" : "light";
+
+    const world = ([x, y]) => ({ x: PAD + x * (WIDTH - 2 * PAD), y: PAD + y * (HEIGHT - 2 * PAD) });
+    const halfWidth = (label) => 26 + label.length * 3.6;
+    const moved = new Map(); // "scene:node" -> dragged world point, shared across shapes of a scene
+
+    function sceneSvg(scene, sceneIndex, shape) {
+      const authored = scene.points.map(world);
+      const circle = graphLayerCircle(authored);
+      const at = (i) => moved.get(`${sceneIndex}:${i}`) ?? authored[i];
+      const box = (i) => ({ halfWidth: halfWidth(scene.labels[i]) + 4, halfHeight: 18 + 4 });
+      const edges = scene.edges.map(([a, b], index) => scene.routes?.[index]
+        ? routedPath(shape, scene.routes[index], at, authored, box, circle)
+        : graphEdgePath(shape, at(a), at(b), { sourceBox: box(a), targetBox: box(b), circle }).d);
+      const pills = scene.labels.map((label, i) => {
+        const p = at(i), w = halfWidth(label);
+        return `<g class="pill" data-scene="${sceneIndex}" data-node="${i}" transform="translate(${p.x} ${p.y})">
+          <rect x="${-w}" y="-18" width="${2 * w}" height="36" rx="18"></rect>
+          <circle cx="${-w + 18}" cy="0" r="13"></circle>
+          <text class="order" x="${-w + 18}" y="0" style="fill: var(--white)">${i + 1}</text>
+          <text x="${-w + 36}" y="0">${label}</text></g>`;
+      }).join("");
+      return `<svg viewBox="0 0 ${WIDTH} ${HEIGHT}" data-scene="${sceneIndex}">${edges.map((d) => `<path class="edge" d="${d}"></path>`).join("")}${pills}</svg>`;
+    }
+
+    function render() {
+      const root = document.querySelector("#root");
+      const label = variant === "compare" ? "compare (all shapes)" : `${variant}${variant === "default" ? ` → ${resolveEdgeShape("default")}` : ""}`;
+      document.querySelector("#label").textContent = `${VARIANTS.indexOf(variant) + 1}/${VARIANTS.length} ${label}`;
+      if (variant === "compare") {
+        root.className = "grid compare";
+        root.innerHTML = `<div></div>${EDGE_SHAPES.map((shape) => `<div class="head">${shape}</div>`).join("")}`
+          + SCENES.map((scene, i) => `<div class="rowlabel"><b>${scene.name}</b>${scene.note}</div>`
+            + EDGE_SHAPES.map((shape) => `<figure>${sceneSvg(scene, i, shape)}</figure>`).join("")).join("");
+      } else {
+        root.className = "grid one";
+        root.innerHTML = SCENES.map((scene, i) => `<figure>${sceneSvg(scene, i, variant)}<figcaption><b>${scene.name}</b> · ${scene.note}${scene.routes ? `<br><code>${JSON.stringify(Object.values(scene.routes))}</code>` : ""}</figcaption></figure>`).join("");
+      }
+    }
+
+    function go(step) {
+      variant = VARIANTS[(VARIANTS.indexOf(variant) + step + VARIANTS.length) % VARIANTS.length];
+      params.set("variant", variant);
+      history.replaceState(null, "", `?${params}`);
+      render();
+    }
+    document.querySelector("#prev").onclick = () => go(-1);
+    document.querySelector("#next").onclick = () => go(1);
+    document.querySelector("#theme").onclick = () => {
+      const theme = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+      document.documentElement.dataset.theme = theme;
+      params.set("theme", theme);
+      history.replaceState(null, "", `?${params}`);
+    };
+    const followButton = document.querySelector("#follow");
+    followButton.textContent = `Drag: ${FOLLOW}`;
+    followButton.onclick = () => {
+      FOLLOW = FOLLOW === "blend" ? "rotate" : "blend";
+      followButton.textContent = `Drag: ${FOLLOW}`;
+      params.set("follow", FOLLOW);
+      history.replaceState(null, "", `?${params}`);
+      render();
+    };
+    addEventListener("keydown", (event) => {
+      if (event.target.closest?.("input, textarea, [contenteditable]")) return;
+      if (event.key === "ArrowLeft") go(-1);
+      if (event.key === "ArrowRight") go(1);
+    });
+
+    // Dragging: pointer position in the scene's SVG coordinates.
+    let drag = null;
+    const svgPoint = (svg, event) => {
+      const point = svg.createSVGPoint();
+      point.x = event.clientX; point.y = event.clientY;
+      return point.matrixTransform(svg.getScreenCTM().inverse());
+    };
+    addEventListener("pointerdown", (event) => {
+      const pill = event.target.closest(".pill");
+      if (!pill) return;
+      drag = { scene: pill.dataset.scene, node: pill.dataset.node, svg: pill.ownerSVGElement };
+      event.preventDefault();
+    });
+    addEventListener("pointermove", (event) => {
+      if (!drag) return;
+      const p = svgPoint(drag.svg, event);
+      moved.set(`${drag.scene}:${drag.node}`, { x: p.x, y: p.y });
+      render();
+      drag.svg = document.querySelectorAll(`svg[data-scene="${drag.scene}"]`)[0];
+    });
+    addEventListener("pointerup", () => { drag = null; });
+    addEventListener("dblclick", (event) => {
+      const svg = event.target.closest("svg[data-scene]");
+      if (!svg) return;
+      for (const key of [...moved.keys()]) if (key.startsWith(`${svg.dataset.scene}:`)) moved.delete(key);
+      render();
+    });
+    render();
+  </script>
+</body>
+</html>
