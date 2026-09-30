@@ -1,4 +1,5 @@
 import { createSharePreviewCapture } from "./services/share-preview-capture.mjs";
+import { createElectronDraftPreviewRenderer } from "./services/draft-preview-renderer.mjs";
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, session, safeStorage, shell } from "electron";
 import electronUpdater from "electron-updater";
 import { readFileSync } from "node:fs";
@@ -219,6 +220,12 @@ if (primaryInstance) {
       diagnostics: primeAgentRuntime.diagnostics,
     })),
     codexBasicClientModuleUrl: graphClientModuleUrl,
+    draftPreviewRenderer: createElectronDraftPreviewRenderer({
+      BrowserWindow,
+      session,
+      rendererDirectory,
+      getTheme: () => resolvedAppearance(nativeTheme),
+    }),
     temporalFeatures: productTemporalFeatures(),
     ...(codexBrowserMcpInspection.available ? { codexBrowserMcpRuntime: codexBrowserMcpInspection } : {}),
     acquireProviderExecution: (providerId) => {
