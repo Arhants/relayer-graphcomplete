@@ -1,0 +1,13 @@
+
+> relayer-graphcomplete@0.0.0 test:eval-compiled-runtime
+> vitest run --config scripts/eval-compiled.vitest.config.mjs
+
+
+ RUN  v4.1.10 /Volumes/2T-SSD/worktrees/thread-icons-622
+
+
+ Test Files  1 passed (1)
+      Tests  4 passed (4)
+   Start at  12:31:20
+   Duration  11.07s (transform 335ms, setup 0ms, import 526ms, tests 10.47s, environment 0ms)
+

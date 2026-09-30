@@ -359,6 +359,12 @@ impl SqliteProductStore {
                 ));
             }
         }
+        super::threads::commit_thread_icon(
+            &mut transaction,
+            completion.interaction_id,
+            completion.output,
+        )
+        .await?;
         transaction.commit().await?;
         Ok(execution_changed || interaction.rows_affected() == 1)
     }
@@ -827,6 +833,7 @@ mod tests {
         let store = SqliteProductStore::open(path).await.unwrap();
         let thread = store
             .insert_thread_with_initial_interaction(NewThreadRecord {
+                icon_selection_eligible: true,
                 title: "Durable execution",
                 project_id: None,
                 initial_message: "Complete",
@@ -1030,7 +1037,7 @@ mod tests {
             .execute(&store.pool)
             .await
             .unwrap();
-        let output = json!({"rootLayer":{"layer":{"id":77}}});
+        let output = json!({"rootLayer":{"layer":{"id":77}},"threadIconProposal":"compass"});
         let permission_receipt = json!({});
         let accepted = AcceptedInteractionCompletion {
             interaction_id,
@@ -1047,6 +1054,14 @@ mod tests {
                 .await
                 .unwrap()
         );
+        let icon: Option<String> = sqlx::query_scalar(
+            "SELECT icon FROM threads WHERE id=(SELECT thread_id FROM interactions WHERE id=?1)",
+        )
+        .bind(interaction_id.value())
+        .fetch_one(&store.pool)
+        .await
+        .unwrap();
+        assert_eq!(icon.as_deref(), Some("compass"));
         let execution = store
             .get_completion_execution(interaction_id)
             .await

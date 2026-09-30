@@ -58,6 +58,8 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/api/completions" and body["interactionNode"] in Handler.refused_starts:
             status, error = Handler.refused_starts[body["interactionNode"]]
             self._reply(error if isinstance(error, bytes) else {"error": error}, status)
+        elif self.path == "/api/graph/thread-icon":
+            self._reply({"valid": body["icon"] == "compass"})
         elif self.path == "/api/completions":
             self._reply({"completionId": body["interactionNode"]}, 201)
         elif self.path == "/api/completions/80/stop":
@@ -209,6 +211,15 @@ class AuthoringClientTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         Handler.requests.clear()
         self.client = RelayerGraphClient(self.url, "secret", 7)
+
+    async def test_optional_thread_icon_proposal_uses_scoped_transport(self):
+        self.assertFalse(await self.client.propose_thread_icon(None))
+        self.assertFalse(await self.client.propose_thread_icon({}))
+        self.assertEqual(Handler.requests, [])
+        self.assertFalse(await self.client.propose_thread_icon("invalid"))
+        self.assertTrue(await self.client.propose_thread_icon("compass"))
+        self.assertEqual(Handler.requests[-1][0], "/api/graph/thread-icon")
+        self.assertEqual(Handler.requests[-1][2], {"icon": "compass"})
 
     def test_routes_send_only_what_they_set(self):
         from relayer_graph.authoring import _route_payload

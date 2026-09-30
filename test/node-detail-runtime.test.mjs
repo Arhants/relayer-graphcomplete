@@ -934,10 +934,10 @@ describe("compiled Node Detail product runtime", () => {
     } finally { workspace.dispose(); }
   });
 
-  it("resolves image breadcrumbs using the response interaction and parent presenting layer", async () => {
+  it("preserves the saved topic symbol while resolving image breadcrumbs from their source interaction and layer", async () => {
     const window = new Window({ url: "http://127.0.0.1:3000" });
     vi.stubGlobal("document", window.document); vi.stubGlobal("window", window);
-    vi.stubGlobal("lucide", new Proxy({ Circle: {}, createElement: () => window.document.createElement("svg") }, { get: (target, key) => target[key] ?? {} }));
+    vi.stubGlobal("lucide", new Proxy({ Circle: {}, createElement: (_icon, attributes = {}) => { const svg = window.document.createElement("svg"); for (const [key, value] of Object.entries(attributes)) svg.setAttribute(key, value); return svg; } }, { get: (target, key) => target[key] ?? {} }));
     window.document.body.innerHTML = '<section id="threadView"></section>';
     const rootIcon = {kind:"image",assetId:"response-image",digestSha256:"a".repeat(64),mediaType:"image/png"};
     const parentIcon = {kind:"image",assetId:"parent-image",digestSha256:"b".repeat(64),mediaType:"image/png"};
@@ -945,13 +945,15 @@ describe("compiled Node Detail product runtime", () => {
     const root = {layer:{id:99},nodes:[parent],edges:[],actions:[]};
     const child = {layer:{id:100},nodes:[{id:8,kind:"concept",icon:"box",title:"Monitoring",detail:"Survey",state:"accepted"}],edges:[],actions:[]};
     const interaction = {id:5,threadId:3,sequence:1,text:"Marine ecology",graphNodeId:50,completionStatus:"accepted",completionOutput:{rootAction:{sourceNodeId:50,icon:rootIcon},rootLayer:root}};
-    const thread = {id:3,rootInteractionId:5,title:"Thread",harnessId:"fixture"};
+    const thread = {id:3,rootInteractionId:5,title:"Thread",harnessId:"fixture",icon:"database"};
     const selection = {currentThreadId:3,currentInteractionId:5,selectedNodeId:null,layerPath:appendLayerPath(rootLayerPath(interaction),{id:9,kind:"navigate",sourceNodeId:7,targetLayerId:100},parent)};
     const state = {status:"accepted",currentInteractionId:5,interactions:[interaction],visibleLayer:child,nodes:child.nodes,actions:[],projects:[],permissionProfiles:[],modelSettings:{defaults:{harnessId:"fixture"},harnesses:[{id:"fixture",available:true}],providers:[],families:[]},modelCatalog:[],actionInvocations:[],pendingActionInvocations:[]};
     const resolver = vi.fn(async () => undefined);
     const workspace = createProductWorkspace({root:window.document,getState:()=>state,getThread:()=>thread,selection,showThread:()=>{},showEmpty:()=>{},resolveNodeDetailAsset:resolver});
     try {
       workspace.render(); await window.happyDOM.waitUntilComplete();
+      expect(window.document.querySelector("#threadIcon [data-relayer-icon=database]")).not.toBeNull();
+      expect(window.document.querySelector("#threadIcon img")).toBeNull();
       expect(resolver).toHaveBeenCalledWith(expect.objectContaining({id:"response-image"}),expect.objectContaining({node:{id:50},interaction,thread,layerId:99}));
       expect(resolver).toHaveBeenCalledWith(expect.objectContaining({id:"parent-image"}),expect.objectContaining({node:{id:7},interaction,thread,layerId:99}));
     } finally {workspace.dispose();}

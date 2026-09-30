@@ -457,6 +457,26 @@ describe("CodexBasicHarness", () => {
     })).toThrow("requires non-empty connection arguments");
   });
 
+  it.each(["basic", "layered-navigation-v1", "layered-navigation-multi-agent-v1"])("selects an eligible thread icon in the ordinary %s Codex turn", async (profile) => {
+    const prompts: string[] = [];
+    const harness = new CodexBasicHarness({ ...context("full"), configuration: {
+      ...codexBasicConfiguration,
+      settings: { ...codexBasicConfiguration.settings, ...(profile === "basic" ? {} : { promptProfile: profile }) },
+    } }, { codexPathOverride: "/managed/codex", runAppServerTurn: async (options) => {
+      prompts.push(options.prompt);
+      options.onThreadId("icon-thread");
+      return { threadId: "icon-thread", turnId: "icon-turn", status: "completed" };
+    } });
+    await harness.complete({ ...runContext(1, "token"), threadIconSelection: { eligible: true } });
+    await harness.complete(runContext(2, "token"));
+    expect(prompts).toHaveLength(2);
+    expect(prompts[0]).toContain('await graph.proposeThreadIcon("semantic-icon-name")');
+    expect(prompts[0]).toContain("same supported Relayer icon library and guidance used for nodes");
+    expect(prompts[0]).toContain("only when this completion is accepted");
+    expect(prompts[0]).toContain("Icon selection failure must not prevent otherwise valid graph work");
+    expect(prompts[1]).not.toContain("proposeThreadIcon");
+  });
+
   it("retains a provider thread whose first turn was accepted when that turn then fails", async () => {
     let submitted: CodexAppServerTurnOptions | undefined;
     const harness = harnessFixture("auto", async (options) => {

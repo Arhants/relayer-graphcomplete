@@ -335,6 +335,7 @@ pub fn router(state: ServerState) -> Router {
         .route("/api/graph/actions", post(add_action))
         .route("/api/graph/actions/{id}", get(get_action))
         .route("/api/graph/submit", post(submit_completion))
+        .route("/api/graph/thread-icon", post(propose_thread_icon))
         .route("/api/graph/current", get(graph_current))
         .route(
             "/api/graph/completions/prepare",
@@ -2910,6 +2911,26 @@ async fn accepted_action(writer: &GraphWriter, id: ActionId) -> Result<GraphActi
 struct CompleteRequest {
     node_id: NodeId,
 }
+#[derive(Deserialize)]
+struct ThreadIconProposalRequest {
+    icon: serde_json::Value,
+}
+async fn propose_thread_icon(
+    State(state): State<ServerState>,
+    headers: HeaderMap,
+    Json(input): Json<ThreadIconProposalRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let authority = session(&state, &headers)?;
+    let writer = state
+        .graph
+        .writer_for_completion_authority(authority.node_id, authority.epoch)
+        .await?;
+    let valid = writer
+        .propose_thread_icon(input.icon.as_str().unwrap_or(""))
+        .await?;
+    Ok(Json(json!({"valid": valid})))
+}
+
 async fn submit_completion(
     State(state): State<ServerState>,
     headers: HeaderMap,
@@ -3222,6 +3243,74 @@ mod tests {
         http::Request,
     };
     use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn thread_icon_proposals_enforce_capability_and_ignore_invalid_selection() {
+        let graph = GraphDatabase::in_memory().await.unwrap();
+        let node = graph
+            .create_interaction(None, ThreadId::new(1).unwrap(), "Topic")
+            .await
+            .unwrap();
+        let state = ServerState::new(graph.clone(), "control");
+        let token = mint_capability(&state, node.id, None)
+            .await
+            .unwrap_or_else(|error| panic!("capability mint failed: {}", error.1));
+        let app = router(state);
+        let request = |token: &str, icon: Value| {
+            Request::builder()
+                .method("POST")
+                .uri("/api/graph/thread-icon")
+                .header("content-type", "application/json")
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::from(json!({"icon": icon}).to_string()))
+                .unwrap()
+        };
+        assert_eq!(
+            app.clone()
+                .oneshot(request("control", json!("compass")))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::UNAUTHORIZED
+        );
+        for icon in [json!(null), json!({}), json!("unknown")] {
+            let response = app.clone().oneshot(request(&token, icon)).await.unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let body: Value =
+                serde_json::from_slice(&to_bytes(response.into_body(), 1024).await.unwrap())
+                    .unwrap();
+            assert_eq!(body, json!({"valid": false}));
+        }
+        let response = app
+            .clone()
+            .oneshot(request(&token, json!("compass")))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body: Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), 1024).await.unwrap()).unwrap();
+        assert_eq!(body, json!({"valid": true}));
+        graph
+            .writer_for_subgraph(node.id)
+            .await
+            .unwrap()
+            .transition_current(
+                0,
+                "stop",
+                CurrentTransition::Stop {
+                    reason: "cancelled_by_user".into(),
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            app.oneshot(request(&token, json!("heart")))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
+    }
 
     #[tokio::test]
     async fn resolved_invoke_roots_require_control_and_bounded_valid_ids() {

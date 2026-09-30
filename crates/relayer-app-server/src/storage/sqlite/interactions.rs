@@ -768,6 +768,7 @@ impl SqliteProductStore {
         &self,
         completion: AcceptedInteractionCompletion<'_>,
     ) -> Result<(), StorageError> {
+        let mut transaction = self.pool.begin_with("BEGIN IMMEDIATE").await?;
         let result = sqlx::query("UPDATE interactions SET completion_status='accepted',completion_output_json=?1,completion_error=NULL WHERE id=?2 AND graph_node_id=?3 AND completion_status='running' AND harness_configuration_name=?4 AND harness_configuration_digest=?5 AND effective_execution_digest=?6 AND effective_permission_receipt_json=?7")
             .bind(serde_json::to_string(completion.output).map_err(|error| StorageError::Serialization(error.to_string()))?)
             .bind(completion.interaction_id.value())
@@ -776,12 +777,12 @@ impl SqliteProductStore {
             .bind(completion.harness_configuration_digest)
             .bind(completion.effective_execution_digest)
             .bind(serde_json::to_string(completion.effective_permission_receipt).map_err(|error| StorageError::Serialization(error.to_string()))?)
-            .execute(&self.pool)
+            .execute(&mut *transaction)
             .await?;
         if result.rows_affected() != 1 {
             let imported: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM interactions JOIN threads ON threads.id=interactions.thread_id WHERE interactions.id=?1 AND threads.conversation_import_id IS NOT NULL)")
                 .bind(completion.interaction_id.value())
-                .fetch_one(&self.pool)
+                .fetch_one(&mut *transaction)
                 .await?;
             if imported {
                 return Ok(());
@@ -790,6 +791,13 @@ impl SqliteProductStore {
                 "prepared interaction identity changed before acceptance".into(),
             ));
         }
+        super::threads::commit_thread_icon(
+            &mut transaction,
+            completion.interaction_id,
+            completion.output,
+        )
+        .await?;
+        transaction.commit().await?;
         Ok(())
     }
 
@@ -826,6 +834,12 @@ impl SqliteProductStore {
                 "interaction was not running while accepting its attempt".into(),
             ));
         }
+        super::threads::commit_thread_icon(
+            &mut transaction,
+            completion.interaction_id,
+            completion.output,
+        )
+        .await?;
         transaction.commit().await?;
         Ok(())
     }
@@ -1093,6 +1107,7 @@ mod tests {
         let second_model = selection("second-model");
         let thread = store
             .insert_thread_with_initial_interaction(NewThreadRecord {
+                icon_selection_eligible: true,
                 title: "Atomic inheritance",
                 project_id: None,
                 initial_message: "First",
@@ -1148,6 +1163,7 @@ mod tests {
 
         let thread = store
             .insert_thread_with_initial_interaction(NewThreadRecord {
+                icon_selection_eligible: true,
                 title: "Last-known catalog thread",
                 project_id: None,
                 initial_message: "First",
@@ -1180,6 +1196,7 @@ mod tests {
         let first_model = selection("first-model");
         let thread = store
             .insert_thread_with_initial_interaction(NewThreadRecord {
+                icon_selection_eligible: true,
                 title: "Retry in place",
                 project_id: None,
                 initial_message: "Original prompt",
@@ -1398,6 +1415,7 @@ mod tests {
         let model = selection("first-model");
         let thread = store
             .insert_thread_with_initial_interaction(NewThreadRecord {
+                icon_selection_eligible: true,
                 title: "Human turn gate",
                 project_id: None,
                 initial_message: "Delegate",

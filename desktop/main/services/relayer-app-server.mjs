@@ -85,6 +85,7 @@ export class RelayerAppServerService {
     runtimeSession = null,
     defaultHarnessConfiguration = "codex-basic",
     allowHarnessOverride = false,
+    evalMode = false,
     allowConversationImport = false,
     enableReadOnlySession = false,
     exportProducer = {
@@ -107,6 +108,7 @@ export class RelayerAppServerService {
     this.runtimeSession = runtimeSession;
     this.defaultHarnessConfiguration = defaultHarnessConfiguration;
     this.allowHarnessOverride = allowHarnessOverride;
+    this.evalMode = evalMode;
     this.allowConversationImport = allowConversationImport;
     this.enableReadOnlySession = enableReadOnlySession;
     for (const [field, value] of Object.entries(exportProducer)) {
@@ -174,6 +176,7 @@ export class RelayerAppServerService {
         "--default-harness-configuration", this.defaultHarnessConfiguration,
       );
       if (this.allowHarnessOverride) serverArguments.push("--allow-harness-override");
+      if (this.evalMode) serverArguments.push("--eval-mode");
       if (this.allowConversationImport) serverArguments.push("--allow-conversation-import");
     }
     if (readOnlyControlToken) serverArguments.push("--read-only-control-token-stdin");

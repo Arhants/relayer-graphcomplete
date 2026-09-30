@@ -424,6 +424,7 @@ mod tests {
         assert!(
             store
                 .insert_thread_with_initial_interaction(crate::storage::NewThreadRecord {
+                    icon_selection_eligible: true,
                     title: "Unavailable",
                     project_id: None,
                     initial_message: "Must not persist",
@@ -485,6 +486,7 @@ mod tests {
         let thread = store
             .insert_thread_with_initial_interaction_and_personal_presentation(
                 crate::storage::NewThreadRecord {
+                    icon_selection_eligible: true,
                     title: "Visible",
                     project_id: None,
                     initial_message: "Question",
@@ -534,6 +536,7 @@ mod tests {
             .unwrap();
         let next = store
             .insert_thread_with_initial_interaction(crate::storage::NewThreadRecord {
+                icon_selection_eligible: true,
                 title: "Next",
                 project_id: None,
                 initial_message: "Question after activation",
@@ -605,6 +608,7 @@ mod tests {
         let thread = store
             .insert_thread_with_initial_interaction_and_personal_presentation(
                 crate::storage::NewThreadRecord {
+                    icon_selection_eligible: true,
                     title: "Historical",
                     project_id: None,
                     initial_message: "Question",
@@ -642,6 +646,7 @@ mod tests {
             reopened
                 .insert_thread_with_initial_interaction_and_personal_presentation(
                     crate::storage::NewThreadRecord {
+                        icon_selection_eligible: true,
                         title: "Rejected",
                         project_id: None,
                         initial_message: "New question",

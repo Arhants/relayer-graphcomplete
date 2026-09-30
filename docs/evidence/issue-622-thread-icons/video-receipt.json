@@ -1,0 +1,35 @@
+{
+  "sourceCommit": "611f2772f84a6d34a0e0e4eb2a24c3cabf598250",
+  "inference": false,
+  "productionServers": true,
+  "productionRenderer": true,
+  "scenarios": [
+    {
+      "name": "draft proposal keeps default",
+      "icon": null,
+      "passed": true
+    },
+    {
+      "name": "acceptance saves same sidebar/header database icon",
+      "passed": true
+    },
+    {
+      "name": "later accepted heart proposal does not replace database",
+      "passed": true
+    },
+    {
+      "name": "real services restart and disk reopen retains database icon",
+      "passed": true
+    }
+  ],
+  "video": "video.mp4",
+  "videoSha256": "e6dd9a395731f782582f2d9894747da7263c15a513dec1782885acb8d32f4277",
+  "durationSeconds": 21.64,
+  "dimensions": [
+    1280,
+    800
+  ],
+  "captureRunnerSha256": "42b7fce2186bfdce82bec62064e0f9cecaf95e36daa2dcecf7aaad53b3a34f3a",
+  "modelSelection": "seeded available fixture-model; two sends through production UI",
+  "caption": "Production renderer and native servers; deterministic harness, no inference. Database proposal is held before acceptance; later heart proposal cannot replace it; actual product and graph services restart against same data directory."
+}

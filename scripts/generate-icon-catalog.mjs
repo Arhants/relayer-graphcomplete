@@ -33,8 +33,8 @@ for (const path of paths) {
   const ts = path.endsWith('.ts');
   source=source.replace(/export const RELAYER_ICON_ALIASES = Object.freeze\(\{[\s\S]*?\}([\s\S]*?)\);/, `export const RELAYER_ICON_ALIASES = Object.freeze(${aliases}$1);`);
   const prefix = `\n// Generated catalog metadata: discovery reads these fields, never a prompt enum.\nexport const RELAYER_ICON_CATALOG${ts ? ': ReadonlyArray<{name: string; exportName: string; description: string; aliases: string[]; categories: string[]; tags: string[]; useCases: string[]}>' : ''} = Object.freeze(${JSON.stringify(catalog.icons.map(({ svg, ...metadata }) => metadata), null, 2)});\nexport const RELAYER_ICON_EXPORTS${ts ? ': Readonly<Record<string, string>>' : ''} = Object.freeze(${JSON.stringify(Object.fromEntries(catalog.icons.map(i => [i.name, i.exportName])), null, 2)});\n`;
-  source=source.replace(/\n\/\/ Generated catalog metadata:[\s\S]*$/, '');
-  source+=prefix;
+  const generatedBlock = /\n\/\/ Generated catalog metadata:[\s\S]*?\nexport const RELAYER_ICON_EXPORTS[^\n]* = Object\.freeze\([\s\S]*?\n\}\);\n/;
+  source = generatedBlock.test(source) ? source.replace(generatedBlock, prefix) : source + prefix;
  } else if(path.endsWith('.rs')) {
   source=source.replace(/\npub const RELAYER_ICON_CATALOG_JSON:[^\n]*\n*/, '\n');
   source=source.trimEnd();

@@ -678,6 +678,7 @@ mod tests {
                 permission_catalog,
                 default_harness_configuration: "codex-basic".into(),
                 allow_harness_override: true,
+                eval_mode: false,
                 allow_conversation_import,
                 standalone_workspaces_directory: directory.path().join("workspaces"),
                 export_producer: ExportProducer {

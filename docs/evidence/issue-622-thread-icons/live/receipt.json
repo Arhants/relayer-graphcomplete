@@ -1,0 +1,88 @@
+{
+  "provider": "live-run-openrouter",
+  "model": "openai/gpt-6-luna",
+  "harness": "prime-agent-basic",
+  "paidInferenceAuthorized": true,
+  "startedAt": "2026-09-30T14:58:28.800Z",
+  "sourceCommit": "611f2772f84a6d34a0e0e4eb2a24c3cabf598250",
+  "inference": true,
+  "productionServers": true,
+  "productionRenderer": true,
+  "scenarios": [
+    {
+      "name": "live turn starts with default",
+      "passed": true
+    },
+    {
+      "name": "live agent chooses matching saved sidebar/header icon",
+      "icon": "database-backup",
+      "interactionId": 1,
+      "passed": true
+    },
+    {
+      "name": "second paid UI turn accepted and saved icon unchanged",
+      "passed": true
+    },
+    {
+      "name": "real service restart and disk reopen retains live agent icon",
+      "passed": true
+    }
+  ],
+  "video": "full.webm",
+  "finishedAt": "2026-09-30T15:01:30.929Z",
+  "spedUpVideo": {
+    "path": "video-4x.mp4",
+    "speed": 4,
+    "durationSeconds": 41.28
+  },
+  "providerWarnings": [
+    {
+      "provider": "anthropic",
+      "model": "claude-opus-4-7",
+      "status": 400,
+      "type": "invalid_request_error",
+      "reason": "Insufficient Anthropic API credit; both routed product interactions nevertheless accepted"
+    }
+  ],
+  "billingAmount": "not measured",
+  "artifacts": {
+    "accepted-routing.json": {
+      "bytes": 602,
+      "sha256": "b2917968647469e641aecd3d22d9111922b89f4379549b5e814b888ca14da92a"
+    },
+    "attempts.json": {
+      "bytes": 573,
+      "sha256": "220d417a73f8ac97dd1adb45eda47144bb5d3bfe785296435a67dbdf1c57e6a6"
+    },
+    "capture-runner.txt": {
+      "bytes": 15563,
+      "sha256": "1925143c06d95f12b26125d4e8e608c263db4f55f7a53c7deba01af79fd4da27"
+    },
+    "default.png": {
+      "bytes": 38607,
+      "sha256": "d5e5a7ef55e4988d6031786501b8db2a3730d8c943a228b60e073c21decbdb37"
+    },
+    "full.webm": {
+      "bytes": 4770612,
+      "sha256": "1d12a69a60505eb60d30c8fb66490d1e446ed904fd7d4ad8fabd285c25b348a6"
+    },
+    "reopened.png": {
+      "bytes": 110471,
+      "sha256": "955ea589edabb2f444894bdd85194e5c396269028b646c57c3152ead36679bd1"
+    },
+    "run.log": {
+      "bytes": 1773,
+      "sha256": "e221478b9024a6e59d1b6e587f855ba7d40491d4fe0786a8c65a3981a7ca3e0f"
+    },
+    "video-4x.mp4": {
+      "bytes": 806787,
+      "sha256": "cd04861cc572b33b2cf75b273eec6ec6096499cc6d6cff7e0a9b90fe49f028d1"
+    }
+  },
+  "review": {
+    "reviewer": "/root/ui",
+    "sourceCommit": "611f2772f84a6d34a0e0e4eb2a24c3cabf598250",
+    "scope": "actual paid capture runner, two accepted persisted model routes, default and reopened visual states, unforced proposal and disk persistence",
+    "verdict": "scoped pass; provider warning retained; no claim every internal call succeeded"
+  }
+}

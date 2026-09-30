@@ -158,6 +158,7 @@ impl From<Project> for ProjectResponse {
 pub(crate) struct ThreadResponse {
     id: i64,
     title: String,
+    icon: Option<String>,
     project_id: Option<i64>,
     working_directory: Option<String>,
     checkout_context: Option<serde_json::Value>,
@@ -178,6 +179,7 @@ impl From<Thread> for ThreadResponse {
         Self {
             id: thread.id.value(),
             title: thread.title,
+            icon: thread.icon,
             project_id: thread.project_id.map(|id| id.value()),
             working_directory: thread.working_directory,
             checkout_context: thread.checkout_context,

@@ -1247,7 +1247,10 @@ mod tests {
     #[tokio::test]
     async fn edge_layout_migrations_keep_existing_layouts_shape_and_route_free() {
         use std::borrow::Cow;
-        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        let temporary = tempfile::tempdir().unwrap();
+        let file = tempfile::NamedTempFile::new_in(temporary.path()).unwrap();
+        let url = format!("sqlite://{}", file.path().display());
+        let pool = sqlx::SqlitePool::connect(&url).await.unwrap();
         Migrator {
             migrations: Cow::Owned(
                 MIGRATOR
@@ -1274,5 +1277,26 @@ mod tests {
         .await
         .unwrap();
         assert_eq!((shape, routes), (None, None));
+        // Merged migrations retain each distinct version: shipped edge metadata
+        // and the new completion-local topic proposal must coexist.
+        let versions: Vec<i64> = sqlx::query_scalar(
+            "SELECT version FROM _sqlx_migrations WHERE version >= 30 ORDER BY version",
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(versions, [30, 31, 32, 33]);
+        sqlx::query(
+            "INSERT INTO thread_icon_proposals(interaction_node_id,icon) VALUES (1,'compass')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        pool.close().await;
+        let reopened = sqlx::SqlitePool::connect(&url).await.unwrap();
+        MIGRATOR.run(&reopened).await.unwrap();
+        let preserved: (Option<String>, Option<String>, String) = sqlx::query_as("SELECT l.layout_edge_shape,l.layout_edge_routes,p.icon FROM layers l JOIN thread_icon_proposals p ON p.interaction_node_id=l.owner_interaction_id WHERE l.id=1")
+            .fetch_one(&reopened).await.unwrap();
+        assert_eq!(preserved, (None, None, "compass".into()));
     }
 }

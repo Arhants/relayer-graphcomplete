@@ -1,0 +1,75 @@
+Starting isolated production worktree test...
+Preparing worktree (new branch 'external-branch')
+Preparing worktree (detached HEAD a1a792e)
+Preparing worktree (detached HEAD a1a792e)
+Preparing worktree (detached HEAD a1a792e)
+Preparing worktree (detached HEAD a1a792e)
+Preparing worktree (detached HEAD a1a792e)
+Preparing worktree (detached HEAD a1a792e)
+Preparing worktree (detached HEAD a1a792e)
+Preparing worktree (detached HEAD a1a792e)
+Preparing worktree (detached HEAD a1a792e)
+Preparing worktree (detached HEAD a1a792e)
+Preparing worktree (detached HEAD a1a792e)
+Preparing worktree (detached HEAD a1a792e)
+Error occurred in handler for 'relayer:workspace-layout-read': Error: No handler registered for 'relayer:workspace-layout-read'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:share-pending': Error: No handler registered for 'relayer:share-pending'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:share-pending': Error: No handler registered for 'relayer:share-pending'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:share-pending': Error: No handler registered for 'relayer:share-pending'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:workspace-layout-read': Error: No handler registered for 'relayer:workspace-layout-read'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:share-pending': Error: No handler registered for 'relayer:share-pending'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:share-pending': Error: No handler registered for 'relayer:share-pending'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:share-pending': Error: No handler registered for 'relayer:share-pending'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:share-pending': Error: No handler registered for 'relayer:share-pending'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:share-pending': Error: No handler registered for 'relayer:share-pending'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:share-pending': Error: No handler registered for 'relayer:share-pending'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:share-pending': Error: No handler registered for 'relayer:share-pending'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:share-pending': Error: No handler registered for 'relayer:share-pending'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:share-pending': Error: No handler registered for 'relayer:share-pending'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:share-pending': Error: No handler registered for 'relayer:share-pending'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:share-pending': Error: No handler registered for 'relayer:share-pending'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:share-pending': Error: No handler registered for 'relayer:share-pending'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:share-pending': Error: No handler registered for 'relayer:share-pending'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:share-pending': Error: No handler registered for 'relayer:share-pending'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+Error occurred in handler for 'relayer:share-pending': Error: No handler registered for 'relayer:share-pending'
+    at Session.<anonymous> (node:electron/js2c/browser_init:2:115037)
+    at Session.emit (node:events:509:28)
+RELAYER_WORKTREES {"passed":true,"restartPersistence":true,"checkpoints":{"registeredCheckoutListScroll":true,"externalCheckoutSelection":true,"cachedRemoteDefaultBase":true,"sendOnlyMutation":true,"interruptedCreateDurableReopenReuse":true,"exactThreadWorkingDirectory":true,"selectedCommittedBase":true,"acceptedGraphAfterServerReopen":true,"missingSavedCwdBlocksExecution":true,"missingSavedCwdHistoryReadable":true,"rootConsolidationAcceptedLayerVisibility":true,"harnessReceivesExactCwd":true,"environmentSelectedCheckout":true,"environmentRejectsForeignThread":true,"environmentIgnoresStaleThreadResponse":true},"evidence":{"scrollingCheckouts":"docs/evidence/worktrees/07-many-registered-checkouts.png","menu":"docs/evidence/worktrees/01-checkout-menu.png","retry":"docs/evidence/worktrees/02-retry-after-create.png","graph":"docs/evidence/worktrees/03-accepted-worktree-thread.png","reopened":"docs/evidence/worktrees/04-reopened-exact-thread.png","environment":"docs/evidence/worktrees/06-selected-worktree-environment.png","missingHistory":"docs/evidence/worktrees/05-missing-location-readable-history.png"}}

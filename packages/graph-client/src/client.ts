@@ -338,6 +338,14 @@ export class RelayerGraphClient {
     return layer.layer;
   }
 
+  async proposeThreadIcon(icon: unknown): Promise<boolean> {
+    if (typeof icon !== "string") return false;
+    const result = await this.request<{ valid: boolean }>("/api/graph/thread-icon", {
+      method: "POST", body: JSON.stringify({ icon }),
+    });
+    return result.valid;
+  }
+
   async submit(interactionNode: NodeReference = this.capability.nodeId): Promise<CompletionOutput> {
     return this.request<CompletionOutput>("/api/graph/submit", {
       method: "POST",

@@ -1,0 +1,5 @@
+
+> relayer-graphcomplete@0.0.0 evidence:edge-shapes
+> RELAYER_CAPTURE_EDGE_SHAPE_EVIDENCE=1 electron scripts/capture-edge-shape-evidence.mjs
+
+Wrote 22 edge shape captures to docs/evidence/issue-616-edge-shapes.

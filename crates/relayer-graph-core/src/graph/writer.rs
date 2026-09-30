@@ -793,6 +793,22 @@ impl GraphWriter {
         Ok(record.owner)
     }
 
+    /// Record the first valid topic icon proposal for this completion. Invalid
+    /// selection is nonblocking; only accepted output exposes this metadata.
+    pub async fn propose_thread_icon(&self, icon: &str) -> Result<bool, GraphError> {
+        let mut transaction = self.database.storage.begin_write().await?;
+        self.ensure_writable(&mut transaction).await?;
+        let Some(icon) = crate::resolve_icon_name(icon) else {
+            transaction.commit().await?;
+            return Ok(false);
+        };
+        sqlx::query("INSERT INTO thread_icon_proposals(interaction_node_id,icon) VALUES (?1,?2) ON CONFLICT(interaction_node_id) DO NOTHING")
+            .bind(self.scope.root_node_id.value()).bind(icon)
+            .execute(&mut *transaction).await?;
+        transaction.commit().await?;
+        Ok(true)
+    }
+
     pub async fn completion_output(&self) -> Result<Option<CompletionOutput>, GraphError> {
         let mut transaction = self.database.storage.begin_read().await?;
         let state = CurrentTable::new(&mut transaction)

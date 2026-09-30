@@ -50053,3 +50053,14 @@ export const RELAYER_ICON_EXPORTS = Object.freeze({
   "zoom-in": "ZoomIn",
   "zoom-out": "ZoomOut"
 });
+/** Thread metadata uses the node grammar, with the original glyph while unselected. */
+export function threadIconMarkup(icon) {
+  const canonical = resolveRelayerIconName(icon);
+  return canonical ? createRelayerIcon(canonical, { width: 16, height: 16 }).outerHTML : "◌";
+}
+
+export function renderThreadTitle(root, thread) {
+  root.querySelector("#threadTitle").textContent = thread.title;
+  const icon = root.querySelector("#threadIcon");
+  if (icon) icon.innerHTML = threadIconMarkup(thread.icon);
+}
