@@ -1,3 +1,4 @@
+import { checkoutController, setCheckoutSubmitting } from "./checkout.js";
 import { isResolvedInvokeAction } from "./product-workspace/node-detail-runtime.js";
 import { preferredLayerNode, rememberedLayerSelection, rememberLayerSelection } from "./product-workspace/layer-selection.js";
 import { request } from "./api.js";
@@ -43,7 +44,7 @@ import { closePermissionMenu } from "./permission-profiles.js";
 import {
   followupRequestBody,
   markFollowupSendSucceeded,
-  newThreadRequestBody,
+  stableNewThreadRequest,
   stableFollowupInputId,
 } from "./interaction-request-model.js";
 import {
@@ -72,12 +73,13 @@ import {
   createEnvironmentRefreshScheduler,
   environmentBackoffAfterFailure,
   environmentRefreshNeeded,
+  environmentScopeKey,
   interactionReachedTerminal,
   latestInteractionForThread,
   resolveEnvironmentSnapshot,
 } from "./environment-context.js";
 import { onboardingTutorialController } from "./onboarding-tutorial.js";
-import { clearPendingNewThreadDraft } from "./composer-drafts.js";
+import { persistPendingNewThreadDraftDurably, clearPendingNewThreadDraft } from "./composer-drafts.js";
 import { projectComposerGate } from "./project-composer-navigation.js";
 
 // A pending result has no authority to replace a newer browsing intent.
@@ -141,6 +143,10 @@ function activeProjectId() {
   ))?.projectId ?? null;
 }
 
+function activeEnvironmentKey() {
+  return environmentScopeKey(activeProjectId(), viewState.currentThreadId);
+}
+
 function clearEnvironmentRefreshTimer() {
   environmentRefreshScheduler.clear();
 }
@@ -155,21 +161,21 @@ function environmentWorkspaceFocused() {
 function scheduleEnvironmentRefresh() {
   clearEnvironmentRefreshTimer();
   if (!environmentWorkspaceFocused()) return;
-  const projectId = activeProjectId();
-  const refreshRecord = environmentRefreshRecords.get(String(projectId)) ?? {
+  const scopeKey = activeEnvironmentKey();
+  const refreshRecord = environmentRefreshRecords.get(scopeKey) ?? {
     lastRequestedAt: 0,
     nextAttemptAt: 0,
   };
   environmentRefreshScheduler.schedule({
     eligible: true,
-    projectId,
+    projectId: scopeKey,
     lastRequestedAt: refreshRecord.lastRequestedAt,
     nextAttemptAt: refreshRecord.nextAttemptAt,
     now: Date.now(),
-    refresh: (scheduledProjectId) => {
+    refresh: (scheduledScopeKey) => {
       if (
         !environmentWorkspaceFocused()
-        || String(activeProjectId()) !== String(scheduledProjectId)
+        || activeEnvironmentKey() !== scheduledScopeKey
       ) return;
       void refreshCurrentEnvironment().catch(() => scheduleEnvironmentRefresh());
     },
@@ -191,23 +197,26 @@ export async function refreshCurrentEnvironment({ force = false, minimumAgeMs = 
     return false;
   }
   const now = Date.now();
-  const projectKey = String(projectId);
-  if (String(appState.environment?.projectId) !== projectKey) {
-    environmentRefreshRecords.set(projectKey, {
+  const threadId = viewState.currentThreadId;
+  const scopeKey = environmentScopeKey(projectId, threadId);
+  if (environmentScopeKey(appState.environment?.projectId, appState.environment?.threadId) !== scopeKey) {
+    environmentRefreshRecords.set(scopeKey, {
       lastRequestedAt: 0,
       failureCount: 0,
       nextAttemptAt: 0,
     });
   }
-  const refreshRecord = environmentRefreshRecords.get(projectKey) ?? {
+  const refreshRecord = environmentRefreshRecords.get(scopeKey) ?? {
     lastRequestedAt: 0,
     failureCount: 0,
     nextAttemptAt: 0,
   };
-  environmentRefreshRecords.set(projectKey, refreshRecord);
+  environmentRefreshRecords.set(scopeKey, refreshRecord);
   if (!environmentRefreshNeeded({
     currentProjectId: appState.environment?.projectId,
     requestedProjectId: projectId,
+    currentThreadId: appState.environment?.threadId,
+    requestedThreadId: threadId,
     lastRequestedAt: refreshRecord.lastRequestedAt,
     now,
     force,
@@ -217,18 +226,19 @@ export async function refreshCurrentEnvironment({ force = false, minimumAgeMs = 
     scheduleEnvironmentRefresh();
     return false;
   }
-  if (environmentRequestInFlight?.projectId === String(projectId)) {
-    environmentPostFlightQueue.queue(projectId, force);
+  if (environmentRequestInFlight?.scopeKey === scopeKey) {
+    environmentPostFlightQueue.queue(scopeKey, force);
     return environmentRequestInFlight.promise;
   }
-  environmentPostFlightQueue.discardExcept(projectId);
+  environmentPostFlightQueue.discardExcept(scopeKey);
   const requestSequence = ++environmentRequestSequence;
   refreshRecord.lastRequestedAt = now;
-  const previousSnapshot = String(appState.environment?.projectId) === String(projectId)
+  const previousSnapshot = environmentScopeKey(appState.environment?.projectId, appState.environment?.threadId) === scopeKey
     ? appState.environment?.snapshot ?? null
     : null;
   appState.environment = {
     projectId,
+    threadId,
     status: "loading",
     snapshot: previousSnapshot,
     error: null,
@@ -236,13 +246,14 @@ export async function refreshCurrentEnvironment({ force = false, minimumAgeMs = 
   if (!previousSnapshot && viewState.mainView === "thread") renderThread();
   const completion = (async () => {
   try {
-    const snapshot = await request(`/api/projects/${encodeURIComponent(projectId)}/environment`);
-    if (requestSequence !== environmentRequestSequence || String(activeProjectId()) !== String(projectId)) {
+    const snapshot = await request(`/api/projects/${encodeURIComponent(projectId)}/environment?threadId=${encodeURIComponent(threadId)}`);
+    if (requestSequence !== environmentRequestSequence || activeEnvironmentKey() !== scopeKey) {
       return false;
     }
     const resolved = resolveEnvironmentSnapshot(snapshot, previousSnapshot);
     appState.environment = {
       projectId,
+      threadId,
       status: resolved.status,
       snapshot: resolved.snapshot,
       error: resolved.error,
@@ -257,11 +268,12 @@ export async function refreshCurrentEnvironment({ force = false, minimumAgeMs = 
       refreshRecord.nextAttemptAt = 0;
     }
   } catch (error) {
-    if (requestSequence !== environmentRequestSequence || String(activeProjectId()) !== String(projectId)) {
+    if (requestSequence !== environmentRequestSequence || activeEnvironmentKey() !== scopeKey) {
       return false;
     }
     appState.environment = {
       projectId,
+      threadId,
       status: "error",
       snapshot: previousSnapshot,
       error: error?.message || "Project context is temporarily unavailable.",
@@ -274,15 +286,15 @@ export async function refreshCurrentEnvironment({ force = false, minimumAgeMs = 
   if (viewState.mainView === "thread") renderThread();
   return true;
   })();
-  environmentRequestInFlight = { projectId: String(projectId), promise: completion };
+  environmentRequestInFlight = { scopeKey, promise: completion };
   try {
     return await completion;
   } finally {
     if (environmentRequestInFlight?.promise === completion) {
       environmentRequestInFlight = null;
       if (environmentPostFlightQueue.consume(
-        projectId,
-        activeProjectId(),
+        scopeKey,
+        activeEnvironmentKey(),
         viewState.mainView === "thread",
       )) {
         void refreshCurrentEnvironment({ force: true }).catch(() => {});
@@ -303,6 +315,7 @@ export function stopEnvironmentRefresh() {
 
 export function updateCreateThreadAvailability() {
   $("#createThread").disabled = creatingFirstThread
+    || !checkoutController.ready
     || !$("#newThreadPrompt").value.trim()
     || !viewState.selectedPermissionProfileId
     || (productApiAvailable && !newThreadModelSelectionReady());
@@ -1453,7 +1466,7 @@ export async function invokeAction(action) {
 }
 
 async function createOrReuseProject(selectedScope) {
-  const input = { path: selectedScope.path, name: selectedScope.label };
+  const input = { path: selectedScope.path, name: selectedScope.label, separateSubfolder: selectedScope.separateSubfolder === true };
   try {
     return await request("/api/projects", {
       method: "POST",
@@ -1485,10 +1498,11 @@ export async function createFirstThread(pickerPayloadOverride = null) {
     toast("Choose an available model in Settings before sending.");
     return;
   }
-  if (!promptText || !permissionProfileId || creatingFirstThread) return;
+  if (!promptText || !permissionProfileId || creatingFirstThread || !checkoutController.ready) return;
   const submission = projectComposerGate.begin();
   const submissionIsCurrent = () => projectComposerGate.isCurrent(submission);
   creatingFirstThread = true;
+  setCheckoutSubmitting(true);
   input.disabled = true;
   $("#createThread").disabled = true;
   $("#permissionButton").disabled = true;
@@ -1510,21 +1524,24 @@ export async function createFirstThread(pickerPayloadOverride = null) {
       renderThread();
       return;
     }
+    selectedScope.creationRequestId ??= crypto.randomUUID();
+    await persistPendingNewThreadDraftDurably(promptText, selectedScope);
+    const execution = checkoutController.state ? await checkoutController.prepareSend() : null;
+    if (!submissionIsCurrent()) return;
     let projectId = selectedScope.projectId;
     if (selectedScope.kind === "folder") {
       const project = await createOrReuseProject(selectedScope);
       if (!submissionIsCurrent()) return;
       projectId = project.id;
     }
+    const threadRequest = stableNewThreadRequest(selectedScope, {
+      title: threadTitle(promptText), initialMessage: promptText, permissionProfileId,
+      projectId, pickerPayload, workingDirectory: execution?.workingDirectory || selectedScope.path,
+      expectedCheckout: execution?.commonDirectory ? { repositoryIdentity: execution.commonDirectory, checkoutRoot: execution.checkoutRoot, branch: execution.branch === "detached" ? null : execution.branch, commit: execution.commit } : undefined,
+    });
+    await persistPendingNewThreadDraftDurably(promptText, selectedScope);
     const thread = await request("/api/threads", {
-      method: "POST",
-      body: JSON.stringify(newThreadRequestBody({
-        title: threadTitle(promptText),
-        initialMessage: promptText,
-        permissionProfileId,
-        projectId,
-        pickerPayload,
-      })),
+      method: "POST", body: JSON.stringify(threadRequest),
     });
     if (!submissionIsCurrent()) return;
     viewState.currentThreadId = thread.id;
@@ -1536,10 +1553,12 @@ export async function createFirstThread(pickerPayloadOverride = null) {
     await loadThread(thread.id);
   } catch (error) {
     if (!submissionIsCurrent()) return;
+    checkoutController.reportSendError(error);
     await refreshAfterModelSelectionRejection(error);
     toast(error.message);
   } finally {
     creatingFirstThread = false;
+    setCheckoutSubmitting(false);
     input.disabled = false;
     $("#permissionButton").disabled = !viewState.selectedPermissionProfileId;
     setNewThreadModelPickerDisabled(false);
@@ -1550,6 +1569,7 @@ export async function createFirstThread(pickerPayloadOverride = null) {
 function clearSuccessfulNewThreadInput(input) {
   input.value = "";
   clearPendingNewThreadDraft();
+  checkoutController.clear();
 }
 
 export function connectEvents() {

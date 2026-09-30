@@ -39,8 +39,15 @@ pub(crate) struct Project {
     pub(crate) id: ProjectId,
     pub(crate) name: String,
     pub(crate) path: String,
+    pub(crate) aliases: Vec<ProjectAlias>,
     pub(crate) created_at: String,
     pub(crate) updated_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub(crate) struct ProjectAlias {
+    pub(crate) id: i64,
+    pub(crate) path: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,6 +55,9 @@ pub(crate) struct Thread {
     pub(crate) id: ThreadId,
     pub(crate) title: String,
     pub(crate) project_id: Option<ProjectId>,
+    pub(crate) working_directory: Option<String>,
+    pub(crate) checkout_context: Option<serde_json::Value>,
+    pub(crate) grouped_project_id: Option<ProjectId>,
     pub(crate) root_interaction_id: InteractionId,
     pub(crate) harness_configuration_name: String,
     pub(crate) permission_profile_id: String,

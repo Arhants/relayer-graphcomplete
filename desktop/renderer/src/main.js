@@ -1,3 +1,4 @@
+import { initializeCheckout } from "./checkout.js";
 import { initializeHumanTaskGrading } from "./human-task-grading.js";
 import { observeHumanTaskPresentation } from "./human-task-observer.js";
 import { initializeLayerSelections } from "./product-workspace/layer-selection.js";
@@ -6,7 +7,7 @@ import {
   setProviderOnboardingCompletionHandler,
   showApplication,
 } from "./auth.js";
-import { returnFromSettings, selectScope, setMainView, setSettingsTab } from "./navigation.js";
+import { returnFromSettings, renderSidebar, renderScopeMenu, selectScope, setMainView, setSettingsTab } from "./navigation.js";
 import {
   closePermissionMenu,
   loadPermissionProfiles,
@@ -128,13 +129,15 @@ function restoredDraftScope(scope) {
     const project = appState.projects.find((candidate) => (
       String(candidate.id) === String(scope.projectId)
     ));
-    return project ? projectScope(project) : { kind: "standalone", label: "No folder" };
+    const canonical = project || appState.projects.find((entry) => entry.aliases?.some((alias) => String(alias.id) === String(scope.projectId)));
+    return canonical ? { ...scope, ...projectScope(canonical), path: scope.path || canonical.path, checkout: scope.checkout, separateSubfolder: scope.separateSubfolder === true } : { kind: "standalone", label: "No folder" };
   }
   if (scope?.kind === "folder" && typeof scope.path === "string" && scope.path) {
     return {
       kind: "folder",
       label: typeof scope.label === "string" && scope.label ? scope.label : scope.path,
       path: scope.path,
+      ...scope,
       git: scope.git === true,
       ...(typeof scope.branch === "string" ? { branch: scope.branch } : {}),
     };
@@ -244,9 +247,25 @@ function bindEvents() {
     closeNewThreadModelPicker();
     togglePermissionMenu();
   };
+  initializeCheckout({
+    onAvailabilityChanged: updateCreateThreadAvailability,
+    onScopeChanged: () => {
+      renderSidebar(); renderScopeMenu();
+      const scope = viewState.selectedScope;
+      $("#scopeLabel").textContent = scope.label;
+      const summary = $("#folderSummary");
+      summary.classList.toggle("hidden", !scope.path);
+      if (scope.path) {
+        const label = document.createElement("b");
+        label.textContent = scope.git ? `Git · ${scope.branch || "repository"}` : "Local folder";
+        summary.replaceChildren(label, document.createTextNode(scope.path));
+      }
+    },
+  });
   $("#createThread").onclick = () => createFirstThread();
   $("#newThreadPrompt").oninput = () => {
     takeOverPendingAutomaticTutorial();
+    delete viewState.selectedScope.creationRequestId;
     persistPendingNewThreadDraft($("#newThreadPrompt").value, viewState.selectedScope);
     updateCreateThreadAvailability();
   };

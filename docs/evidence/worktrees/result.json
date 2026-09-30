@@ -1,0 +1,49 @@
+{
+  "passed": true,
+  "restartPersistence": true,
+  "checkpoints": {
+    "externalCheckoutSelection": true,
+    "cachedRemoteDefaultBase": true,
+    "sendOnlyMutation": true,
+    "interruptedCreateDurableReopenReuse": true,
+    "exactThreadWorkingDirectory": true,
+    "selectedCommittedBase": true,
+    "acceptedGraphAfterServerReopen": true,
+    "missingSavedCwdBlocksExecution": true,
+    "missingSavedCwdHistoryReadable": true,
+    "rootConsolidationAcceptedLayerVisibility": true,
+    "harnessReceivesExactCwd": true,
+    "environmentSelectedCheckout": true,
+    "environmentRejectsForeignThread": true,
+    "environmentIgnoresStaleThreadResponse": true
+  },
+  "sourceHashes": {
+    "scripts/test-desktop-worktrees.mjs": "5a8939f123a8137ed90d7b8b114dac9092ecf5152a6b1bc01d3b528f16c3e41c",
+    "scripts/run-worktree-test.mjs": "8597aedb535a59e33f8ee6b80ff2cb18e0f773caceefb197af3262c9b523158d",
+    "desktop/main/services/worktree-service.mjs": "e5d810e8b6b72f479cd18a9288a5b57c98cd5a26d3a1f374f068e5ffd6d348a9",
+    "desktop/main/ipc/register-ipc.mjs": "52d42125e061e77effb17191d3b5daad4a5168de1445487f1a85ee59c6c9f57f",
+    "desktop/preload/index.cjs": "706dac45a1c4ce472d0133c10dff8e362bbd9174ad32d87792efe0d272445789",
+    "desktop/renderer/src/checkout.js": "aaf92efd682992863a1f0e519f4ece18896b2eb665f776f1ad2d84f18e67e728",
+    "desktop/renderer/src/worktree-controller.js": "8ef7bdf6d8b97ef298e083ad42c7e87670e4bd588468970a43c1f73da60c0831",
+    "desktop/renderer/src/threads.js": "40f9df72296c665077906294936f0fd7b792e82b32c28f78e42f4445372a979c",
+    "desktop/renderer/src/composer-drafts.js": "15b619a244c6b27996805c60868b21123332376b7553380f82a8148103aa532c",
+    "desktop/renderer/src/environment-context.js": "9813114cc78844ce28c8532ef4585262be1c915f8c5cfac53334b623e69b66a6",
+    "desktop/renderer/src/product-workspace/workspace.js": "a057f04fbf33870c49366e8bcf8c95d4709024c743fc342c1906809f65009e24",
+    "crates/relayer-app-server/src/api/environment.rs": "0e48dae7b28c2ac064ec119719e8e5ca908e3be41a93722dd1915975c4580d51"
+  },
+  "binaryHashes": {
+    "relayer-app-server": "26720dfe7b56b18f10c5da6bf8628e52fa7647a9776c5152581f0225cac151a6",
+    "relayer-graph-server": "f1f309c720cb3d444a484f348d6b801daa562a2bf93dd5ca381e94ad79671a20"
+  },
+  "planId": "8bfbc62768404332a30e9716be9a6c42",
+  "workingDirectory": "/private/var/folders/dw/zlxwg4f160x18375bk2bx6h00000gn/T/relayer-worktrees-UL8H6V/worktrees/8bfbc62768404332a30e9716be9a6c42",
+  "acceptedInteractions": 1,
+  "evidence": {
+    "menu": "/Volumes/2T-SSD/worktrees/8838/relayer-graphcomplete/.relayer/evidence/worktrees/01-checkout-menu.png",
+    "retry": "/Volumes/2T-SSD/worktrees/8838/relayer-graphcomplete/.relayer/evidence/worktrees/02-retry-after-create.png",
+    "graph": "/Volumes/2T-SSD/worktrees/8838/relayer-graphcomplete/.relayer/evidence/worktrees/03-accepted-worktree-thread.png",
+    "reopened": "/Volumes/2T-SSD/worktrees/8838/relayer-graphcomplete/.relayer/evidence/worktrees/04-reopened-exact-thread.png",
+    "environment": "/Volumes/2T-SSD/worktrees/8838/relayer-graphcomplete/.relayer/evidence/worktrees/06-selected-worktree-environment.png",
+    "missingHistory": "/Volumes/2T-SSD/worktrees/8838/relayer-graphcomplete/.relayer/evidence/worktrees/05-missing-location-readable-history.png"
+  }
+}

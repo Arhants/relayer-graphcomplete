@@ -195,6 +195,7 @@ export function registerDesktopIpc({
   validateProviderOnboarding = null,
   conversationExporter,
   shareCoordinator = null,
+  worktrees = null,
   settings,
   tutorial,
   updater,
@@ -375,6 +376,7 @@ export function registerDesktopIpc({
     await settings.update((current) => ({ ...current, appearance }));
     return { appearance };
   });
+  if (worktrees) registerWorktreeIpc({ ipcMain, worktrees });
   registerComposerDraftIpc({ ipcMain, settings });
   registerLayerSelectionIpc({ ipcMain, settings });
   registerWorkspaceLayoutIpc({ ipcMain, settings });
@@ -404,4 +406,15 @@ export function registerDesktopIpc({
     await settings.update((current) => ({ ...current, updateChannel: channel }));
     return state;
   });
+}
+
+// Electron does not preserve custom Error properties across invoke. Keep the
+// closed service code and safe recovery details in an explicit response.
+export function registerWorktreeIpc({ ipcMain, worktrees }) {
+  for (const method of ["inspect", "validateSelection", "plan", "create", "reconcile", "readPlan"]) {
+    ipcMain.handle(`relayer:worktrees-${method}`, async (_event, input) => {
+      try { return { ok: true, value: await worktrees[method](input) }; }
+      catch (error) { return { ok: false, error: { code: error.code || "worktree_failed", message: error.message, details: error.details } }; }
+    });
+  }
 }

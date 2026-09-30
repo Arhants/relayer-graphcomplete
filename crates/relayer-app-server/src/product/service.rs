@@ -124,8 +124,14 @@ pub(crate) enum ProductError {
         path: &'static str,
         message: String,
     },
+    #[error("selected checkout changed before sending")]
+    CheckoutChanged {
+        path: String,
+        expected: Box<serde_json::Value>,
+        current: Box<serde_json::Value>,
+    },
     #[error("project already exists")]
-    ProjectExists(Project),
+    ProjectExists(Box<Project>),
     #[error("folder unavailable at {path}: {reason}")]
     FolderUnavailable { path: String, reason: String },
     #[error(transparent)]
@@ -1027,9 +1033,25 @@ impl ProductService {
         self.storage.list_projects().await.map_err(Into::into)
     }
 
+    pub(crate) async fn consolidate_projects(&self) -> Result<Vec<Project>, ProductError> {
+        let all = self.storage.all_projects().await?;
+        let groups = super::work_context::root_groups(&all).await?;
+        self.storage.consolidate_projects(&groups).await?;
+        self.list_projects().await
+    }
+
+    #[cfg(test)]
     pub(crate) async fn create_project(
         &self,
         command: CreateProjectCommand,
+    ) -> Result<ProjectWriteOutcome, ProductError> {
+        self.create_project_with_scope(command, false).await
+    }
+
+    pub(crate) async fn create_project_with_scope(
+        &self,
+        mut command: CreateProjectCommand,
+        separate_subfolder: bool,
     ) -> Result<ProjectWriteOutcome, ProductError> {
         let supplied_path = required(&command.path, "path")?;
         let canonical_path = tokio::fs::canonicalize(supplied_path)
@@ -1050,6 +1072,38 @@ impl ProductService {
                 canonical_path.display()
             )));
         }
+        let git = super::work_context::git_identity(&canonical_path).await?;
+        let canonical_path = if let Some(identity) = git.as_ref() {
+            if !separate_subfolder {
+                self.consolidate_projects().await?;
+                let all = self.storage.all_projects().await?;
+                for project in all {
+                    let existing = std::path::Path::new(&project.path);
+                    if !existing.is_dir() {
+                        continue;
+                    }
+                    if let Ok(Some(other)) = super::work_context::git_identity(existing).await
+                        && other.common == identity.common
+                        && existing == other.checkout
+                    {
+                        return Ok(ProjectWriteOutcome {
+                            project,
+                            created: false,
+                        });
+                    }
+                }
+                command.name = Some(identity.name.clone());
+                if identity.root.is_dir() {
+                    identity.root.clone()
+                } else {
+                    identity.checkout.clone()
+                }
+            } else {
+                canonical_path
+            }
+        } else {
+            canonical_path
+        };
         let path = stored_project_path(&canonical_path)?;
         let name = command
             .name
@@ -1069,19 +1123,217 @@ impl ProductService {
             .insert_or_get_project(&name, &path, &timestamp)
             .await?;
         if !created && !command.reuse_existing {
-            return Err(ProductError::ProjectExists(project));
+            return Err(ProductError::ProjectExists(Box::new(project)));
         }
         Ok(ProjectWriteOutcome { project, created })
     }
 
+    pub(crate) async fn thread_directory(
+        &self,
+        thread: &Thread,
+        standalone: &std::path::Path,
+    ) -> Result<String, ProductError> {
+        if let Some(path) = &thread.working_directory {
+            let metadata =
+                tokio::fs::metadata(path)
+                    .await
+                    .map_err(|e| ProductError::FolderUnavailable {
+                        path: path.clone(),
+                        reason: e.to_string(),
+                    })?;
+            if !metadata.is_dir() {
+                return Err(ProductError::FolderUnavailable {
+                    path: path.clone(),
+                    reason: "not a directory".into(),
+                });
+            }
+            let _ =
+                tokio::fs::read_dir(path)
+                    .await
+                    .map_err(|e| ProductError::FolderUnavailable {
+                        path: path.clone(),
+                        reason: e.to_string(),
+                    })?;
+            if let Some(expected) = thread.checkout_context.as_ref() {
+                let current = super::work_context::git_identity(std::path::Path::new(path)).await?;
+                let matches = current.as_ref().is_some_and(|git| {
+                    expected["repositoryIdentity"].as_str() == git.common.to_str()
+                        && expected["checkoutRoot"].as_str() == git.checkout.to_str()
+                });
+                if !matches {
+                    return Err(ProductError::FolderUnavailable {
+                        path: path.clone(),
+                        reason: "saved checkout identity changed".into(),
+                    });
+                }
+            }
+            return Ok(path.clone());
+        }
+        if thread.project_id.is_some() {
+            return Err(ProductError::Invalid(
+                "thread has no saved working directory".into(),
+            ));
+        }
+        let path = standalone.join(thread.id.value().to_string());
+        tokio::fs::create_dir_all(&path)
+            .await
+            .map_err(|e| ProductError::FolderUnavailable {
+                path: path.to_string_lossy().into(),
+                reason: e.to_string(),
+            })?;
+        Ok(path.to_string_lossy().into())
+    }
+
+    pub(crate) async fn restore_unstarted_thread_root(
+        &self,
+        id: ThreadId,
+    ) -> Result<bool, ProductError> {
+        self.storage
+            .restore_unstarted_thread_root(id)
+            .await
+            .map_err(Into::into)
+    }
     pub(crate) async fn list_threads(&self) -> Result<Vec<Thread>, ProductError> {
         self.storage.list_threads().await.map_err(Into::into)
     }
 
+    #[cfg(test)]
     pub(crate) async fn create_thread(
         &self,
         command: CreateThreadCommand,
     ) -> Result<Thread, ProductError> {
+        self.create_thread_in_directory(command, None).await
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn create_thread_in_directory(
+        &self,
+        command: CreateThreadCommand,
+        working_directory: Option<&str>,
+    ) -> Result<Thread, ProductError> {
+        self.create_thread_with_request(command, working_directory, None)
+            .await
+            .map(|(thread, _)| thread)
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn create_thread_with_request(
+        &self,
+        command: CreateThreadCommand,
+        working_directory: Option<&str>,
+        creation_request_id: Option<&str>,
+    ) -> Result<(Thread, bool), ProductError> {
+        self.create_thread_with_expected_checkout(
+            command,
+            working_directory,
+            creation_request_id,
+            None,
+        )
+        .await
+    }
+
+    pub(crate) async fn verify_expected_checkout(
+        &self,
+        thread: &Thread,
+        expected: &super::ExpectedCheckout,
+    ) -> Result<(), ProductError> {
+        let path = thread
+            .working_directory
+            .as_deref()
+            .ok_or_else(|| ProductError::Invalid("expectedCheckout requires a folder".into()))?;
+        super::work_context::verify_checkout(std::path::Path::new(path), expected).await
+    }
+
+    pub(crate) async fn create_thread_with_expected_checkout(
+        &self,
+        command: CreateThreadCommand,
+        working_directory: Option<&str>,
+        creation_request_id: Option<&str>,
+        expected_checkout: Option<&super::ExpectedCheckout>,
+    ) -> Result<(Thread, bool), ProductError> {
+        if let Some(id) = creation_request_id
+            && (id.trim().is_empty() || id.len() > 128)
+        {
+            return Err(ProductError::Invalid(
+                "creationRequestId must contain 1–128 characters".into(),
+            ));
+        }
+        let directory = match working_directory {
+            Some(path) => {
+                if command.project_id.is_none() {
+                    return Err(ProductError::Invalid(
+                        "workingDirectory requires a project".into(),
+                    ));
+                }
+                let path = tokio::fs::canonicalize(path).await.map_err(|e| {
+                    ProductError::FolderUnavailable {
+                        path: path.into(),
+                        reason: e.to_string(),
+                    }
+                })?;
+                if !path.is_dir() {
+                    return Err(ProductError::Invalid(
+                        "workingDirectory is not a directory".into(),
+                    ));
+                }
+                Some(stored_project_path(&path)?)
+            }
+            None => None,
+        };
+        if let Some(expected) = expected_checkout {
+            let selected = directory
+                .clone()
+                .or(match command.project_id {
+                    Some(id) => self.storage.get_project(id).await?.map(|p| p.path),
+                    None => None,
+                })
+                .ok_or_else(|| {
+                    ProductError::Invalid("expectedCheckout requires a folder".into())
+                })?;
+            super::work_context::verify_checkout(std::path::Path::new(&selected), expected).await?;
+        }
+        if let (Some(selected), Some(project_id)) = (directory.as_ref(), command.project_id) {
+            let project = self
+                .storage
+                .get_project(project_id)
+                .await?
+                .ok_or_else(|| ProductError::NotFound(format!("project {project_id}")))?;
+            let project_path = std::path::Path::new(&project.path);
+            match (
+                super::work_context::git_identity(project_path).await?,
+                super::work_context::git_identity(std::path::Path::new(selected)).await?,
+            ) {
+                (Some(project_git), Some(selected_git))
+                    if project_git.common == selected_git.common =>
+                {
+                    let relative =
+                        project_path
+                            .strip_prefix(&project_git.checkout)
+                            .map_err(|_| {
+                                ProductError::Invalid("project subfolder escapes checkout".into())
+                            })?;
+                    // Root projects accept explicit subfolder cwd; intentional subfolder projects retain their exact relative scope.
+                    if !relative.as_os_str().is_empty()
+                        && std::path::Path::new(selected) != selected_git.checkout.join(relative)
+                    {
+                        return Err(ProductError::Invalid(
+                            "selected checkout does not preserve project subfolder".into(),
+                        ));
+                    }
+                    if !std::path::Path::new(selected).starts_with(&selected_git.checkout) {
+                        return Err(ProductError::Invalid(
+                            "workingDirectory escapes selected checkout".into(),
+                        ));
+                    }
+                }
+                (None, None) if project_path == std::path::Path::new(selected) => {}
+                _ => {
+                    return Err(ProductError::Invalid(
+                        "workingDirectory belongs to another repository or folder".into(),
+                    ));
+                }
+            }
+        }
         let message = required(&command.initial_message, "initialMessage")?;
         match command.model_selection.as_ref() {
             Some(selection) => {
@@ -1116,8 +1368,28 @@ impl ProductService {
             .take(120)
             .collect::<String>();
         let timestamp = now();
+        let selected_path = directory.clone().or(match command.project_id {
+            Some(id) => self.storage.get_project(id).await?.map(|p| p.path),
+            None => None,
+        });
+        let checkout_context = match selected_path.as_deref() {
+            Some(path) => super::work_context::checkout_context(std::path::Path::new(path)).await?,
+            None => None,
+        };
+        if let Some(expected) = expected_checkout {
+            let expected = super::work_context::normalized_expected_checkout(expected).await?;
+            if checkout_context.as_ref() != Some(&expected) {
+                return Err(ProductError::CheckoutChanged {
+                    path: selected_path.clone().unwrap_or_default(),
+                    expected: Box::new(expected),
+                    current: Box::new(checkout_context.unwrap_or(serde_json::Value::Null)),
+                });
+            }
+        }
+        let context_json = checkout_context.as_ref().map(serde_json::Value::to_string);
+        let payload=serde_json::json!({"title":title,"projectId":command.project_id.map(ProjectId::value),"initialMessage":message,"harness":command.harness_configuration_name,"permission":command.permission_profile_id,"workingDirectory":directory,"modelSelection":command.model_selection}).to_string();
         self.storage
-            .insert_thread_with_initial_interaction_and_personal_presentation(
+            .insert_thread_with_creation_request(
                 NewThreadRecord {
                     title: &title,
                     project_id: command.project_id,
@@ -1128,6 +1400,9 @@ impl ProductService {
                     timestamp: &timestamp,
                 },
                 command.personal_presentation_version_key.as_deref(),
+                directory.as_deref(),
+                context_json.as_deref(),
+                creation_request_id.map(|id| (id, payload.as_str())),
             )
             .await
             .map_err(Into::into)

@@ -817,6 +817,9 @@ impl RelayerAppServer {
             .map(|runtime| runtime.standalone_workspaces_directory.clone())
             .unwrap_or_else(|| config.database_path.with_file_name("workspaces"));
         let product = ProductService::new(storage, runtime.is_some());
+        if let Err(error) = product.consolidate_projects().await {
+            eprintln!("project consolidation deferred: {error}");
+        }
         let execution_lease_reconciler = runtime.clone().map(|runtime| {
             let reconciler = ExecutionLeaseReconciler::start(product.clone(), runtime);
             reconciler.schedule();

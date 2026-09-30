@@ -10,6 +10,8 @@ import {
   environmentBackoffAfterFailure,
   environmentRefreshDelay,
   environmentRefreshNeeded,
+  environmentScopeKey,
+  environmentProjectForThread,
   interactionReachedTerminal,
   latestInteractionForThread,
   resolveEnvironmentSnapshot,
@@ -122,6 +124,19 @@ describe("desktop environment rail", () => {
     }, project).message).toBe("Request timed out");
   });
 
+  it("hides a cached snapshot from another thread in the same project before refresh completes", () => {
+    const environment = { projectId: 7, threadId: 10, status: "ready",
+      snapshot: { kind: "git", branch: "previous-checkout", worktreeLabel: "previous", changes: {} } };
+    for (const status of ["ready", "loading", "error"]) {
+      expect(environmentPresentation({ ...environment, status }, project, 11))
+        .toMatchObject({ mode: "loading", busy: true });
+    }
+    expect(environmentPresentation(environment, project, 10))
+      .toMatchObject({ mode: "facts", branch: "previous-checkout" });
+    expect(environmentPresentation({ ...environment, threadId: undefined }, project, 11))
+      .toMatchObject({ mode: "loading", busy: true });
+  });
+
   it("keeps retained Git, folder, and unavailable snapshots visible after refresh errors", () => {
     const retained = (snapshot) => environmentPresentation({
       projectId: 7,
@@ -188,6 +203,32 @@ describe("desktop environment rail", () => {
       now,
     })).toBe(true);
     expect(environmentRefreshNeeded({ requestedProjectId: null, now, lastRequestedAt: 0 })).toBe(false);
+  });
+
+  it("refreshes a different thread in the same project without reusing its snapshot or queued refresh", () => {
+    const first = environmentScopeKey(7, 10);
+    const second = environmentScopeKey(7, 11);
+    expect(first).not.toBe(second);
+    expect(environmentRefreshNeeded({ currentProjectId: 7, requestedProjectId: 7,
+      currentThreadId: 10, requestedThreadId: 11, lastRequestedAt: 20_000, now: 20_000,
+      nextAttemptAt: 60_000 })).toBe(true);
+    const queue = createPostFlightRefreshQueue();
+    queue.queue(first, true);
+    queue.discardExcept(second);
+    expect(queue.consume(first, second, true)).toBe(false);
+    expect(queue.consume(first, first, true)).toBe(false);
+    queue.queue(second, true);
+    expect(queue.consume(second, second, true)).toBe(true);
+  });
+
+  it("presents grouped project names while retaining the thread's original environment authority", () => {
+    const grouped = { id: 7, name: "Repository", aliases: [{ id: 9, path: "/linked" }] };
+    const resolved = environmentProjectForThread([grouped], { projectId: 9, groupedProjectId: 7 });
+    expect(resolved).toMatchObject({ id: 9, name: "Repository" });
+    expect(environmentPresentation({ projectId: 9, threadId: 10, status: "ready",
+      snapshot: { kind: "git", branch: "selected", worktreeLabel: "linked", changes: {} } }, resolved)).toMatchObject({ branch: "selected", worktreeLabel: "linked" });
+    expect(environmentProjectForThread([grouped], { projectId: 9 })).toMatchObject({ id: 9 });
+    expect(environmentProjectForThread([grouped], { projectId: null })).toBeNull();
   });
 
   it("applies capped exponential error backoff to background and focus refreshes", () => {

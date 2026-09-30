@@ -15,6 +15,8 @@ pub(super) struct CreateProjectRequest {
     name: Option<String>,
     #[serde(default)]
     reuse_existing: bool,
+    #[serde(default)]
+    separate_subfolder: bool,
 }
 
 #[derive(Serialize)]
@@ -45,11 +47,14 @@ pub(super) async fn create(
     authorize_write(&state, &headers)?;
     let outcome = state
         .product
-        .create_project(CreateProjectCommand {
-            path: request.path,
-            name: request.name,
-            reuse_existing: request.reuse_existing,
-        })
+        .create_project_with_scope(
+            CreateProjectCommand {
+                path: request.path,
+                name: request.name,
+                reuse_existing: request.reuse_existing,
+            },
+            request.separate_subfolder,
+        )
         .await?;
     let status = if outcome.created {
         StatusCode::CREATED
@@ -57,4 +62,19 @@ pub(super) async fn create(
         StatusCode::OK
     };
     Ok((status, Json(outcome.project.into())))
+}
+
+pub(super) async fn consolidate(
+    State(state): State<ApiState>,
+    headers: HeaderMap,
+) -> Result<Json<ProjectsResponse>, ApiError> {
+    authorize_write(&state, &headers)?;
+    let projects = state
+        .product
+        .consolidate_projects()
+        .await?
+        .into_iter()
+        .map(Into::into)
+        .collect();
+    Ok(Json(ProjectsResponse { projects }))
 }

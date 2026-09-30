@@ -480,13 +480,14 @@ describe("desktop skeleton", () => {
       ["#permissionMenu", permissionMenu],
       ["#toast", toastElement],
     ]);
+    const localStorage = { getItem: vi.fn(() => null), setItem: vi.fn() };
     Object.assign(globalThis, {
       document: { querySelector: (selector) => elements.get(selector) },
       fetch,
       history: { replaceState: vi.fn() },
       location: new URL("http://127.0.0.1:43123/"),
-      localStorage: { setItem: vi.fn() },
-      window: { GRAPHCOMPLETE_CONFIG: null, relayerDesktop: undefined },
+      localStorage,
+      window: { GRAPHCOMPLETE_CONFIG: null, relayerDesktop: undefined, localStorage },
     });
     vi.useFakeTimers();
     const cancelPendingAutomatic = vi.fn();
@@ -507,7 +508,7 @@ describe("desktop skeleton", () => {
       const first = createFirstThread(pickerPayload);
       const repeated = createFirstThread(pickerPayload);
       expect(cancelPendingAutomatic).toHaveBeenCalledTimes(2);
-      expect(fetch).toHaveBeenCalledOnce();
+      await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce());
       expect(cancelPendingAutomatic.mock.invocationCallOrder[0])
         .toBeLessThan(fetch.mock.invocationCallOrder[0]);
       expect(JSON.parse(fetch.mock.calls[0][1].body)).toMatchObject({
@@ -579,6 +580,8 @@ describe("desktop skeleton", () => {
       });
       await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce());
 
+      const persistedBeforeSuperseding = structuredClone(localStorage.setItem.mock.calls);
+      expect(persistedBeforeSuperseding.length).toBeGreaterThan(0);
       projectComposerGate.begin();
       viewState.selectedScope = { kind: "project", projectId: 2, label: "Second" };
       resolveRequest(new Response(JSON.stringify({ id: 42, rootInteractionId: 84 }), {
@@ -589,7 +592,7 @@ describe("desktop skeleton", () => {
 
       expect(viewState.currentThreadId).toBeNull();
       expect(input.value).toBe("Keep the newer project draft");
-      expect(localStorage.setItem).not.toHaveBeenCalled();
+      expect(localStorage.setItem.mock.calls).toEqual(persistedBeforeSuperseding);
       expect(toastElement.textContent).toBe("");
     } finally {
       vi.doUnmock("../desktop/renderer/src/onboarding-tutorial.js");

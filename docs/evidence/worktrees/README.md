@@ -1,0 +1,93 @@
+# Worktree checkpoint and evidence plan
+
+Product authority: PRD §3.2, §3.4, SCP-004–006 and SCP-022–026. The human approved
+P1–P8 individually, W1–W2 individually, W3–W9 as a batch, and all C/M/L cases.
+The final M3 choice keeps both intentional subfolder projects. Later corrections
+supersede the original matrix: branches are automatic random hashes, creation
+choices stay inside Checkout, and custom-location/branch-name UI is removed.
+Production implementation and an open, verified PR are now authorized; merging
+remains the human gate. The throwaway prototype is design input only.
+
+## Changed executable seams and checkpoints
+
+| Promise / changed seam | Smallest production checkpoint |
+| --- | --- |
+| Ordinary folder / No folder keep their semantics; Git discovery blocks Send, preserves draft and rejects stale replies | `worktree-controller.test.mjs` deferred/failure lifecycle; `worktree-renderer.test.mjs` renders real composer HTML through loading, ordinary folder, failed inspection and Git states |
+| Registered roots, linked worktrees, subfolders, nested repositories and independent clones | `worktree-service.test.mjs` real temporary Git identity/inventory fixture; Rust `root_alias_grouping_keeps_cwd_graph_identity_clones_and_intentional_subfolders` |
+| Dirty, detached and removal-locked entries remain selectable; missing/inaccessible/escaping subfolders do not fall back | Git lifecycle inventory and selection tests use real directories, permissions, symlinks and commits; renderer controller retains the prior choice after failure |
+| Shared-use warning covers intentional subfolders in the same checkout and permits Send | Production `checkoutSharingThreads` checkpoint includes sibling subfolders, a separate linked checkout and a nested repository; renderer queries matching threads' current interactions |
+| Changed branch/SHA requires acknowledgment, including the API admission boundary | Git service validation; controller acknowledgment and server-error normalization fixtures; Rust `expected_checkout_blocks_branch_and_commit_changes_before_thread_storage` and API `checkout_changed` response fixture |
+| Base choices include committed Checkout HEAD, local branches and cached remote branches; unknown defaults require a choice | Real Git default/base/HEAD tests; controller refreshes Checkout base when switching trees; Electron driver verifies cached origin/main default and selected committed base |
+| Creation choices live inside Checkout in the existing composer; no branch-name/location inputs; only Send mutates | Production renderer DOM test plus Electron `sendOnlyMutation` and screenshot `01-checkout-menu.png` |
+| Durable ownership and recovery use one random branch/destination, reject occupied/mismatched receipts and retain partial success | Git service receipt/concurrent-create/reconcile fixtures, including foreign plan selection rejection; controller persists before mutation and recovers the same ID after lost replies/reopen |
+| Failed persistence cannot authorize creation; edited prompt/model/permission intent renews thread ID, acknowledgment retains it | `composer-drafts.test.mjs` durable oversized/write failure; controller/`stableNewThreadRequest` checkpoints; no overlapping test was deleted |
+| Exact saved cwd survives reopen; missing locations block provider execution while history remains readable | Rust `scope_persists_across_reopen_and_missing_checkout_never_falls_back`; Electron actual harness context, app-server reopen and missing-cwd follow-up checkpoints |
+| Legacy bindings precede initial/later root grouping; intentional subfolder projects remain distinct; unresolved records and rollback preserve data | Rust migration `legacy_thread_scope_is_backfilled_before_project_grouping_and_reopen`, grouping fixture, and `consolidation_failure_rolls_back_every_alias_and_name` |
+| Root grouping does not rewrite graph provenance or accepted visibility | Electron `rootConsolidationAcceptedLayerVisibility` seeds a legacy linked-root project, accepts through the production API/runtime, and compares the exact graph layer read before/after consolidation |
+| Duplicate first Send and zero-effect startup retry cannot fork execution | Rust creation receipt fixture verifies same thread/root, changed payload rejection, safe restoration only without graph node/attempts, and single-winner preparing claim; controller retains the created worktree across retry |
+| Thread Environment uses the saved checkout and rejects stale same-project thread responses and foreign-thread project authority | Rust Environment HTTP scope fixture; `environment-rail.test.mjs` thread cache/presentation checkpoints; Electron three Environment checkpoints |
+| Shared workspace module dependencies remain in sealed public share artifacts; telemetry module inventory remains complete | `public-share-viewer-artifact.test.mjs` complete imported module closure; `desktop-telemetry-module-inventory.test.mjs` inventory contract |
+| Authenticated transport retains recovery errors; migrations preserve schema integrity | Production Electron IPC/API path, existing app-server API authority suite, full deterministic check; updated partial-index rejection fixture includes current columns and still rejects partial unique indexes |
+
+Project consolidation is display grouping through aliases. Original thread project
+IDs and graph partitions remain intact; no cross-root graph sharing is introduced.
+Removing a project or abandoning creation choices performs no worktree deletion.
+
+## Required verification plan
+
+- Warm loop: targeted `npx vitest run test/worktree-service.test.mjs test/worktree-controller.test.mjs`
+  and the affected app-server Rust tests. Record individual scenario results.
+- Before commit: `npm run check` and `npm run build`, as required by AGENTS.md.
+- Existing scope desktop proof: `npm run test:desktop:project-new-thread` covers
+  its documented draft/navigation behavior. It does not automatically certify
+  new worktree controls or full Electron restart recovery. Production-rendered
+  worktree interaction/screenshots and interrupted-create restart proof need an
+  explicitly named driver before they can be claimed.
+- CI: run every planner-selected chapter and require `check`; docs/evidence
+  changes currently select the conservative full portfolio. Selected skipped
+  chapters are failures. Source changes retain the complete fresh Vitest portfolio.
+- Before cold native compilation, inspect trusted Ladybug/runtime artifacts per
+  `docs/agents/ci.md`; verify source/platform/profile identity and byte hashes.
+  Record a miss/rejection before source fallback. Cache hits never replace tests.
+- Development packaging uses its verified cache and fresh afterPack checks when
+  selected by CI. No signed release, live-provider or release-candidate proof is
+  implied by this development PR.
+
+## Actual execution and evidence
+
+On September 30, 2026, targeted Git lifecycle tests passed 7 scenarios. The warm
+controller, renderer and composer persistence run passed 20 scenarios. These use
+production seams and isolated temporary data, without paid inference.
+
+Both production Electron runners passed: `scripts/run-worktree-test.mjs` (14
+independently reported checkpoints) and `scripts/run-project-new-thread-test.mjs`
+(existing draft/navigation scope proof). The worktree driver records per-source
+and binary SHA-256 values in `.relayer/evidence/worktrees/result.json` and captures
+six production screenshots. The final rerun receipt is preserved beside this
+README when verification finishes. Main service/settings/renderer recreation and
+an app-server child restart are observed; a complete Electron OS-process restart
+is not claimed. Windows native directory syncing and platform UI remain
+unverified locally and rely on their declared platform contexts.
+
+The first full check failed Clippy after Project grew beyond the large-error
+threshold; the error variant is now boxed. The next check reached the persistence
+suite and failed the old partial-index fixture because its recreated tables
+omitted migration 38 columns. The fixture was updated without weakening its
+partial-index rejection boundary, and its exact persistence/restart test passed.
+A later full check exposed the public-share module closure missing the new Environment helper and asynchronous composer tests asserting before durable pre-Send persistence. The closure and awaited fixture boundaries were repaired; the three affected files passed 69 tests without unhandled errors. Two real Git lifecycle scenarios exceeded their default 15-second limit under the full portfolio; they now have explicit 30-second budgets and all seven lifecycle scenarios pass. The unrelated sealed Homebrew runtime scenario also timed out under overlapping machine load; its boundary was not weakened and the full portfolio is being rerun. The production build passed. The frozen `npm run check` passed formatting, Clippy, Rust, crash reconciliation, package builds and TypeScript checks, then exited with two unrelated Vitest timeouts (sealed Homebrew Node and autonomous calibration). The unchanged complete portfolio rerun `npx vitest run --maxWorkers=2` passed 241 files / 3,195 tests, with the same 1 skipped file / 3 skipped tests. This does not rewrite the outer `npm run check` failure as a pass. The remaining outer-command gates were run explicitly: secret boundary 2/2, Python 60/60, Ladybug receipts and PRD readability passed. No timeout budget was widened for the unrelated scenarios. The final production driver passed all 14 checkpoints, and the existing project-new-thread driver passed its restart and layer-selection markers. Two driver failures were retained and diagnosed: returning a function across Electron's serialization boundary, then treating hidden retained branch text as ready. The driver now waits for selected thread identity, ready Environment state and visible facts before releasing the delayed response. Production sources were unchanged by these driver repairs.
+
+The full portfolio and remaining gates used executable/test digest `3feb8c7fbc8c3221b8a7c7de74f89f086b202da1038873360d5932ec978bc3e5`; only `scripts/test-desktop-worktrees.mjs` changed afterward. The final 14-checkpoint run observes that changed seam under digest `c0ef4848f530e88f2d0452dbfe508523e55c8b56d535cd4752f655d0790f1369`. All result source hashes and both binary hashes match the committed manifests. The screenshots beside this ledger came from that final run. Adversarial reviewer `/root/adversarial_review` independently verified the final 48-file digest, all 12 source hashes in the production receipt, both current binary hashes and all six screenshot copies. Verdict: pass for source authority, retry/storage and the 14 observed production checkpoints; no unresolved findings. This review is recorded in the PR as a compact assertion. Hosted CI and freshness remain separate pending gates.
+
+The existing shared Cargo target was warm and contained trusted local prior
+build outputs. Source was compiled against the current inputs; no external
+Ladybug/runtime artifact restoration or cache-hit proof is claimed. Cache reuse
+never substitutes for the fresh tests above.
+
+## PR handoff gate
+
+Open a main-targeting PR with a unique head commit and attach it to the task.
+Address actionable CI/review findings before marking it ready. Report the exact
+locally tested commit and GitHub's immutable merge/head identities separately.
+Required CI includes `check` and `merge-freshness-status`: successful evidence is
+valid for less than 12 hours from the original CI run creation, not a rerun's
+completion. Keep human merge approval as the final gate; do not merge.

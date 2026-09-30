@@ -4,6 +4,9 @@ export function newThreadRequestBody({
   permissionProfileId,
   projectId,
   pickerPayload,
+  workingDirectory,
+  creationRequestId,
+  expectedCheckout,
 }) {
   return {
     title,
@@ -12,7 +15,24 @@ export function newThreadRequestBody({
     harnessId: pickerPayload.harnessId,
     modelSelection: pickerPayload.modelSelection,
     ...(projectId ? { projectId } : {}),
+    ...(projectId && workingDirectory ? { workingDirectory } : {}),
+    ...(creationRequestId ? { creationRequestId } : {}),
+    ...(expectedCheckout ? { expectedCheckout } : {}),
   };
+}
+
+// An unchanged first Send retries its existing receipt; an edited request is a
+// new user intent while any already-created worktree remains in the draft.
+export function stableNewThreadRequest(scope, input, createId = () => crypto.randomUUID()) {
+  const body = newThreadRequestBody(input);
+  delete body.creationRequestId;
+  const { expectedCheckout: _expectedCheckout, ...intent } = body;
+  const payload = JSON.stringify(intent);
+  if (!scope.creationRequestId || (scope.creationRequestPayload && scope.creationRequestPayload !== payload)) {
+    scope.creationRequestId = createId();
+  }
+  scope.creationRequestPayload = payload;
+  return { ...body, creationRequestId: scope.creationRequestId };
 }
 
 export function followupRequestBody(

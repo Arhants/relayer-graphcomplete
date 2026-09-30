@@ -10,7 +10,8 @@ import { startModelCatalogRefreshServer } from "../desktop/main/models/model-cat
 import { GraphCompleteRuntimeService } from "../desktop/main/services/graphcomplete-runtime.mjs";
 import { RelayerAppServerService } from "../desktop/main/services/relayer-app-server.mjs";
 import { createSettingsStore } from "../desktop/main/services/settings-store.mjs";
-import { registerComposerDraftIpc, registerLayerSelectionIpc } from "../desktop/main/ipc/register-ipc.mjs";
+import { registerComposerDraftIpc, registerLayerSelectionIpc, registerWorktreeIpc } from "../desktop/main/ipc/register-ipc.mjs";
+import { createWorktreeService } from "../desktop/main/services/worktree-service.mjs";
 import { createWindowFactory } from "../desktop/main/window.mjs";
 
 const repositoryRoot = resolve(import.meta.dirname, "..");
@@ -18,6 +19,8 @@ const dataDirectory = mkdtempSync(join(tmpdir(), "relayer-project-new-thread-"))
 const evidenceDirectory = process.env.RELAYER_PROJECT_NEW_THREAD_EVIDENCE_DIR
   || join(repositoryRoot, ".relayer", "evidence", "project-new-thread");
 const services = [];
+const nativeTargetDirectory = process.env.CARGO_TARGET_DIR || join(repositoryRoot, "target");
+const worktrees = createWorktreeService({ worktreeRoot: join(dataDirectory, "worktrees"), storeDirectory: join(dataDirectory, "worktree-plans") });
 let window;
 let keepaliveWindow;
 let exitCode = 1;
@@ -35,6 +38,7 @@ app.setPath("userData", electronProfileDirectory);
 app.commandLine.appendSwitch("disable-gpu");
 
 function registerTestIpc() {
+  registerWorktreeIpc({ ipcMain, worktrees });
   ipcMain.handle("relayer:account-read", () => ({
     status: "signed-in",
     channel: "stable",
@@ -66,6 +70,7 @@ function registerTestIpc() {
 }
 
 function unregisterTestIpc() {
+  for (const method of ["inspect", "validateSelection", "plan", "create", "reconcile", "readPlan"]) ipcMain.removeHandler(`relayer:worktrees-${method}`);
   for (const channel of [
     "relayer:account-read",
     "relayer:appearance-read",
@@ -114,7 +119,7 @@ async function run() {
   let providerAttempts = 0;
   const runtime = new GraphCompleteRuntimeService({
     userDataDirectory: dataDirectory,
-    graphServerBinary: join(repositoryRoot, "target", "debug", "relayer-graph-server"),
+    graphServerBinary: join(nativeTargetDirectory, "debug", "relayer-graph-server"),
     configurationPaths: [configurationPath],
     additionalImplementations: { "fixture.task-system": taskSystemFixtureFactory },
     acquireProviderExecution: async (providerId) => {
@@ -155,7 +160,7 @@ async function run() {
   const startProduct = async () => {
     product = new RelayerAppServerService({
       userDataDirectory: dataDirectory,
-      binaryPath: join(repositoryRoot, "target", "debug", "relayer-app-server"),
+      binaryPath: join(nativeTargetDirectory, "debug", "relayer-app-server"),
       webDirectory: join(repositoryRoot, "desktop", "renderer"),
       permissionCatalogPath: join(repositoryRoot, "permissions", "desktop.json"),
       runtimeSession,

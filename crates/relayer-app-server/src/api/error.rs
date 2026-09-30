@@ -206,6 +206,14 @@ impl From<ProductError> for ApiError {
                 json!({ "error": format!("Not found: {message}") }),
             ),
             ProductError::Invalid(message) => Self::invalid(message),
+            ProductError::CheckoutChanged {
+                path,
+                expected,
+                current,
+            } => Self(
+                StatusCode::CONFLICT,
+                json!({"code":"checkout_changed","error":"The selected checkout changed. Review the current branch and commit before sending.","path":path,"expectedCheckout":expected,"currentCheckout":current,"details":{"path":path,"expectedCheckout":expected,"currentCheckout":current}}),
+            ),
             ProductError::InputValidation {
                 code,
                 path,
@@ -219,7 +227,7 @@ impl From<ProductError> for ApiError {
                 json!({
                     "code": "project_exists",
                     "error": "This folder is already a Relayer project. Confirm before reusing it.",
-                    "existingProject": ProjectResponse::from(project),
+                    "existingProject": ProjectResponse::from(*project),
                 }),
             ),
             ProductError::FolderUnavailable { path, reason } => Self(
@@ -239,6 +247,9 @@ impl From<ProductError> for ApiError {
             }
             ProductError::Storage(StorageError::ActionInputDraftConflict { code, message }) => {
                 Self::conflict(code, message)
+            }
+            ProductError::Storage(StorageError::ThreadCreationConflict(message)) => {
+                Self::conflict("thread_creation_conflict", message)
             }
             ProductError::Storage(error) => Self::internal(&error.to_string()),
         }
@@ -292,5 +303,31 @@ mod tests {
             "code=invalid_context_occurrence path=contexts[0].target message=exact source occurrence is inaccessible"
         );
         assert_ne!(error.internal_diagnostic(), "unknown API error");
+    }
+}
+
+#[cfg(test)]
+mod checkout_changed_error_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn changed_checkout_error_preserves_acknowledgment_details() {
+        let expected = json!({"repositoryIdentity":"/repo/.git","checkoutRoot":"/repo","branch":"main","commit":"old"});
+        let current = json!({"repositoryIdentity":"/repo/.git","checkoutRoot":"/repo","branch":"feature","commit":"new"});
+        let response = ApiError::from(ProductError::CheckoutChanged {
+            path: "/repo/frontend".into(),
+            expected: Box::new(expected.clone()),
+            current: Box::new(current.clone()),
+        })
+        .into_response();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        let bytes = axum::body::to_bytes(response.into_body(), 4096)
+            .await
+            .unwrap();
+        let body: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["code"], "checkout_changed");
+        assert_eq!(body["details"]["path"], "/repo/frontend");
+        assert_eq!(body["details"]["expectedCheckout"], expected);
+        assert_eq!(body["details"]["currentCheckout"], current);
     }
 }
