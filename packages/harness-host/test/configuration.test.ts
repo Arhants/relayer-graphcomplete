@@ -84,7 +84,7 @@ describe("harness configuration", () => {
   });
 
   it.each([
-    ["codex-basic", "medium", 8, "layered-navigation-multi-agent-v1"],
+    ["codex-basic", "medium", 9, "layered-navigation-multi-agent-v1"],
     ["codex-basic-high", "high", 4, undefined],
   ])("loads the checked-in %s configuration", async (name, modelReasoningEffort, revision, promptProfile) => {
     await expect(loadHarnessConfiguration(join(repositoryRoot, `harnesses/${name}.yaml`))).resolves.toEqual({
@@ -113,7 +113,7 @@ describe("harness configuration", () => {
       ...(name === "codex-basic" ? { complete: { agentAuthored: true }, graphCapabilityProfile: { search: "query-v1" } } : {}),
       settings: {
         modelReasoningEffort,
-        ...(name === "codex-basic" ? { personalPresentationVersion: "personal-presentation-v4" } : {}),
+        ...(name === "codex-basic" ? { personalPresentationVersion: "personal-presentation-v5" } : {}),
         ...(promptProfile === undefined ? {} : { promptProfile }),
         skipGitRepoCheck: true,
       },
@@ -121,10 +121,10 @@ describe("harness configuration", () => {
   });
 
   it.each(["codex-basic", "prime-agent-basic", "prime-agent-deep"])(
-    "pins the shipped %s configuration to explanatory presentation V4",
+    "pins the shipped %s configuration to topological explanatory presentation V5",
     async (name) => {
       const configuration = await loadHarnessConfiguration(join(repositoryRoot, `harnesses/${name}.yaml`));
-      expect(configuration.settings.personalPresentationVersion).toBe("personal-presentation-v4");
+      expect(configuration.settings.personalPresentationVersion).toBe("personal-presentation-v5");
     },
   );
 

@@ -2,7 +2,7 @@ schemaVersion: 1
 name: codex-basic
 implementation: codex.basic
 implementationVersion: 1
-revision: 8
+revision: 9
 complete:
   agentAuthored: true
 permissionBindings:
@@ -40,7 +40,7 @@ modelDefaults:
 graphCapabilityProfile:
   search: query-v1
 settings:
-  personalPresentationVersion: personal-presentation-v4
+  personalPresentationVersion: personal-presentation-v5
   modelReasoningEffort: medium
   promptProfile: layered-navigation-multi-agent-v1
   skipGitRepoCheck: true
