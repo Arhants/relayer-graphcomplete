@@ -95,6 +95,7 @@ export interface ResolvedLayer {
 }
 
 export interface CompletionOutput {
+  readonly threadIconProposal?: string;
   readonly nodeId: GraphId;
   readonly rootAction: GraphAction;
   readonly rootLayer: ResolvedLayer;

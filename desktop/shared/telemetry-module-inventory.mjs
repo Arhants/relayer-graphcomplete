@@ -156,6 +156,7 @@ export const APPROVED_TELEMETRY_MODULES = Object.freeze({
     "packages/harness-host/dist/implementations/prime-agent-workspace-boundary.js",
     "packages/harness-host/dist/implementations/prime-agent.js",
     "packages/harness-host/dist/implementations/prime-visual-authoring.js",
+    "packages/harness-host/dist/implementations/thread-icon-guidance.js",
     "packages/harness-host/dist/index.js",
     "packages/harness-host/dist/interaction-input.js",
     "packages/harness-host/dist/native-session-reset.js",

@@ -17,6 +17,55 @@ mod tests {
     use sqlx::{Executor, Row, migrate::Migrator, sqlite::SqlitePoolOptions};
     use std::borrow::Cow;
 
+    #[tokio::test]
+    async fn schema_39_thread_icons_never_backfill_legacy_threads() {
+        let temporary = tempfile::tempdir().unwrap();
+        let file = tempfile::NamedTempFile::new_in(temporary.path()).unwrap();
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect(&format!("sqlite://{}", file.path().display()))
+            .await
+            .unwrap();
+        Migrator {
+            migrations: Cow::Owned(
+                MIGRATOR
+                    .iter()
+                    .filter(|migration| migration.version < 40)
+                    .cloned()
+                    .collect(),
+            ),
+            ..Migrator::DEFAULT
+        }
+        .run(&pool)
+        .await
+        .unwrap();
+        sqlx::query("INSERT INTO threads(id,title,created_at,updated_at,harness_configuration_name,permission_profile_id) VALUES (1,'Legacy','1','1','codex-basic','auto')").execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO interactions(id,thread_id,sequence,text,created_at,graph_node_id,completion_status,harness_configuration_name,harness_configuration_digest,effective_execution_digest,effective_permission_receipt_json,permission_profile_id) VALUES (1,1,1,'Legacy','1',41,'running','codex-basic','digest','execution','{}','auto')").execute(&pool).await.unwrap();
+        pool.close().await;
+        let store = SqliteProductStore::open(file.path()).await.unwrap();
+        let legacy = store
+            .get_thread(crate::product::ThreadId::from_database(1))
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!legacy.icon_selection_eligible);
+        assert!(
+            store
+                .recover_interaction_accepted(
+                    legacy.root_interaction_id,
+                    &serde_json::json!({"threadIconProposal":"code"})
+                )
+                .await
+                .unwrap()
+        );
+        store.pool.close().await;
+        let reopened = SqliteProductStore::open(file.path()).await.unwrap();
+        assert_eq!(
+            reopened.get_thread(legacy.id).await.unwrap().unwrap().icon,
+            None
+        );
+    }
+
     /// Migration 0038 marks an existing result as an agent's child exactly when the broker
     /// launched it, which the product recorded as a completion execution. A result without one
     /// keeps the default: a user's invoke.
@@ -123,6 +172,7 @@ mod tests {
         }
         let new_thread = store
             .insert_thread_with_initial_interaction(crate::storage::NewThreadRecord {
+                icon_selection_eligible: true,
                 title: "Current",
                 project_id: None,
                 initial_message: "New turn",
@@ -298,6 +348,7 @@ mod tests {
         );
         let upgraded_thread_turn = store
             .insert_thread_with_initial_interaction(crate::storage::NewThreadRecord {
+                icon_selection_eligible: true,
                 title: "After upgrade",
                 project_id: None,
                 initial_message: "New turn",

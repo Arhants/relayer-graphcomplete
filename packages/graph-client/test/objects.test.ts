@@ -17,6 +17,19 @@ function nodeResponse(init: RequestInit, node: Record<string, unknown>): Respons
 describe("agent-facing graph objects", () => {
   afterEach(() => vi.unstubAllGlobals());
 
+  it("proposes optional thread metadata without throwing on non-string selection", async () => {
+    const fetch = vi.fn(async (_url: string, init: RequestInit) =>
+      new Response(JSON.stringify({ valid: JSON.parse(String(init.body)).icon === "compass" })));
+    vi.stubGlobal("fetch", fetch);
+    const graph = new RelayerGraphClient({ url: "http://127.0.0.1:1", token: "token", nodeId: 1 });
+    expect(await graph.proposeThreadIcon(undefined)).toBe(false);
+    expect(await graph.proposeThreadIcon({})).toBe(false);
+    expect(fetch).not.toHaveBeenCalled();
+    expect(await graph.proposeThreadIcon("invalid")).toBe(false);
+    expect(await graph.proposeThreadIcon("compass")).toBe(true);
+    expect(fetch.mock.calls[1]![0]).toBe("http://127.0.0.1:1/api/graph/thread-icon");
+  });
+
   it("does not require the model to invent durable IDs", async () => {
     const node = new NodeObject("box", "Queue", "Waiting work", "concept", "queue");
     const edge = new EdgeObject([node, 9], "queue-worker");

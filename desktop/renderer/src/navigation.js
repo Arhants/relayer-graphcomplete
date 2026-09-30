@@ -1,3 +1,4 @@
+import { threadIconMarkup } from "./product-workspace/icons.js";
 import { appState, desktop, viewState } from "./state.js";
 import { onboardingTutorialController } from "./onboarding-tutorial.js";
 import { $, $$, escapeHtml, escapeHtmlAttribute } from "./ui.js";
@@ -69,7 +70,7 @@ export async function returnFromSettings(refreshThread) {
 }
 
 function threadEntry(thread) {
-  return `<button class="entry ${String(thread.id) === String(viewState.currentThreadId) ? "active" : ""}" data-thread="${escapeHtml(thread.id)}" data-review-ref="thread-${escapeHtml(thread.id)}" data-review-kind="thread" aria-label="${escapeHtmlAttribute(thread.title)}" title="${escapeHtmlAttribute(thread.title)}"><span class="entry-icon" aria-hidden="true">◌</span><span>${escapeHtml(thread.title)}</span></button>`;
+  return `<button class="entry ${String(thread.id) === String(viewState.currentThreadId) ? "active" : ""}" data-thread="${escapeHtml(thread.id)}" data-review-ref="thread-${escapeHtml(thread.id)}" data-review-kind="thread" aria-label="${escapeHtmlAttribute(thread.title)}" title="${escapeHtmlAttribute(thread.title)}"><span class="entry-icon" aria-hidden="true">${threadIconMarkup(thread.icon)}</span><span>${escapeHtml(thread.title)}</span></button>`;
 }
 
 export function renderSidebar() {

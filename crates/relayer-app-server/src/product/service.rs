@@ -28,6 +28,7 @@ pub(crate) struct CreateProjectCommand {
 
 #[derive(Debug)]
 pub(crate) struct CreateThreadCommand {
+    pub(crate) icon_selection_eligible: bool,
     pub(crate) title: Option<String>,
     pub(crate) project_id: Option<ProjectId>,
     pub(crate) initial_message: String,
@@ -1126,6 +1127,7 @@ impl ProductService {
         self.storage
             .insert_thread_with_initial_interaction_and_personal_presentation(
                 NewThreadRecord {
+                    icon_selection_eligible: command.icon_selection_eligible,
                     title: &title,
                     project_id: command.project_id,
                     initial_message: message,
@@ -2851,6 +2853,7 @@ mod tests {
             .unwrap();
         let thread = storage
             .insert_thread_with_initial_interaction(NewThreadRecord {
+                icon_selection_eligible: true,
                 title: "Replay input authority",
                 project_id: None,
                 initial_message: "Initial",
@@ -2968,6 +2971,7 @@ mod tests {
 
         let empty_thread = storage
             .insert_thread_with_initial_interaction(NewThreadRecord {
+                icon_selection_eligible: true,
                 title: "Empty replay input authority",
                 project_id: None,
                 initial_message: "Initial",
@@ -3070,6 +3074,7 @@ mod tests {
 
         let omitted_thread = storage
             .insert_thread_with_initial_interaction(NewThreadRecord {
+                icon_selection_eligible: true,
                 title: "Omitted replay input authority",
                 project_id: None,
                 initial_message: "Initial",

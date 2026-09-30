@@ -184,3 +184,15 @@ function toPascalCase(name) {
   return name.replace(/(\w)(\w*)(_|-|\s*)/g, (_match, first, rest) =>
     first.toUpperCase() + rest.toLowerCase());
 }
+
+/** Thread metadata uses the node grammar, with the original glyph while unselected. */
+export function threadIconMarkup(icon) {
+  const canonical = resolveRelayerIconName(icon);
+  return canonical ? createRelayerIcon(canonical, { width: 16, height: 16 }).outerHTML : "◌";
+}
+
+export function renderThreadTitle(root, thread) {
+  root.querySelector("#threadTitle").textContent = thread.title;
+  const icon = root.querySelector("#threadIcon");
+  if (icon) icon.innerHTML = threadIconMarkup(thread.icon);
+}

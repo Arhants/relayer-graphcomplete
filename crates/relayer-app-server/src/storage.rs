@@ -32,6 +32,7 @@ pub(crate) struct ThreadSnapshot {
 }
 
 pub(crate) struct NewThreadRecord<'a> {
+    pub(crate) icon_selection_eligible: bool,
     pub(crate) title: &'a str,
     pub(crate) project_id: Option<ProjectId>,
     pub(crate) initial_message: &'a str,

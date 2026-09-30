@@ -47,6 +47,8 @@ pub(crate) struct Project {
 pub(crate) struct Thread {
     pub(crate) id: ThreadId,
     pub(crate) title: String,
+    pub(crate) icon: Option<String>,
+    pub(crate) icon_selection_eligible: bool,
     pub(crate) project_id: Option<ProjectId>,
     pub(crate) root_interaction_id: InteractionId,
     pub(crate) harness_configuration_name: String,

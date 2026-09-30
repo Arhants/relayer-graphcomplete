@@ -18,7 +18,7 @@ import {
   humanTurns,
   workspaceTurns,
 } from "./model.js";
-import { createRelayerIcon } from "./icons.js";
+import { createRelayerIcon, renderThreadTitle } from "./icons.js";
 import { graphLayoutSignature, projectLayerNodePositions } from "./graph-layout.js";
 import { renderMarkdown } from "./markdown.js";
 import { isResolvedInvokeAction, mountCompiledNodeDetail } from "./node-detail-runtime.js";
@@ -4583,7 +4583,7 @@ export function createProductWorkspace({
     shareController?.render();
     void loadAnnotations(thread);
     renderHistoryNavigation();
-    $("#threadTitle").textContent = thread.title;
+    renderThreadTitle(root, thread);
     const project = state.projects.find((item) => String(item.id) === String(thread.projectId));
     const permissionProfile = state.permissionProfiles?.find((item) => item.id === thread.permissionProfileId);
     const permissionLabel = permissionProfile?.label || thread.permissionProfileId;

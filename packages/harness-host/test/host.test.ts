@@ -216,6 +216,30 @@ describe("HarnessHost", () => {
     }
   });
 
+  it("passes product thread icon eligibility through the real host run context", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "relayer-thread-icon-context-"));
+    const observed: HarnessRunContext[] = [];
+    const accepted = new Set<number>();
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => url.endsWith("/output")
+      ? accepted.has(Number(url.match(/nodes\/(\d+)/)?.[1]))
+        ? new Response(JSON.stringify(completion), { status: 200 })
+        : new Response(JSON.stringify({ error: { code: "completion_not_found" } }), { status: 404 })
+      : new Response(JSON.stringify({ node: { id: 1, kind: "user-interaction", icon: "user", title: "Question", detail: "Question", state: "accepted" } }), { status: 200 })));
+    try {
+      const host = new HarnessHost({ stateFile: join(directory, "sessions.json"), controlToken: "control",
+        implementations: { test: () => ({ async complete(context) { observed.push(context); accepted.add(context.graph.interactionNodeId); }, state: emptyState }) },
+      });
+      await host.initialize();
+      await host.createSession({ threadId: 1, permissionProfileId: "auto", configuration: testConfiguration, workingDirectory: directory });
+      await host.complete(1, 1, graph(), undefined, undefined, { productInteractionId: 1, threadIconSelection: { eligible: true } });
+      await host.complete(1, 2, graph(2));
+      expect(observed.map((context) => context.threadIconSelection)).toEqual([{ eligible: true }, undefined]);
+    } finally {
+      vi.unstubAllGlobals();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it("adopts an accepted graph after a harness unwind failure and never repeats execution", async () => {
     const directory = await mkdtemp(join(tmpdir(), "relayer-accepted-recovery-"));
     let accepted = false;
@@ -3836,6 +3860,21 @@ describe("HarnessHost", () => {
       await running?.close();
       await rm(directory, { recursive: true, force: true });
     }
+  });
+
+  it("rejects malformed thread icon eligibility at the authenticated HTTP boundary", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "relayer-icon-eligibility-validation-"));
+    const running = await startHarnessHost({ stateFile: join(directory, "sessions.json"), controlToken: "control", implementations: {} });
+    try {
+      for (const threadIconSelection of [null, false, { eligible: false }, { eligible: true, icon: "box" }]) {
+        const response = await fetch(`${running.url}/sessions/1/complete`, {
+          method: "POST", headers: { authorization: "Bearer control", "content-type": "application/json" },
+          body: JSON.stringify({ interactionId: 1, graph: graph(), traceContext: { productInteractionId: 1, threadIconSelection } }),
+        });
+        expect(response.status).toBe(500);
+        expect(JSON.stringify(await response.json())).toContain("Invalid thread icon selection eligibility");
+      }
+    } finally { await running.close(); await rm(directory, { recursive: true, force: true }); }
   });
 
   it("rejects trace presentation keys without a corresponding valid pin before execution", async () => {

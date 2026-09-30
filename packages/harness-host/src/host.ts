@@ -1280,6 +1280,7 @@ export class HarnessHost {
       const native = session.harness.complete({
         origin,
         requireNativeContinuity: traceContext?.requireNativeContinuity === true,
+        ...(traceContext?.threadIconSelection === undefined ? {} : { threadIconSelection: traceContext.threadIconSelection }),
         ...(traceContext?.nativeHistoryAnchor === undefined ? {} : { nativeHistoryAnchor: traceContext.nativeHistoryAnchor }),
         inputGraph: interaction,
         interactionInput,
@@ -3131,7 +3132,8 @@ function isNativeExecutionHandle(value: Promise<void> | NativeExecutionHandle): 
 function readTraceContext(value: unknown): HarnessCompletionTraceContext | undefined {
   if (!isRecord(value) || value.traceContext === undefined) return undefined;
   if (!isRecord(value.traceContext)) throw new Error("Harness completion contains an invalid trace context");
-  const { productInteractionId, personalPresentationVersionId, personalPresentationVersionKey, requireNativeContinuity, nativeHistoryAnchor } = value.traceContext;
+  const { productInteractionId, personalPresentationVersionId, personalPresentationVersionKey, requireNativeContinuity, nativeHistoryAnchor, threadIconSelection } = value.traceContext;
+  if (threadIconSelection !== undefined && (!isRecord(threadIconSelection) || threadIconSelection.eligible !== true || Object.keys(threadIconSelection).length !== 1)) throw new Error("Invalid thread icon selection eligibility");
   if (nativeHistoryAnchor != null && (!isRecord(nativeHistoryAnchor) || !Number.isSafeInteger(nativeHistoryAnchor.interactionNodeId) || Number(nativeHistoryAnchor.interactionNodeId) < 1 || typeof nativeHistoryAnchor.message !== "string")) throw new Error("Invalid native history anchor");
   if (requireNativeContinuity !== undefined && typeof requireNativeContinuity !== "boolean") throw new Error("Invalid native continuity requirement");
   if (typeof productInteractionId !== "number" || !Number.isSafeInteger(productInteractionId) || productInteractionId < 1) {
@@ -3152,6 +3154,7 @@ function readTraceContext(value: unknown): HarnessCompletionTraceContext | undef
   return {
     productInteractionId,
     ...(requireNativeContinuity === undefined ? {} : { requireNativeContinuity }),
+    ...(threadIconSelection === undefined ? {} : { threadIconSelection: { eligible: true as const } }),
     ...(nativeHistoryAnchor == null ? {} : { nativeHistoryAnchor: nativeHistoryAnchor as { interactionNodeId: number; message: string } }),
     ...(personalPresentationVersionId === undefined ? {} : { personalPresentationVersionId }),
     ...(personalPresentationVersionKey === undefined ? {} : { personalPresentationVersionKey }),

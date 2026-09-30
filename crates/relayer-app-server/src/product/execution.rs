@@ -233,6 +233,7 @@ impl InteractionExecutionService {
             }
         };
         let command = CompleteInteraction {
+            thread_icon_selection_eligible: thread.icon_selection_eligible && thread.icon.is_none(),
             require_native_continuity: false,
             native_history_anchor: None,
             project_id: thread.project_id.map(ProjectId::value),

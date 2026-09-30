@@ -165,6 +165,7 @@ pub(crate) struct InvokedCompletionAdmission<'a> {
 }
 
 pub(crate) struct CompleteInteraction<'a> {
+    pub(crate) thread_icon_selection_eligible: bool,
     pub(crate) require_native_continuity: bool,
     pub(crate) native_history_anchor: Option<&'a Value>,
     pub(crate) project_id: Option<i64>,
@@ -988,6 +989,9 @@ impl RuntimeClient {
                 "graph": graph,
                 "traceContext": { "productInteractionId": command.product_interaction_id, "requireNativeContinuity": command.require_native_continuity, "nativeHistoryAnchor": command.native_history_anchor },
             });
+            if command.thread_icon_selection_eligible {
+                complete_body["traceContext"]["threadIconSelection"] = serde_json::json!({"eligible": true});
+            }
             if let Some(version_id) = prepared.personal_presentation_version_id {
                 complete_body["traceContext"]["personalPresentationVersionId"] =
                     Value::from(version_id);
@@ -3669,6 +3673,7 @@ mod tests {
             reviewer: "automatic".into(),
         };
         let command = CompleteInteraction {
+            thread_icon_selection_eligible: false,
             require_native_continuity: false,
             native_history_anchor: None,
             project_id: None,
@@ -3717,6 +3722,7 @@ mod tests {
             },
         }];
         let identified = CompleteInteraction {
+            thread_icon_selection_eligible: false,
             require_native_continuity: false,
             native_history_anchor: None,
             project_id: None,
@@ -3860,6 +3866,7 @@ mod tests {
             root_layer_id: 37,
         };
         let command = CompleteInteraction {
+            thread_icon_selection_eligible: false,
             require_native_continuity: false,
             native_history_anchor: None,
             project_id: None,
@@ -4228,6 +4235,7 @@ mod tests {
             reviewer: "automatic".into(),
         };
         let command = CompleteInteraction {
+            thread_icon_selection_eligible: false,
             require_native_continuity: false,
             native_history_anchor: None,
             project_id: None,
@@ -4371,6 +4379,7 @@ mod tests {
 
         let result = runtime
             .complete(CompleteInteraction {
+                thread_icon_selection_eligible: false,
                 require_native_continuity: false,
                 native_history_anchor: None,
                 project_id: None,
@@ -4402,7 +4411,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn revokes_the_interaction_capability_after_successful_completion() {
+    async fn thread_icon_eligibility_is_forwarded_only_when_requested_and_capabilities_are_revoked()
+    {
         let revocations = Arc::new(AtomicUsize::new(0));
         let observed_revocations = revocations.clone();
         let attachments = Arc::new(AtomicUsize::new(0));
@@ -4451,6 +4461,8 @@ mod tests {
                     }
                 }),
             );
+        let calls = Arc::new(AtomicUsize::new(0));
+        let observed_calls = calls.clone();
         let harness = Router::new()
             .route(
                 "/sessions",
@@ -4461,16 +4473,27 @@ mod tests {
             )
             .route(
                 "/sessions/1/complete",
-                routing::post(|headers: HeaderMap, Json(body): Json<Value>| async move {
-                    assert_eq!(headers["authorization"], "Bearer harness-control");
-                    assert_eq!(body["interactionId"], 7);
-                    assert_eq!(body["graph"]["nodeId"], 41);
-                    assert_eq!(body["traceContext"]["personalPresentationVersionId"], 90);
-                    assert_eq!(
-                        body["traceContext"]["personalPresentationVersionKey"],
-                        "personal-presentation-v1"
-                    );
-                    Json(json!({ "output": { "nodeId": 41 } }))
+                routing::post(move |headers: HeaderMap, Json(body): Json<Value>| {
+                    let observed_calls = observed_calls.clone();
+                    async move {
+                        assert_eq!(headers["authorization"], "Bearer harness-control");
+                        assert_eq!(body["interactionId"], 7);
+                        if observed_calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                            assert_eq!(
+                                body["traceContext"]["threadIconSelection"],
+                                json!({"eligible": true})
+                            );
+                        } else {
+                            assert!(body["traceContext"].get("threadIconSelection").is_none());
+                        }
+                        assert_eq!(body["graph"]["nodeId"], 41);
+                        assert_eq!(body["traceContext"]["personalPresentationVersionId"], 90);
+                        assert_eq!(
+                            body["traceContext"]["personalPresentationVersionKey"],
+                            "personal-presentation-v1"
+                        );
+                        Json(json!({ "output": { "nodeId": 41 } }))
+                    }
                 }),
             )
             .route(
@@ -4532,36 +4555,39 @@ mod tests {
             version_interaction_node_id: 90,
             root_layer_id: 91,
         };
-        let completed = runtime
-            .complete(CompleteInteraction {
-                require_native_continuity: false,
-                native_history_anchor: None,
-                project_id: None,
-                product_interaction_id: 1,
-                thread_id: 1,
-                interaction_id: 7,
-                text: "question",
-                working_directory: root.to_str().unwrap(),
-                harness_configuration_name: "test",
-                permission_profile: &permission_profile,
-                model_selection: None,
-                model_plan: None,
-                attempt_admission_id: None,
-                execution_lease_id: None,
-                harness_policy: None,
-                invocation: None,
-                input_identity: None,
-                input_digest: None,
-                contexts: &[],
-                personal_presentation: Some(&personal_presentation),
-                submitted_inputs: &[],
-            })
-            .await
-            .unwrap();
+        for eligible in [true, false] {
+            let completed = runtime
+                .complete(CompleteInteraction {
+                    thread_icon_selection_eligible: eligible,
+                    require_native_continuity: false,
+                    native_history_anchor: None,
+                    project_id: None,
+                    product_interaction_id: 1,
+                    thread_id: 1,
+                    interaction_id: 7,
+                    text: "question",
+                    working_directory: root.to_str().unwrap(),
+                    harness_configuration_name: "test",
+                    permission_profile: &permission_profile,
+                    model_selection: None,
+                    model_plan: None,
+                    attempt_admission_id: None,
+                    execution_lease_id: None,
+                    harness_policy: None,
+                    invocation: None,
+                    input_identity: None,
+                    input_digest: None,
+                    contexts: &[],
+                    personal_presentation: Some(&personal_presentation),
+                    submitted_inputs: &[],
+                })
+                .await
+                .unwrap();
 
-        assert_eq!(completed.output, json!({ "nodeId": 41 }));
-        assert_eq!(attachments.load(Ordering::SeqCst), 3);
-        assert_eq!(revocations.load(Ordering::SeqCst), 1);
+            assert_eq!(completed.output, json!({ "nodeId": 41 }));
+        }
+        assert_eq!(attachments.load(Ordering::SeqCst), 4);
+        assert_eq!(revocations.load(Ordering::SeqCst), 2);
         graph_task.abort();
         harness_task.abort();
     }

@@ -48,6 +48,7 @@ pub struct RelayerRuntimeConfig {
     pub harness_configurations: PathBuf,
     pub default_harness_configuration: String,
     pub allow_harness_override: bool,
+    pub eval_mode: bool,
     pub standalone_workspaces_directory: PathBuf,
 }
 
@@ -147,6 +148,7 @@ async fn reconcile_interrupted_interaction(
         };
         let prepared = runtime
             .prepare(&crate::runtime::CompleteInteraction {
+                thread_icon_selection_eligible: false,
                 require_native_continuity: false,
                 native_history_anchor: None,
                 project_id: thread.project_id.map(ProjectId::value),
@@ -1008,6 +1010,7 @@ pub struct RelayerAppServer {
     permission_catalog: PermissionCatalog,
     default_harness_configuration: String,
     allow_harness_override: bool,
+    eval_mode: bool,
     allow_conversation_import: bool,
     standalone_workspaces_directory: PathBuf,
     export_producer: crate::conversation_export::ExportProducer,
@@ -1227,6 +1230,10 @@ impl RelayerAppServer {
             }
         }
         reconcile_interrupted_work(&storage, runtime.as_ref(), &permission_catalog).await?;
+        let eval_mode = config
+            .runtime
+            .as_ref()
+            .is_some_and(|runtime| runtime.eval_mode);
         let allow_harness_override = config
             .runtime
             .as_ref()
@@ -1261,6 +1268,7 @@ impl RelayerAppServer {
             permission_catalog,
             default_harness_configuration,
             allow_harness_override,
+            eval_mode,
             allow_conversation_import: config.allow_conversation_import,
             standalone_workspaces_directory,
             export_producer: config.export_producer,
@@ -1282,6 +1290,7 @@ impl RelayerAppServer {
                 permission_catalog: self.permission_catalog.clone(),
                 default_harness_configuration: self.default_harness_configuration.clone(),
                 allow_harness_override: self.allow_harness_override,
+                eval_mode: self.eval_mode,
                 allow_conversation_import: self.allow_conversation_import,
                 standalone_workspaces_directory: self.standalone_workspaces_directory.clone(),
                 export_producer: self.export_producer.clone(),

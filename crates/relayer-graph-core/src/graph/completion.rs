@@ -45,6 +45,8 @@ pub struct CompletionOutput {
     pub node_id: NodeId,
     pub root_action: GraphAction,
     pub root_layer: ResolvedLayer,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thread_icon_proposal: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -369,6 +371,12 @@ pub(crate) async fn read_output_on(
         node_id: scope.root_node_id,
         root_action: action,
         root_layer,
+        thread_icon_proposal: sqlx::query_scalar(
+            "SELECT icon FROM thread_icon_proposals WHERE interaction_node_id=?1",
+        )
+        .bind(scope.root_node_id.value())
+        .fetch_optional(&mut *connection)
+        .await?,
     }))
 }
 

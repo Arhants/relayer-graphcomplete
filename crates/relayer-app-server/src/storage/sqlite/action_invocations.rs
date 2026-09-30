@@ -171,6 +171,7 @@ impl SqliteProductStore {
         interaction_id: InteractionId,
         output: &serde_json::Value,
     ) -> Result<bool, StorageError> {
+        let accepted_output = output;
         let output = serde_json::to_string(output)
             .map_err(|error| StorageError::Serialization(error.to_string()))?;
         let mut transaction = self.pool.begin_with("BEGIN IMMEDIATE").await?;
@@ -192,6 +193,8 @@ impl SqliteProductStore {
         .bind(interaction_id.value())
         .execute(&mut *transaction)
         .await?;
+        super::threads::commit_thread_icon(&mut transaction, interaction_id, accepted_output)
+            .await?;
         transaction.commit().await?;
         Ok(true)
     }
@@ -619,6 +622,7 @@ mod tests {
         };
         let thread = store
             .insert_thread_with_initial_interaction(NewThreadRecord {
+                icon_selection_eligible: true,
                 title: "Action source",
                 project_id: None,
                 initial_message: "Original prompt",
@@ -765,6 +769,7 @@ mod tests {
         };
         let thread = store
             .insert_thread_with_initial_interaction(NewThreadRecord {
+                icon_selection_eligible: true,
                 title: "Active recursive source",
                 project_id: None,
                 initial_message: "Original prompt",
@@ -874,6 +879,7 @@ mod tests {
 
         let legacy_thread = store
             .insert_thread_with_initial_interaction(NewThreadRecord {
+                icon_selection_eligible: true,
                 title: "Legacy recursive source",
                 project_id: None,
                 initial_message: "Legacy prompt",
@@ -943,6 +949,7 @@ mod tests {
         for timestamp in ["2", "3"] {
             let thread = store
                 .insert_thread_with_initial_interaction(NewThreadRecord {
+                    icon_selection_eligible: true,
                     title: "Reused action source",
                     project_id: Some(project.id),
                     initial_message: "Original prompt",
@@ -1034,6 +1041,7 @@ mod tests {
         for timestamp in ["1", "2"] {
             let thread = store
                 .insert_thread_with_initial_interaction(NewThreadRecord {
+                    icon_selection_eligible: true,
                     title: "Standalone source",
                     project_id: None,
                     initial_message: "Original prompt",
@@ -1084,6 +1092,7 @@ mod tests {
         };
         let thread = store
             .insert_thread_with_initial_interaction(NewThreadRecord {
+                icon_selection_eligible: true,
                 title: "Recoverable invoke",
                 project_id: None,
                 initial_message: "Original prompt",
@@ -1156,6 +1165,7 @@ mod tests {
         let store = SqliteProductStore::open(&path).await.unwrap();
         let thread = store
             .insert_thread_with_initial_interaction(NewThreadRecord {
+                icon_selection_eligible: true,
                 title: "Legacy source",
                 project_id: None,
                 initial_message: "Original prompt",
@@ -1204,6 +1214,7 @@ mod tests {
         let store = SqliteProductStore::open(&path).await.unwrap();
         let thread = store
             .insert_thread_with_initial_interaction(NewThreadRecord {
+                icon_selection_eligible: true,
                 title: "Configuration-owned source",
                 project_id: None,
                 initial_message: "Original prompt",
@@ -1257,6 +1268,7 @@ mod tests {
         };
         let thread = store
             .insert_thread_with_initial_interaction(NewThreadRecord {
+                icon_selection_eligible: true,
                 title: "Historical source",
                 project_id: None,
                 initial_message: "Original prompt",
@@ -1304,6 +1316,7 @@ mod tests {
         };
         let thread = store
             .insert_thread_with_initial_interaction(NewThreadRecord {
+                icon_selection_eligible: true,
                 title: "Historical hidden model",
                 project_id: None,
                 initial_message: "Original prompt",
@@ -1366,6 +1379,7 @@ mod tests {
         };
         let thread = store
             .insert_thread_with_initial_interaction(NewThreadRecord {
+                icon_selection_eligible: true,
                 title: "Stale source",
                 project_id: None,
                 initial_message: "Original prompt",
@@ -1407,6 +1421,7 @@ mod tests {
         };
         let thread = store
             .insert_thread_with_initial_interaction(NewThreadRecord {
+                icon_selection_eligible: true,
                 title: "Action source",
                 project_id: None,
                 initial_message: "Original prompt",
@@ -1454,6 +1469,7 @@ mod tests {
         };
         let thread = store
             .insert_thread_with_initial_interaction(NewThreadRecord {
+                icon_selection_eligible: true,
                 title: "Historical hidden model",
                 project_id: None,
                 initial_message: "Original prompt",
@@ -1499,6 +1515,7 @@ mod tests {
         seed_test_model_selection(&store).await;
         let thread = store
             .insert_thread_with_initial_interaction(NewThreadRecord {
+                icon_selection_eligible: true,
                 title: "Marking",
                 project_id: None,
                 initial_message: "Root",
@@ -1587,6 +1604,7 @@ mod tests {
         };
         let thread = store
             .insert_thread_with_initial_interaction(NewThreadRecord {
+                icon_selection_eligible: true,
                 title: "Legacy child",
                 project_id: None,
                 initial_message: "Root",

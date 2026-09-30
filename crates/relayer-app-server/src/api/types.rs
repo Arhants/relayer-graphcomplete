@@ -156,6 +156,7 @@ impl From<Project> for ProjectResponse {
 pub(crate) struct ThreadResponse {
     id: i64,
     title: String,
+    icon: Option<String>,
     project_id: Option<i64>,
     root_interaction_id: i64,
     harness_configuration_name: String,
@@ -171,6 +172,7 @@ impl From<Thread> for ThreadResponse {
         Self {
             id: thread.id.value(),
             title: thread.title,
+            icon: thread.icon,
             project_id: thread.project_id.map(|id| id.value()),
             root_interaction_id: thread.root_interaction_id.value(),
             harness_id: thread.harness_configuration_name.clone(),

@@ -186,6 +186,7 @@ async function start() {
     runtimeSession,
     defaultHarnessConfiguration: "fixture-task-system",
     allowHarnessOverride: true,
+    evalMode: true,
     allowConversationImport: true,
     enableReadOnlySession: true,
     exportProducer: {

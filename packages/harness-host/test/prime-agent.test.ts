@@ -22,6 +22,24 @@ const configuration: HarnessConfiguration = {
 const fullPermission = { permissionProfileId: "full", permissionBinding: {} } as const;
 
 describe("PrimeAgentHarness", () => {
+  it.each(["basic", "layered-navigation-v1"])("selects an eligible thread icon in the ordinary %s Prime turn", async (profile) => {
+    const session = primeSession("/tmp/thread-icon-session.jsonl");
+    const harness = await createHarness(session, { ...configuration, settings: {
+      ...configuration.settings, ...(profile === "basic" ? {} : { promptProfile: profile }),
+    } });
+    try {
+      await harness.complete({ ...runContext(11, "token"), threadIconSelection: { eligible: true } });
+      await harness.complete(runContext(12, "token"));
+      const prompts = session.promptAndWait.mock.calls.map((call) => call[0]);
+      expect(prompts).toHaveLength(2);
+      expect(prompts[0]).toContain('await graph.propose_thread_icon("semantic-icon-name")');
+      expect(prompts[0]).toContain("same supported Relayer icon library and guidance used for nodes");
+      expect(prompts[0]).toContain("only when this completion is accepted");
+      expect(prompts[0]).toContain("Missing or invalid selection keeps the default visible");
+      expect(prompts[1]).not.toContain("propose_thread_icon");
+    } finally { await harness.dispose(); }
+  });
+
   it.each(["missing", "changed-presentation"])("refuses legacy continuation without executing or replacing Prime history when %s", async (reason) => {
     const session = primeSession("/tmp/legacy-prime-session.jsonl");
     const create = vi.fn(() => "fresh-session");

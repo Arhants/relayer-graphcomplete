@@ -180,6 +180,7 @@ export interface HarnessTraceSink {
 }
 
 export interface HarnessCompletionTraceContext {
+  readonly threadIconSelection?: { readonly eligible: true };
   readonly requireNativeContinuity?: boolean;
   readonly nativeHistoryAnchor?: { readonly interactionNodeId: number; readonly message: string };
   readonly productInteractionId: number;
@@ -225,6 +226,7 @@ export type CompletionOrigin =
     };
 
 export interface HarnessRunContext {
+  readonly threadIconSelection?: { readonly eligible: true };
   /** Trusted product assertion: a fresh native root would lose legacy context. */
   readonly requireNativeContinuity?: boolean;
   readonly nativeHistoryAnchor?: { readonly interactionNodeId: number; readonly message: string };
