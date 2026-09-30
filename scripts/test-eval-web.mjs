@@ -628,8 +628,9 @@ async function proveTaskActor({ browser, service, productSession, data }) {
     const config = setupRegistry.judgeConfigs()[0];
     assert.equal(await page.locator("#judgeConfigFile").inputValue(), config.file);
     assert.equal(await page.locator('#setupPublish [name="promptVersion"]').count(), 0);
-    assert.equal(await page.locator('#setupPublish [name="model"]').getAttribute("readonly"), "");
-    assert.equal(await page.locator('#setupPublish [name="promptTemplate"]').inputValue(), config.definition.promptTemplate);
+    assert.equal(await page.locator('#setupPublish input, #setupPublish textarea, #setupPublish select[name="modelReasoningEffort"]').count(), 0);
+    assert.ok((await page.locator("#setupEditor").textContent()).includes(config.path));
+    assert.ok((await page.locator("#setupPublish").textContent()).includes(config.digest));
     await page.locator("#setupFeedbackSession").selectOption(task.id);
     await page.locator("#setupFeedbackRecords input").first().check();
     await page.locator("#setupPublish button").click();
@@ -637,7 +638,7 @@ async function proveTaskActor({ browser, service, productSession, data }) {
     assert.equal(fileJudge.configSource.digest, config.digest);
     assert.equal(fileJudge.configSource.contents, config.definition.configSource.contents);
     assert.equal(fileJudge.promptTemplate, config.definition.promptTemplate);
-    console.log("PASS judge config file: selected repository YAML, read-only preview, filename-derived prompt version, exact file snapshot and motivating feedback publication");
+    console.log("PASS judge config file: selected repository YAML, file-only configuration, exact file snapshot and motivating feedback publication");
     await page.locator("#calibrationRefresh").click();
     await until(async () => (await page.locator('#calibrationMember [name="source"]').textContent()).includes(task.id), "calibration sources refreshed");
     await page.locator('#calibrationMember [name="source"]').selectOption("0");
