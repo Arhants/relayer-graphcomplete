@@ -1,4 +1,5 @@
 import type { GraphIcon } from "./image-icons.js";
+import type { EdgeShape, NodeSide } from "./edge-shapes.js";
 import type { CompiledNodeDetail } from "./detail.js";
 
 export type GraphId = number;
@@ -35,7 +36,18 @@ export interface NodePlacement {
 
 export interface LayerLayout {
   readonly version: 1;
+  /** List order is the layer's reading order. */
   readonly placements: readonly NodePlacement[];
+  /** Absent only on layers accepted before edge shapes existed; read it as "default". */
+  readonly edgeShape?: EdgeShape;
+  readonly edgeRoutes?: readonly EdgeRoute[];
+}
+
+export interface EdgeRoute {
+  readonly edgeId: GraphId;
+  readonly shape?: EdgeShape;
+  readonly ends?: readonly { readonly nodeId: GraphId; readonly side?: NodeSide }[];
+  readonly waypoints?: readonly { readonly x: number; readonly y: number }[];
 }
 
 export interface GraphLayer {
@@ -204,6 +216,8 @@ export interface GraphCapability {
   readonly url: string;
   readonly token: string;
   readonly nodeId: GraphId;
+  /** Where this completion's draft-preview PNGs are written (PRD §11.10). */
+  readonly previewDirectory?: string;
 }
 
 export interface GraphApiErrorBody {

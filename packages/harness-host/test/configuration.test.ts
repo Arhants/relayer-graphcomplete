@@ -17,6 +17,28 @@ const repositoryRoot = resolve(fileURLToPath(new URL("../../../", import.meta.ur
 const permissionBindings = { ask: {}, auto: {}, full: {} };
 
 describe("harness configuration", () => {
+  it("stores disabled draft previews as omission so pinned digests stay stable", () => {
+    const base = {
+      schemaVersion: 1,
+      name: "preview-profile",
+      implementation: "test",
+      implementationVersion: 1,
+      permissionBindings,
+      settings: {},
+      graphCapabilityProfile: { search: "disabled" },
+    } as const;
+    const omitted = parseHarnessConfiguration(base);
+    const disabled = parseHarnessConfiguration({ ...base, graphCapabilityProfile: { search: "disabled", preview: "disabled" } });
+    const enabled = parseHarnessConfiguration({ ...base, graphCapabilityProfile: { search: "disabled", preview: "enabled" } });
+
+    expect(resolveGraphCapabilityProfile(disabled)).toEqual({ search: "disabled" });
+    expect(resolveGraphCapabilityProfile(enabled)).toEqual({ search: "disabled", preview: "enabled" });
+    expect(digestHarnessConfiguration(disabled)).toBe(digestHarnessConfiguration(omitted));
+    expect(sameHarnessExecutionConfiguration(enabled, omitted)).toBe(false);
+    expect(() => parseHarnessConfiguration({ ...base, graphCapabilityProfile: { search: "disabled", preview: "on" } }))
+      .toThrow("graphCapabilityProfile.preview");
+  });
+
   it("defaults graph search authority off and admits only the versioned query-v1 profile", () => {
     const base = {
       schemaVersion: 1,
@@ -70,8 +92,10 @@ describe("harness configuration", () => {
     "prime-agent-basic",
   ])("ships %s with query-v1 graph search and agent-authored Complete", async (name) => {
     const configuration = await loadHarnessConfiguration(join(repositoryRoot, `harnesses/${name}.yaml`));
-    expect(configuration.graphCapabilityProfile).toEqual({ search: "query-v1" });
-    expect(resolveGraphCapabilityProfile(configuration)).toEqual({ search: "query-v1" });
+    // Only codex-basic declares draft previews so far; Claude and Prime are #618.
+    const profile = name === "codex-basic" ? { search: "query-v1", preview: "enabled" } : { search: "query-v1" };
+    expect(configuration.graphCapabilityProfile).toEqual(profile);
+    expect(resolveGraphCapabilityProfile(configuration)).toEqual(profile);
     expect(configuration.complete).toEqual({ agentAuthored: true });
   });
 
@@ -84,7 +108,7 @@ describe("harness configuration", () => {
   });
 
   it.each([
-    ["codex-basic", "medium", 8, "layered-navigation-multi-agent-v1"],
+    ["codex-basic", "medium", 9, "layered-navigation-multi-agent-v1"],
     ["codex-basic-high", "high", 4, undefined],
   ])("loads the checked-in %s configuration", async (name, modelReasoningEffort, revision, promptProfile) => {
     await expect(loadHarnessConfiguration(join(repositoryRoot, `harnesses/${name}.yaml`))).resolves.toEqual({
@@ -110,7 +134,7 @@ describe("harness configuration", () => {
       },
       executionAccessContracts: ["managed-runtime@1", "secret@1"],
       modelDefaults: { familyPolicy: { id: "codex-default-family", version: name === "codex-basic" ? 3 : 2 } },
-      ...(name === "codex-basic" ? { complete: { agentAuthored: true }, graphCapabilityProfile: { search: "query-v1" } } : {}),
+      ...(name === "codex-basic" ? { complete: { agentAuthored: true }, graphCapabilityProfile: { search: "query-v1", preview: "enabled" } } : {}),
       settings: {
         modelReasoningEffort,
         ...(name === "codex-basic" ? { personalPresentationVersion: "personal-presentation-v4" } : {}),

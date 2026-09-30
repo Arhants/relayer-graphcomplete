@@ -25,7 +25,7 @@ async fn batch_closures_require_control_authority_and_preserve_order_and_missing
         })
         .await
         .unwrap();
-    let layer: LayerDraft = serde_json::from_value(json!({"clientKey":"layer","nodes":[node.id],"edges":[],"layout":{"version":1,"placements":[{"nodeId":node.id,"x":0.5,"y":0.5}]}})).unwrap();
+    let layer: LayerDraft = serde_json::from_value(json!({"clientKey":"layer","nodes":[node.id],"edges":[],"layout":{"version":1,"placements":[{"nodeId":node.id,"x":0.5,"y":0.5}],"edgeShape":"default"}})).unwrap();
     let layer = writer.submit_layer(&layer).await.unwrap();
     let action: ActionDraft = serde_json::from_value(json!({"clientKey":"response","sourceNodeId":root.id,"kind":"navigate","relation":"expand","label":"Response","variant":"pill","targetLayerId":layer.id})).unwrap();
     writer.add_action(&action).await.unwrap();

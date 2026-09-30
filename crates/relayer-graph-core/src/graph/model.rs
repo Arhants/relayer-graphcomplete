@@ -38,8 +38,11 @@ pub use input::{
     InteractionInputChild, InteractionInputPreparation, SubmittedInput, SubmittedInputDraft,
     SubmittedInputValue, interaction_input_authority_digest, interaction_input_semantic_digest,
 };
-pub(crate) use layer::validate_authored_layout;
-pub use layer::{GraphLayer, LayerDraft, LayerLayout, NodePlacement, ResolvedLayer};
+pub use layer::{
+    EDGE_SHAPES, EdgeEnd, EdgeRoute, GraphLayer, LayerDraft, LayerLayout, LayoutPoint,
+    MAX_EDGE_ROUTE_WAYPOINTS, NODE_SIDES, NodePlacement, ResolvedLayer,
+};
+pub(crate) use layer::{validate_authored_layout, validate_edge_route_ends};
 pub(crate) use node::validate_authored_detail;
 pub use node::{
     AcceptedDetailAsset, AcceptedDetailAssetMetadata, AuthoredDetailUpdate, GraphNode,

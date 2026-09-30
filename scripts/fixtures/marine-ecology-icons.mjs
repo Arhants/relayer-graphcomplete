@@ -52,7 +52,7 @@ export const marineEcologyFixtureFactory = () => ({
     nodes.push(monitoring);
     const edges = nodes.slice(0, -1).map((node, index) => new EdgeObject([node, monitoring], `marine-monitor-${index}`));
     const positions = [[0.18,0.20],[0.50,0.20],[0.82,0.20],[0.18,0.76],[0.82,0.76],[0.50,0.64]];
-    const layer = new LayerObject(nodes, edges, new LayerLayoutObject(nodes.map((node, index) => new NodePlacementObject(node, ...positions[index]))), "marine-ecology");
+    const layer = new LayerObject(nodes, edges, new LayerLayoutObject(nodes.map((node, index) => new NodePlacementObject(node, ...positions[index])), "default"), "marine-ecology");
     for (const node of nodes) await graph.submitNode(node);
     for (const edge of edges) await graph.createEdge(edge);
     await graph.submitLayer(layer, { sizeJustification: "Six subjects form one bounded overview of the reef monitoring scope." });

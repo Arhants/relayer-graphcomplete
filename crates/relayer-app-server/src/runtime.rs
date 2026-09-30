@@ -69,10 +69,27 @@ enum GraphSearchCapability {
     QueryV1,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum GraphPreviewCapability {
+    #[default]
+    Disabled,
+    Enabled,
+}
+
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct GraphCapabilityProfile {
     search: GraphSearchCapability,
+    // Omitted when disabled so configurations pinned before previews keep their bytes.
+    #[serde(default, skip_serializing_if = "GraphPreviewCapability::is_disabled")]
+    preview: GraphPreviewCapability,
+}
+
+impl GraphPreviewCapability {
+    fn is_disabled(&self) -> bool {
+        *self == Self::Disabled
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -1620,7 +1637,7 @@ impl RuntimeClient {
                         "clientKey": "personal-presentation-root",
                         "nodes": nodes,
                         "edges": edges,
-                        "layout": {"version": 1, "placements": placements},
+                        "layout": {"version": 1, "placements": placements, "edgeShape": "default"},
                     }),
                 )
                 .await?;

@@ -10,7 +10,11 @@ import { GRAPH_QUERY_CONTRACT_VERSION } from "./query-errors.generated.js";
 import { GraphQueryError, isGraphQueryErrorBody, type GraphQueryErrorBody, type GraphSearchOptions, type GraphSearchRequest, type GraphSearchResult } from "./query.js";
 import { GraphApiError, type CompletionInputGraph, type CompletionOutput, type CompletionState, type CurrentTransitionReceipt, type GraphAction, type GraphApiErrorBody, type GraphCapability, type GraphEdge, type GraphId, type GraphLayer, type GraphNode, type InteractionInput, type ResolvedLayer, type ResolvedPersonalPresentation, type StopReason } from "./types.js";
 import { GraphIcons } from "./icon-discovery.js";
+import { materializeGraphPreview, type GraphPreview } from "./preview.js";
 import { GraphVisualAssets } from "./visual-assets.js";
+
+/** A committed write, with its advisory draft preview when the run supports one. */
+export type WithGraphPreview<T> = T & { readonly preview?: GraphPreview };
 
 export class RelayerGraphClient {
   readonly capability: GraphCapability;
@@ -19,7 +23,7 @@ export class RelayerGraphClient {
   readonly #submittedDetails = new WeakMap<NodeObject, Promise<CompiledNodeDetail>>();
   readonly #acceptedDetails = new WeakMap<NodeObject, Promise<CompiledNodeDetail>>();
   readonly #submissionEnvelopes = new WeakMap<NodeObject, NodeSubmissionEnvelope>();
-  readonly #submittedNodes = new WeakMap<NodeObject, Promise<GraphNode>>();
+  readonly #submittedNodes = new WeakMap<NodeObject, Promise<WithGraphPreview<GraphNode>>>();
 
   constructor(capability: GraphCapability, private readonly requestScope?: { readonly beforeRequest: (path: string) => void; readonly signal: AbortSignal }) {
     this.capability = { ...capability, url: capability.url.replace(/\/$/, "") };
@@ -31,10 +35,11 @@ export class RelayerGraphClient {
     const url = environment.RELAYER_GRAPH_URL;
     const token = environment.RELAYER_GRAPH_TOKEN;
     const node = Number(environment.RELAYER_NODE_ID);
+    const previewDirectory = environment.RELAYER_GRAPH_PREVIEW_DIR;
     if (!url || !token || !Number.isSafeInteger(node) || node < 1) {
       throw new Error("RELAYER_GRAPH_URL, RELAYER_GRAPH_TOKEN, and RELAYER_NODE_ID are required");
     }
-    return new RelayerGraphClient({ url, token, nodeId: node });
+    return new RelayerGraphClient({ url, token, nodeId: node, ...(previewDirectory ? { previewDirectory } : {}) });
   }
 
   async getNode(reference: NodeReference): Promise<GraphNode> {
@@ -83,13 +88,13 @@ export class RelayerGraphClient {
     else bindNodeDetailOwner(envelope.detailAuthoring, node, this.capability.url, this.capability.nodeId, envelope.clientKey);
   }
 
-  submitNode(node: NodeObject): Promise<GraphNode> {
+  submitNode(node: NodeObject): Promise<WithGraphPreview<GraphNode>> {
     try { this.bindSubmissionNode(node); } catch (error) { return Promise.reject(error); }
     const existing = this.#submittedNodes.get(node);
     if (existing !== undefined) return existing;
-    const submission = deferred<GraphNode>();
+    const submission = deferred<WithGraphPreview<GraphNode>>();
     this.#submittedNodes.set(node, submission.promise);
-    let work: Promise<GraphNode>;
+    let work: Promise<WithGraphPreview<GraphNode>>;
     try {
       const envelope = this.submissionEnvelope(node);
       const acceptedDetail = deferred<CompiledNodeDetail>();
@@ -113,7 +118,7 @@ export class RelayerGraphClient {
     node: NodeObject,
     envelope: NodeSubmissionEnvelope,
     acceptedDetail: ReturnType<typeof deferred<CompiledNodeDetail>>,
-  ): Promise<GraphNode> {
+  ): Promise<WithGraphPreview<GraphNode>> {
     let authoredDetail: CompiledNodeDetail | undefined;
     try {
       authoredDetail = await this.finalizeNodeDetail(node, envelope);
@@ -141,7 +146,7 @@ export class RelayerGraphClient {
       );
       acceptedDetail.resolve(accepted.authoredDetail ?? authoredDetail);
       applyAcceptedNodeResponse(envelope.owner.object, accepted);
-      return accepted;
+      return this.withPreview(accepted, (body as { preview?: unknown }).preview, `node-${accepted.id}`);
     } catch (error) {
       if (authoredDetail === undefined) acceptedDetail.reject(error);
       else acceptedDetail.resolve(authoredDetail);
@@ -239,8 +244,8 @@ export class RelayerGraphClient {
     return edges;
   }
 
-  async submitLayer(layer: LayerObject, options: { readonly sizeJustification?: string } = {}): Promise<ResolvedLayer["layer"]> {
-    const body = await this.request<{ layer: ResolvedLayer["layer"] }>("/api/graph/layers", {
+  async submitLayer(layer: LayerObject, options: { readonly sizeJustification?: string } = {}): Promise<WithGraphPreview<ResolvedLayer["layer"]>> {
+    const body = await this.request<{ layer: ResolvedLayer["layer"]; preview?: unknown }>("/api/graph/layers", {
       method: "POST",
       body: JSON.stringify({
         clientKey: layer.clientKey,
@@ -254,12 +259,26 @@ export class RelayerGraphClient {
             x: placement.x,
             y: placement.y,
           })),
+          edgeShape: layer.layout.edgeShape,
+          ...(layer.layout.edgeRoutes.length ? {
+            edgeRoutes: layer.layout.edgeRoutes.map((route) => ({
+              edgeId: edgeId(route.edge),
+              shape: route.shape,
+              ends: route.ends?.map((end) => ({ nodeId: nodeId(end.node), side: end.side })),
+              waypoints: route.waypoints?.map(({ x, y }) => ({ x, y })),
+            })),
+          } : {}),
         },
         sizeJustification: options.sizeJustification,
       }),
     });
     layer.ref = body.layer;
-    return body.layer;
+    return this.withPreview(body.layer, body.preview, `layer-${body.layer.id}`);
+  }
+
+  private async withPreview<T extends object>(record: T, preview: unknown, target: string): Promise<WithGraphPreview<T>> {
+    const materialized = await materializeGraphPreview(preview, this.capability.previewDirectory, target);
+    return materialized === undefined ? record : { ...record, preview: materialized };
   }
 
   async addAction(source: NodeReference, action: ActionObject): Promise<GraphAction> {
@@ -511,7 +530,7 @@ function validatedSubmittedNodeResponse(
     const envelope = snapshotNodeResponseRecord(
       value,
       ["node"],
-      [],
+      ["preview"],
       "response",
       "Response must contain exactly one ordinary node data property",
     );

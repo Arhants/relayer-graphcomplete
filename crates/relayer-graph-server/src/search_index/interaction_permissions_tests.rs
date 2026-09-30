@@ -10,11 +10,14 @@ async fn layer(writer: &GraphWriter, key: &str, node: &GraphNode) -> GraphLayer 
             nodes: vec![node.id],
             edges: vec![],
             size_justification: None,
-            layout: Some(LayerLayout::v1(vec![NodePlacement {
-                node_id: node.id,
-                x: 0.5,
-                y: 0.5,
-            }])),
+            layout: Some(LayerLayout::v1(
+                vec![NodePlacement {
+                    node_id: node.id,
+                    x: 0.5,
+                    y: 0.5,
+                }],
+                "default",
+            )),
         })
         .await
         .unwrap()

@@ -11,6 +11,7 @@ import {
 } from "../native-session-reset.js";
 import { redactTraceData } from "../trace.js";
 import { CURRENT_WORKSPACE_GUIDANCE, GRAPH_PRESENTATION_GUIDANCE, NODE_ICON_GUIDANCE } from "./graph-presentation-guidance.js";
+import { LAYER_EDGE_SHAPE_GUIDANCE } from "./layer-edge-shape-guidance.js";
 import {
   personalPresentationNativeInstructions,
   personalPresentationPrompt,
@@ -554,6 +555,8 @@ export class CodexBasicHarness implements Harness {
     environment.RELAYER_GRAPH_URL = graph.url;
     environment.RELAYER_GRAPH_TOKEN = graph.token;
     environment.RELAYER_NODE_ID = String(graph.nodeId);
+    delete environment.RELAYER_GRAPH_PREVIEW_DIR;
+    if (graph.previewDirectory !== undefined) environment.RELAYER_GRAPH_PREVIEW_DIR = graph.previewDirectory;
     if (completionBroker !== undefined) {
       environment.RELAYER_COMPLETE_URL = completionBroker.url;
       environment.RELAYER_COMPLETE_TOKEN = completionBroker.token;
@@ -752,11 +755,13 @@ The required order is:
 1. create stable-keyed NodeObject values with icon, title, and useful markdown detail;
 2. await graph.submitNode(node) for each node;
 3. create a stable-keyed EdgeObject and await graph.createEdge(edge) for each visible undirected connection;
-4. create a version-1 LayerLayoutObject with exactly one NodePlacementObject(node, x, y) per layer node, then await graph.submitLayer(new LayerObject(nodes, edges, layout, "response-layer"));
+4. create a version-1 LayerLayoutObject(placements, edgeShape, edgeRoutes?) with exactly one NodePlacementObject(node, x, y) per layer node, then await graph.submitLayer(new LayerObject(nodes, edges, layout, "response-layer"));
 5. await graph.addAction(${interactionNode.id}, { kind: "navigate", relation: "expand", label: "Response", target: layer, clientKey: "root-response" });
 6. await graph.submit(${interactionNode.id}).
 
 The visible layer must contain 1 to 8 nodes and must be connected. Layer edges are exactly what the user sees.
+
+${LAYER_EDGE_SHAPE_GUIDANCE}
 
 Every new layer, including every child layer, requires an intentional authored layout. Coordinates are normalized numbers from 0 through 1 and describe semantic relative position independently of the viewport. Place a one-node layer at (0.5, 0.5). Keep flow or time moving consistently, use a parent or summary node to anchor hierarchy, group related nodes spatially, align comparisons deliberately, and avoid accidental overlap or edge crossings where a clearer arrangement is available. The renderer changes the camera for the viewport; do not derive coordinates from pixels, window size, or inspector state.
 
@@ -863,6 +868,7 @@ if (!Number.isSafeInteger(priorLayerId)) throw new Error("Expected a safe accept
 await graph.addAction(summaryNode, { kind: "navigate", relation: "reference", sourceLayer: currentLayer, label: "View prior context", target: priorLayerId, clientKey: "summary-prior-context" });
 Do not turn a node, relationship, path, list, record, or arbitrary string into an action target. Search is optional: use it when prior accepted graph context can improve the answer, not as a substitute for inspecting the workspace or completing the underlying task.
 ` : "";
+  const draftPreviewGuidance = context !== undefined && draftPreviewsAvailable(context) ? `\n${DRAFT_PREVIEW_GUIDANCE}\n` : "";
   return `You are the Relayer layered-navigation harness. ${UNDERLYING_TASK_GUIDANCE}
 
 After doing the underlying work, answer the current user interaction with a useful graph that truthfully presents the result, evidence, and limitations. A flat answer is valid. Add navigation only when opening it would materially improve understanding or support; apply that same test again inside every layer you author.
@@ -891,7 +897,7 @@ ${semanticCompletionGuidanceJs(context, completeModuleUrl, nativeAgentLabel)}
 
 The current interaction may carry an invoke lease created by the product. Before authoring, use graph.getNode(${interactionNode.id}) and graph.getNeighbors(${interactionNode.id}) to inspect the current node and any relevant source context exposed by the graph. Treat that context as input to your answer; do not copy, forge, or manage lease metadata. Author the response normally. A successful ordinary graph.submit(${interactionNode.id}) automatically fulfills any lease held by this interaction. There is no separate resolveAction call.
 
-${graphSearchGuidance}
+${graphSearchGuidance}${draftPreviewGuidance}
 
 Navigation has two meanings:
 - "expand" continues the explanation with a more detailed layer. Expansion must not point back to an expansion ancestor.
@@ -909,7 +915,8 @@ For every layer, choose the member whose detail should open first. Set layer.def
 
 Layers normally contain 1 to 5 nodes. A layer may contain 6 to 8 nodes only when keeping them together matters; pass a private sizeJustification to submitLayer. Never mention or expose the size justification in user-facing node text. More than 8 nodes must be split. Layer edges are visible and undirected. Every node needs a supported icon, short title, and useful markdown detail. ${NODE_ICON_GUIDANCE}
 
-Every new root, expansion, and reference layer requires a version-1 LayerLayoutObject with exactly one NodePlacementObject(node, x, y) per member node. Coordinates are normalized numbers from 0 through 1 and express semantic relative position independently of the viewport. Place a one-node layer at (0.5, 0.5). Keep flow or time moving consistently, use a parent or summary node to anchor hierarchy, group related nodes spatially, align comparisons deliberately, and avoid accidental overlap or edge crossings where a clearer arrangement is available. Do not use pixels, window size, or inspector state. Example: const layout = new LayerLayoutObject([new NodePlacementObject(first, 0.25, 0.5), new NodePlacementObject(second, 0.75, 0.5)]); const layer = new LayerObject([first, second], [edge], layout);
+Every new root, expansion, and reference layer requires a version-1 LayerLayoutObject(placements, edgeShape, edgeRoutes?) with exactly one NodePlacementObject(node, x, y) per member node. Coordinates are normalized numbers from 0 through 1 and express semantic relative position independently of the viewport. Place a one-node layer at (0.5, 0.5). Keep flow or time moving consistently, use a parent or summary node to anchor hierarchy, group related nodes spatially, align comparisons deliberately, and avoid accidental overlap or edge crossings where a clearer arrangement is available. Do not use pixels, window size, or inspector state. Example: const layout = new LayerLayoutObject([new NodePlacementObject(first, 0.25, 0.5), new NodePlacementObject(second, 0.75, 0.5)], "elbow-horizontal"); const layer = new LayerObject([first, second], [edge], layout); a routed loop-back: new LayerLayoutObject(placements, "elbow-horizontal", [{ edge: loopBack, ends: [{ node: last, side: "top" }, { node: first, side: "top" }], waypoints: [{ x: 0.9, y: 0.1 }, { x: 0.1, y: 0.1 }] }]);
+${LAYER_EDGE_SHAPE_GUIDANCE}
 
 Layer edges are exactly what the user sees and are undirected. Every node needs a supported icon, a short title, and useful markdown detail. Optional action icons must also use a supported Relayer icon name:
 ${NODE_ICON_GUIDANCE}
@@ -917,6 +924,14 @@ ${NODE_ICON_GUIDANCE}
 Action variants are "chip", "pill", "wide", or "card". A card requires description; other variants do not accept one.
 
 The graph service enforces exact provenance, target visibility, layer size, expansion cycles, and accepted closure. If a call fails, read every natural-language issue, edit the same program and rerun it with the same clientKey values; stable keys make the whole-program rerun update the same drafts instead of creating duplicates when each object's identity-owning context stays unchanged. An action's clientKey is scoped to its source node: keep every draft action on the same source node during repair, because moving it creates a different action and leaves the original draft behind. Do not add fake navigate or reference actions merely to make abandoned draft layers reachable. Only when graph.submit identifies a genuinely abandoned orphan draft, recover with graph.discardLayer(layer); this preserves that layer as stopped history without discarding its nodes, edges, actions, or child layers. A model turn ending is not completion. A successful graph.submit call is required to complete the GraphComplete response, but it does not by itself complete the underlying user task. Do not submit a plan as though it were completed work. Before final submission, verify that requested workspace effects have actually occurred and represent their real results in the graph.`;
+}
+
+/** Present only when the run supports previews and the host has a renderer (PRD §11.10). */
+export const DRAFT_PREVIEW_GUIDANCE = `Draft previews are on for this run. A successful graph.submitLayer returns an image of the layer as the user will see it, and graph.submitNode returns one for a node with authored detail. The returned object's preview field has a status of rendered, cached, failed, or limit_reached; a rendered or cached preview also has path, width, and height. Print preview.path from your program, then open that PNG with your image viewing tool and look at it. Look before your final graph.submit, because graph access ends when it succeeds: run the program without graph.submit first, check the images, then rerun it with the same clientKey values and submit. If you see overlaps, cramped or unreadable nodes, or a layout that doesn't show the real relationships, edit the program and rerun it with the same clientKey values; a changed object returns a fresh image. Controls for actions you have not added yet appear unavailable in a preview; that is expected. The image is advisory: a failed or limit_reached preview never blocks your work.`;
+
+/** The host grants a preview folder only when previews are supported and a renderer exists. */
+export function draftPreviewsAvailable(context: HarnessRunContext): boolean {
+  return context.graph.acquireCapability().previewDirectory !== undefined;
 }
 
 function currentWorkspaceMechanicsJs(): string {
@@ -942,7 +957,7 @@ function graphAuthoringCommand(launcher: string | undefined): string {
 
 function pinnedExecutionClause(launcher: string | undefined): string {
   if (launcher === undefined) return "";
-  return `In this pinned mode, the launcher heredoc is the only permitted shell action for graph authoring. Do not run sed, rg, cat, find, or any other inspection command through the launcher or from the authored graph program. If the authored program fails, repair it only from the returned error and rerun the same launcher heredoc. This restriction applies only to the graph-authoring path: complete the underlying user task with ordinary Codex workspace tools under the configured permission policy. LayerLayoutObject accepts exactly one argument: the placements array, for example new LayerLayoutObject([new NodePlacementObject(node, 0.5, 0.5)]). Its version is already fixed at 1; never pass a version argument and never assign layout.version.`;
+  return `In this pinned mode, the launcher heredoc is the only permitted shell action for graph authoring. Do not run sed, rg, cat, find, or any other inspection command through the launcher or from the authored graph program. If the authored program fails, repair it only from the returned error and rerun the same launcher heredoc. This restriction applies only to the graph-authoring path: complete the underlying user task with ordinary Codex workspace tools under the configured permission policy. LayerLayoutObject takes the placements array, the edge shape and an optional array of edge routes, for example new LayerLayoutObject([new NodePlacementObject(node, 0.5, 0.5)], "default"). Its version is already fixed at 1; never pass a version argument and never assign layout.version.`;
 }
 
 function traceCodexAppServerNotification(context: HarnessRunContext, method: string, params: unknown, state: CodexTraceState): void {

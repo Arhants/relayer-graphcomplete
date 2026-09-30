@@ -5,7 +5,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::{
-    ActionId, ActionKind, GraphError, InputAction, LayerId, NodeId,
+    ActionId, ActionKind, EDGE_SHAPES, EdgeEnd, EdgeId, EdgeRoute, GraphError, InputAction,
+    LayerId, LayerLayout, LayoutPoint, MAX_EDGE_ROUTE_WAYPOINTS, NODE_SIDES, NodeId,
     PERSONAL_PRESENTATION_PROFILE_THREAD_ID, PresentingInputOccurrence, ProjectId,
     SubmittedInputValue, ThreadId, graph::InteractionScope, graph::completion,
     storage::sqlite::actions::ActionTable,
@@ -145,6 +146,31 @@ pub struct ImportedLayer {
 pub struct ImportedLayerLayout {
     pub version: u32,
     pub placements: Vec<ImportedNodePlacement>,
+    /// Absent in exports written before edge shapes; it then reads as "default".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub edge_shape: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub edge_routes: Vec<ImportedEdgeRoute>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportedEdgeRoute {
+    pub edge_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shape: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ends: Vec<ImportedEdgeEnd>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub waypoints: Vec<LayoutPoint>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportedEdgeEnd {
+    pub node_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub side: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -675,7 +701,7 @@ impl crate::GraphDatabase {
                 if !seen_layers.insert(resolved.layer.id.clone()) {
                     continue;
                 }
-                validate_imported_layout(&resolved.layer)?;
+                validate_imported_layout(&resolved.layer, &resolved.edges)?;
                 for edge in &resolved.edges {
                     if edge_ids.contains_key(&edge.id) {
                         continue;
@@ -688,11 +714,13 @@ impl crate::GraphDatabase {
                         .bind(owner).bind(&edge.id).execute(&mut *tx).await?;
                     edge_ids.insert(edge.id.clone(), result.last_insert_rowid());
                 }
-                let result = sqlx::query("INSERT INTO layers(project_id,thread_id,layout_schema_version,state,owner_interaction_id,client_key,default_node_id) VALUES (?1,?2,?3,'accepted',?4,?5,?6)")
+                let result = sqlx::query("INSERT INTO layers(project_id,thread_id,layout_schema_version,state,owner_interaction_id,client_key,default_node_id,layout_edge_shape,layout_edge_routes) VALUES (?1,?2,?3,'accepted',?4,?5,?6,?7,?8)")
                     .bind(metadata.project_id.map(ProjectId::value)).bind(metadata.thread_id.value())
                     .bind(resolved.layer.layout.as_ref().map(|layout| i64::from(layout.version)))
                     .bind(owner).bind(&resolved.layer.id)
                     .bind(resolved.layer.default_node_id.as_ref().map(|id| node_ids[id]))
+                    .bind(resolved.layer.layout.as_ref().and_then(|layout| layout.edge_shape.as_deref()))
+                    .bind(imported_routes(resolved.layer.layout.as_ref(), &node_ids, &edge_ids)?)
                     .execute(&mut *tx).await?;
                 let layer_id = result.last_insert_rowid();
                 sqlx::query("INSERT INTO imported_layer_client_keys(layer_id,import_id,client_key) VALUES (?1,?2,?3)")
@@ -1452,7 +1480,117 @@ impl crate::GraphDatabase {
     }
 }
 
-fn validate_imported_layout(layer: &ImportedLayer) -> Result<(), GraphError> {
+/// Stores imported routes against the imported records' new IDs, as the layer read expects.
+fn imported_routes(
+    layout: Option<&ImportedLayerLayout>,
+    node_ids: &HashMap<String, i64>,
+    edge_ids: &HashMap<String, i64>,
+) -> Result<Option<String>, GraphError> {
+    let Some(layout) = layout.filter(|layout| !layout.edge_routes.is_empty()) else {
+        return Ok(None);
+    };
+    let node = |id: &str| {
+        NodeId::new(node_ids[id])
+            .ok_or_else(|| GraphError::Internal("invalid imported node".into()))
+    };
+    let routes = layout
+        .edge_routes
+        .iter()
+        .map(|route| {
+            Ok(EdgeRoute {
+                edge_id: EdgeId::new(edge_ids[&route.edge_id])
+                    .ok_or_else(|| GraphError::Internal("invalid imported edge".into()))?,
+                shape: route.shape.clone(),
+                ends: route
+                    .ends
+                    .iter()
+                    .map(|end| {
+                        Ok(EdgeEnd {
+                            node_id: node(&end.node_id)?,
+                            side: end.side.clone(),
+                        })
+                    })
+                    .collect::<Result<_, GraphError>>()?,
+                waypoints: route.waypoints.clone(),
+            })
+        })
+        .collect::<Result<Vec<_>, GraphError>>()?;
+    crate::storage::sqlite::layers::stored_routes(
+        &LayerLayout::v1(Vec::new(), "default").with_edge_routes(routes),
+    )
+}
+
+fn validate_imported_routes(
+    layer: &ImportedLayer,
+    layout: &ImportedLayerLayout,
+    edges: &[ImportedEdge],
+) -> Result<(), GraphError> {
+    let invalid = |reason: &str| {
+        Err(GraphError::Internal(format!(
+            "imported layer {} has an invalid edge route: {reason}",
+            layer.id
+        )))
+    };
+    let mut routed = HashSet::new();
+    for route in &layout.edge_routes {
+        let Some(edge) = edges
+            .iter()
+            .find(|edge| edge.id == route.edge_id && layer.edges.contains(&edge.id))
+        else {
+            return invalid("edge outside the layer");
+        };
+        if !routed.insert(route.edge_id.as_str()) {
+            return invalid("duplicate route");
+        }
+        if route
+            .shape
+            .as_ref()
+            .is_some_and(|shape| !EDGE_SHAPES.contains(&shape.as_str()))
+        {
+            return invalid("unsupported shape");
+        }
+        if !route.ends.is_empty() {
+            let mut ends = route
+                .ends
+                .iter()
+                .map(|end| end.node_id.as_str())
+                .collect::<Vec<_>>();
+            let mut endpoints = edge
+                .endpoints
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>();
+            ends.sort_unstable();
+            endpoints.sort_unstable();
+            if ends != endpoints {
+                return invalid("ends are not the edge's two nodes");
+            }
+        }
+        if route.ends.iter().any(|end| {
+            end.side
+                .as_ref()
+                .is_some_and(|side| !NODE_SIDES.contains(&side.as_str()))
+        }) {
+            return invalid("unsupported side");
+        }
+        if (!route.waypoints.is_empty() && route.ends.is_empty())
+            || route.waypoints.len() > MAX_EDGE_ROUTE_WAYPOINTS
+            || route.waypoints.iter().any(|point| {
+                ![point.x, point.y]
+                    .iter()
+                    .all(|value| value.is_finite() && (0.0..=1.0).contains(value))
+            })
+        {
+            return invalid("invalid waypoints");
+        }
+    }
+    Ok(())
+}
+
+fn validate_imported_layout(
+    layer: &ImportedLayer,
+    edges: &[ImportedEdge],
+) -> Result<(), GraphError> {
     if layer
         .default_node_id
         .as_ref()
@@ -1473,6 +1611,15 @@ fn validate_imported_layout(layer: &ImportedLayer) -> Result<(), GraphError> {
             layer.id, layout.version
         )));
     }
+    if let Some(shape) = &layout.edge_shape
+        && !EDGE_SHAPES.contains(&shape.as_str())
+    {
+        return Err(GraphError::Internal(format!(
+            "imported layer {} has unsupported edge shape {shape:?}",
+            layer.id
+        )));
+    }
+    validate_imported_routes(layer, layout, edges)?;
     if layout.placements.len() != layer.nodes.len() {
         return Err(GraphError::Internal(format!(
             "imported layer {} layout does not place every node exactly once",

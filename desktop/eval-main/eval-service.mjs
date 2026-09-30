@@ -69,6 +69,15 @@ import {
 } from "./simulated-user-judge.mjs";
 import { GRAPH_SEARCH_EVAL_TARGET } from "./configuration-paths.mjs";
 
+/**
+ * Real-time bound on one product turn. RELAYER_EVAL_TURN_TIMEOUT_MS raises it
+ * for live runs whose authored answers take longer than the 10-minute default.
+ */
+export function evalTurnTimeoutMs(environment = process.env) {
+  const configured = Number(environment.RELAYER_EVAL_TURN_TIMEOUT_MS);
+  return Number.isSafeInteger(configured) && configured > 0 ? configured : 10 * 60_000;
+}
+
 export const evalCases = Object.freeze([
   interactiveTripCase,
   Object.freeze({
@@ -2793,7 +2802,7 @@ export class EvalService {
   }
 
   async #waitForInteraction(execution, threadId, interactionId) {
-    const deadline = Date.now() + 10 * 60_000;
+    const deadline = Date.now() + evalTurnTimeoutMs();
     while (Date.now() < deadline) {
       const detail = await this.#productRequest(`/api/threads/${threadId}`);
       await this.#observeCurrentProjections(execution, detail);
@@ -2802,13 +2811,13 @@ export class EvalService {
       if (!IN_PROGRESS_COMPLETION_STATUSES.has(interaction.completionStatus)) return interaction;
       await new Promise((resolveWait) => setTimeout(resolveWait, 250));
     }
-    throw new Error(`Product interaction ${interactionId} did not finish within 10 minutes.`);
+    throw new Error(`Product interaction ${interactionId} did not finish within ${evalTurnTimeoutMs() / 60_000} minutes.`);
   }
 
   async #waitForSemanticChildren(execution, threadId, humanInteractionIds) {
     // Native execution keeps its real-time bound even when a deterministic
     // fixture advances only the discovery quiet window.
-    const deadline = Date.now() + 10 * 60_000;
+    const deadline = Date.now() + evalTurnTimeoutMs();
     const clock = this.semanticChildDiscoveryClock;
     const discoveryDeadline = clock.now() + SEMANTIC_CHILD_DISCOVERY_TIMEOUT_MS;
     const boundedObservation = semanticChildDiscoveryIsBounded(execution.harnessConfiguration);

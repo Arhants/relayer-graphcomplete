@@ -22,21 +22,80 @@ pub struct GraphLayer {
     pub state: RecordState,
 }
 
+/// How a layer draws all its edges. `default` leaves the shape to the design.
+pub const EDGE_SHAPES: &[&str] = &[
+    "default",
+    "straight",
+    "arc-outward",
+    "arc-circle",
+    "elbow-horizontal",
+    "elbow-vertical",
+];
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LayerLayout {
     #[serde(default)]
     pub version: u32,
+    /// List order is the layer's reading order.
     #[serde(default)]
     pub placements: Vec<NodePlacement>,
+    /// Required on submit. Absent only on layers written before edge shapes; readers treat it as "default".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub edge_shape: Option<String>,
+    /// Optional per-edge overrides; edges without a route draw in the layer's shape.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub edge_routes: Vec<EdgeRoute>,
+}
+
+/// The side of a node where an edge attaches.
+pub const NODE_SIDES: &[&str] = &["top", "right", "bottom", "left"];
+
+/// The most waypoints one edge route may pass through.
+pub const MAX_EDGE_ROUTE_WAYPOINTS: usize = 4;
+
+/// One edge's own shape, attachment sides and waypoints. Waypoints are listed from
+/// `ends[0]` to `ends[1]`; that order is not a direction and nothing draws one.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EdgeRoute {
+    pub edge_id: EdgeId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shape: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ends: Vec<EdgeEnd>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub waypoints: Vec<LayoutPoint>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EdgeEnd {
+    pub node_id: NodeId,
+    /// Absent means the renderer chooses where the edge meets the node.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub side: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct LayoutPoint {
+    pub x: f64,
+    pub y: f64,
 }
 
 impl LayerLayout {
-    pub fn v1(placements: Vec<NodePlacement>) -> Self {
+    pub fn v1(placements: Vec<NodePlacement>, edge_shape: &str) -> Self {
         Self {
             version: 1,
             placements,
+            edge_shape: Some(edge_shape.into()),
+            edge_routes: Vec::new(),
         }
+    }
+
+    pub fn with_edge_routes(mut self, edge_routes: Vec<EdgeRoute>) -> Self {
+        self.edge_routes = edge_routes;
+        self
     }
 
     pub fn placements(&self) -> &[NodePlacement] {
@@ -84,6 +143,9 @@ pub(crate) struct LayerCandidate<'draft> {
 impl LayerCandidate<'_> {
     pub(crate) fn validate(&self) -> Result<(), GraphError> {
         self.draft.validate_shape()?;
+        if let Some(layout) = &self.draft.layout {
+            validate_edge_route_ends(layout, &self.edges)?;
+        }
         let node_ids: HashSet<_> = self.nodes.iter().map(|node| node.id).collect();
         for edge in &self.edges {
             if !node_ids.contains(&edge.endpoints[0]) || !node_ids.contains(&edge.endpoints[1]) {
@@ -142,9 +204,23 @@ impl LayerDraft {
         if let Err(GraphError::ValidationIssues {
             issues: layout_issues,
             ..
-        }) = validate_authored_layout(self.layout.as_ref(), &self.nodes)
+        }) = validate_authored_layout(self.layout.as_ref(), &self.nodes, &self.edges)
         {
             issues.extend(layout_issues);
+        }
+        if self
+            .layout
+            .as_ref()
+            .is_some_and(|layout| layout.edge_shape.is_none())
+        {
+            issues.push(ValidationIssue::new(
+                "missing_edge_shape",
+                "layout.edgeShape",
+                format!(
+                    "Choose how this layer draws its edges: one of {}. Use \"default\" when no shape fits the structure better.",
+                    EDGE_SHAPES.join(", ")
+                ),
+            ));
         }
         if (6..=8).contains(&self.nodes.len()) {
             let justification = self
@@ -180,6 +256,7 @@ impl LayerDraft {
 pub(crate) fn validate_authored_layout(
     layout: Option<&LayerLayout>,
     nodes: &[NodeId],
+    edges: &[EdgeId],
 ) -> Result<(), GraphError> {
     let mut issues = Vec::new();
     match layout {
@@ -188,7 +265,7 @@ pub(crate) fn validate_authored_layout(
             "layout",
             "Provide a versioned layout with exactly one normalized placement for every layer node.",
         )),
-        Some(layout) => validate_layout(layout, nodes, &mut issues),
+        Some(layout) => validate_layout(layout, nodes, edges, &mut issues),
     }
     if issues.is_empty() {
         Ok(())
@@ -197,7 +274,12 @@ pub(crate) fn validate_authored_layout(
     }
 }
 
-fn validate_layout(layout: &LayerLayout, nodes: &[NodeId], issues: &mut Vec<ValidationIssue>) {
+fn validate_layout(
+    layout: &LayerLayout,
+    nodes: &[NodeId],
+    edges: &[EdgeId],
+    issues: &mut Vec<ValidationIssue>,
+) {
     if layout.version != 1 {
         issues.push(ValidationIssue::new(
             "unsupported_layout_version",
@@ -232,8 +314,9 @@ fn validate_layout(layout: &LayerLayout, nodes: &[NodeId], issues: &mut Vec<Vali
                 ),
             ));
         }
-        validate_coordinate(placement.x, index, "x", issues);
-        validate_coordinate(placement.y, index, "y", issues);
+        let path = format!("layout.placements[{index}]");
+        validate_coordinate(placement.x, &path, "x", issues);
+        validate_coordinate(placement.y, &path, "y", issues);
     }
     for (index, node_id) in nodes.iter().enumerate() {
         if !placed.contains(node_id) {
@@ -246,24 +329,164 @@ fn validate_layout(layout: &LayerLayout, nodes: &[NodeId], issues: &mut Vec<Vali
             ));
         }
     }
+    if let Some(shape) = &layout.edge_shape
+        && !EDGE_SHAPES.contains(&shape.as_str())
+    {
+        issues.push(ValidationIssue::new(
+            "unsupported_edge_shape",
+            "layout.edgeShape",
+            format!(
+                "Edge shape {shape:?} is not supported. Choose one of: {}.",
+                EDGE_SHAPES.join(", ")
+            ),
+        ));
+    }
+    validate_edge_routes(layout, nodes, edges, issues);
+}
+
+fn validate_edge_routes(
+    layout: &LayerLayout,
+    nodes: &[NodeId],
+    edges: &[EdgeId],
+    issues: &mut Vec<ValidationIssue>,
+) {
+    let mut routed = HashSet::new();
+    for (index, route) in layout.edge_routes.iter().enumerate() {
+        let path = format!("layout.edgeRoutes[{index}]");
+        if !edges.contains(&route.edge_id) {
+            issues.push(ValidationIssue::new(
+                "edge_route_outside_layer",
+                format!("{path}.edgeId"),
+                format!(
+                    "Edge {} is not in this layer. Route only this layer's edges.",
+                    route.edge_id
+                ),
+            ));
+        }
+        if !routed.insert(route.edge_id) {
+            issues.push(ValidationIssue::new(
+                "duplicate_edge_route",
+                format!("{path}.edgeId"),
+                format!(
+                    "Edge {} already has a route. Give each edge at most one route.",
+                    route.edge_id
+                ),
+            ));
+        }
+        if let Some(shape) = &route.shape
+            && !EDGE_SHAPES.contains(&shape.as_str())
+        {
+            issues.push(ValidationIssue::new(
+                "unsupported_edge_shape",
+                format!("{path}.shape"),
+                format!(
+                    "Edge shape {shape:?} is not supported. Choose one of: {}.",
+                    EDGE_SHAPES.join(", ")
+                ),
+            ));
+        }
+        if !route.ends.is_empty()
+            && (route.ends.len() != 2
+                || route.ends[0].node_id == route.ends[1].node_id
+                || route.ends.iter().any(|end| !nodes.contains(&end.node_id)))
+        {
+            issues.push(ValidationIssue::new(
+                "edge_route_ends_mismatch",
+                format!("{path}.ends"),
+                "List exactly the edge's two nodes as its ends.",
+            ));
+        }
+        for (end_index, end) in route.ends.iter().enumerate() {
+            if let Some(side) = &end.side
+                && !NODE_SIDES.contains(&side.as_str())
+            {
+                issues.push(ValidationIssue::new(
+                    "unsupported_node_side",
+                    format!("{path}.ends[{end_index}].side"),
+                    format!(
+                        "Side {side:?} is not supported. Choose one of: {}, or omit it.",
+                        NODE_SIDES.join(", ")
+                    ),
+                ));
+            }
+        }
+        if !route.waypoints.is_empty() && route.ends.is_empty() {
+            issues.push(ValidationIssue::new(
+                "edge_route_ends_required",
+                format!("{path}.ends"),
+                "Waypoints are listed from one end to the other. Name the edge's two nodes as ends.",
+            ));
+        }
+        if route.waypoints.len() > MAX_EDGE_ROUTE_WAYPOINTS {
+            issues.push(ValidationIssue::new(
+                "too_many_waypoints",
+                format!("{path}.waypoints"),
+                format!(
+                    "An edge may pass through at most {MAX_EDGE_ROUTE_WAYPOINTS} waypoints; received {}.",
+                    route.waypoints.len()
+                ),
+            ));
+        }
+        for (point_index, point) in route.waypoints.iter().enumerate() {
+            let point_path = format!("{path}.waypoints[{point_index}]");
+            validate_coordinate(point.x, &point_path, "x", issues);
+            validate_coordinate(point.y, &point_path, "y", issues);
+        }
+    }
+}
+
+/// A route's ends must be the two nodes its edge joins. Checked wherever the edges'
+/// endpoints are at hand: submit, acceptance and import.
+pub(crate) fn validate_edge_route_ends(
+    layout: &LayerLayout,
+    edges: &[GraphEdge],
+) -> Result<(), GraphError> {
+    let issues = layout
+        .edge_routes
+        .iter()
+        .enumerate()
+        .filter(|(_, route)| route.ends.len() == 2)
+        .filter_map(|(index, route)| {
+            let edge = edges.iter().find(|edge| edge.id == route.edge_id)?;
+            let mut ends = [route.ends[0].node_id, route.ends[1].node_id];
+            let mut endpoints = edge.endpoints;
+            ends.sort_unstable();
+            endpoints.sort_unstable();
+            (ends != endpoints).then(|| {
+                ValidationIssue::new(
+                    "edge_route_ends_mismatch",
+                    format!("layout.edgeRoutes[{index}].ends"),
+                    format!(
+                        "Edge {} joins nodes {} and {}. List exactly those two nodes as its ends.",
+                        edge.id, edge.endpoints[0], edge.endpoints[1]
+                    ),
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    if issues.is_empty() {
+        Ok(())
+    } else {
+        Err(GraphError::validation_issues(issues))
+    }
 }
 
 fn validate_coordinate(
     coordinate: f64,
-    placement_index: usize,
+    path: &str,
     field: &str,
     issues: &mut Vec<ValidationIssue>,
 ) {
     if !coordinate.is_finite() {
         issues.push(ValidationIssue::new(
             "non_finite_layout_coordinate",
-            format!("layout.placements[{placement_index}].{field}"),
+            format!("{path}.{field}"),
             "Use a finite normalized coordinate from 0 through 1.",
         ));
     } else if !(0.0..=1.0).contains(&coordinate) {
         issues.push(ValidationIssue::new(
             "layout_coordinate_out_of_range",
-            format!("layout.placements[{placement_index}].{field}"),
+            format!("{path}.{field}"),
             "Use a normalized coordinate in the inclusive range 0 through 1.",
         ));
     }

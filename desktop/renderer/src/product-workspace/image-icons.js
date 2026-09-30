@@ -18,20 +18,22 @@ export function createImageIcon(icon, attributes, resolveAsset, { document = glo
   host.replaceChildren(createRelayerIcon(null));
   let released = false;
   let content;
-  const dispose = () => { released = true; content?.release?.(); content = undefined; };
+  let settle;
+  host.readyIcon = new Promise(resolve => { settle = resolve; });
+  const dispose = () => { released = true; try { content?.release?.(); } finally { content = undefined; settle("disposed"); } };
   host.disposeIcon = dispose;
   Promise.resolve().then(() => resolveAsset({ id: icon.assetId, digestSha256: icon.digestSha256, mediaType: icon.mediaType })).then((resolved) => {
     if (released) { resolved?.release?.(); return; }
     if (!resolved?.url || resolved.digestSha256 !== icon.digestSha256 || resolved.mediaType !== icon.mediaType) {
-      resolved?.release?.(); return;
+      resolved?.release?.(); settle("fallback"); return;
     }
     content = resolved;
     const image = document.createElement("img");
     image.alt = "";
     image.style.objectFit = icon.fit === "cover" ? "cover" : "contain";
-    image.onload = () => { if (!released) host.replaceChildren(image); };
+    image.onload = () => { if (!released) host.replaceChildren(image); settle(released ? "disposed" : "loaded"); };
     image.onerror = dispose;
     image.src = resolved.url;
-  }).catch(() => {});
+  }).catch(() => { settle("fallback"); });
   return host;
 }

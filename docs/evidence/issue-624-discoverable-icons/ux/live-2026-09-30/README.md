@@ -10,6 +10,8 @@ The complete 461-event trace records real command execution, native image views 
 
 ## Human review
 
+The user explicitly passed the human gate on September 30, 2026 and requested merge preparation. This approval applies to the demonstrated example, including the retrieval and recognition limits below.
+
 Inspect [the light overview](graph-overview-light.png), [dark overview](graph-overview-dark.png), [overview Details](light-node-1.png), [Coral Details](light-node-2.png), and [dark Jellyfish Details](dark-node-4.png). These are production renderer screenshots from a zero-inference replay of the actual accepted export. All five image icons and seven root Details loaded in both themes; accepted icon pins survived import.
 
 The root spokes mean membership in the reef system, not guaranteed direct interaction. Plankton is a broad category represented by one diatom photograph; the turtle photo represents one species. Small octopus recognition still relies on label and preview. Independent semantic review found no unresolved findings within this single example. This demonstrates exercised model selection with supplied inputs; it does not establish broad selection quality, autonomous online image sourcing or label-independent recognition.

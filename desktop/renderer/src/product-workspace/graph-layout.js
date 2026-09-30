@@ -76,6 +76,13 @@ const NODE_GAP = Object.freeze({ x: 24, y: 16 });
 // two node boxes overlap: first horizontally for nodes that share a row, then
 // vertically for nodes stacked in the same column.
 export function separateNodeBoxes(positions, nodes) {
+  const spread = nodeBoxSpread(positions, nodes);
+  return spread ? new Map([...positions].map(([nodeId, point]) => [nodeId, spread(point)])) : positions;
+}
+
+// The scaling about the layout's centre that separateNodeBoxes applies, or null when
+// no node boxes overlap.
+function nodeBoxSpread(positions, nodes) {
   const boxes = nodes.map((node) => ({
     point: positions.get(String(node.id)),
     bounds: node.layoutBounds ?? { halfWidth: 0, top: 0, bottom: 0 },
@@ -97,29 +104,37 @@ export function separateNodeBoxes(positions, nodes) {
   for (const pair of pairs) {
     if (pair.dx * scaleX < pair.needX && pair.dy > 0) scaleY = Math.max(scaleY, pair.needY / pair.dy);
   }
-  if (scaleX === 1 && scaleY === 1) return positions;
+  if (scaleX === 1 && scaleY === 1) return null;
   const centre = {
     x: boxes.reduce((sum, box) => sum + box.point.x, 0) / boxes.length,
     y: boxes.reduce((sum, box) => sum + box.point.y, 0) / boxes.length,
   };
-  return new Map([...positions].map(([nodeId, point]) => [nodeId, {
+  return (point) => ({
     x: centre.x + (point.x - centre.x) * scaleX,
     y: centre.y + (point.y - centre.y) * scaleY,
-  }]));
+  });
 }
 
 export function projectLayerNodePositions(layer, nodes) {
-  if (!nodes.length) return { source: layer?.layer?.layout ? "authored" : "legacy", positions: new Map() };
+  if (!nodes.length) return { source: layer?.layer?.layout ? "authored" : "legacy", positions: new Map(), project: (point) => point };
   const authored = authoredPlacements(layer, nodes);
   const normalized = authored ?? normalizedLegacyPlacements(nodes);
   const padding = worldPadding(nodes);
   const usableWidth = Math.max(1, GRAPH_WORLD_WIDTH - padding.horizontal * 2);
   const usableHeight = Math.max(1, GRAPH_WORLD_HEIGHT - padding.top - padding.bottom);
-  const positions = new Map([...normalized].map(([nodeId, point]) => [nodeId, {
+  const toWorld = (point) => ({
     x: padding.horizontal + point.x * usableWidth,
     y: padding.top + point.y * usableHeight,
-  }]));
-  return { source: authored ? "authored" : "legacy", positions: separateNodeBoxes(positions, nodes) };
+  });
+  const positions = new Map([...normalized].map(([nodeId, point]) => [nodeId, toWorld(point)]));
+  const spread = nodeBoxSpread(positions, nodes);
+  // Waypoints and other normalized layout points land where the nodes' own projection puts them.
+  const project = (point) => (spread ? spread(toWorld(point)) : toWorld(point));
+  return {
+    source: authored ? "authored" : "legacy",
+    positions: spread ? new Map([...positions].map(([nodeId, point]) => [nodeId, spread(point)])) : positions,
+    project,
+  };
 }
 
 export function graphLayoutSignature(layer, nodes, edges) {
@@ -138,4 +153,14 @@ export function graphLayoutSignature(layer, nodes, edges) {
         .sort((left, right) => compareNodeIds(left.nodeId, right.nodeId)),
     } : null,
   });
+}
+
+// A layer's reading order is the order of its authored placements. Layers
+// without a layout keep their node order.
+export function nodesInReadingOrder(layer, nodes) {
+  const placements = layer?.layer?.layout?.placements;
+  if (!Array.isArray(placements)) return nodes;
+  const rank = new Map(placements.map((placement, index) => [String(placement.nodeId), index]));
+  const position = (node) => rank.get(String(node.id)) ?? placements.length;
+  return [...nodes].sort((left, right) => position(left) - position(right));
 }

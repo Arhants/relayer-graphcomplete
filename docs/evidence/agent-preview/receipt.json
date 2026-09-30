@@ -1,0 +1,130 @@
+{
+  "sourceFiles": {
+    "crates/relayer-graph-server/src/draft_preview.rs": "93e3cb40330110e4168dc3b2d7432bb9b9f96d1b48bd7a46028e9569c75dcd06",
+    "crates/relayer-graph-server/src/lib.rs": "2f5e1452fbaed22df0442037fdbab17b85cde41ff05f95a3c54f1f2fadca20d0",
+    "desktop/main/services/graphcomplete-runtime.mjs": "f0cd135c7d71c7ebd877e4193d5ae11531ffcaf9a100d01e4293d55f7d6f0876",
+    "packages/harness-host/src/host.ts": "697ad248445a3965f894af7f93c05366100d80fb16ae09f3a9e5a42ccf4ee811",
+    "desktop/renderer/src/public-share-viewer/adapter.js": "da4135effa876c2d8a58f7b650d2ac6c536f9eb8b0d3056e6630505d0a039021",
+    "desktop/main/services/draft-preview-renderer.mjs": "901e590437d73b44b0b967dc84aacb15e56261c863caf06459617ab5c31250de",
+    "desktop/main/services/isolated-page-capture.mjs": "cf25441b41c1efe4f55672e315e769fe11393548ff7fa727648c86d526a894f6",
+    "desktop/renderer/src/draft-preview/main.js": "cec75b916db8477827a10b491998da451033266ca3dad3aec684e120dcbc77c7",
+    "desktop/renderer/src/draft-preview/image-readiness.js": "44baaffdbd0398b1b4a1756ea6138425052c591d9e41f3bf39c297e54cbc5e7e",
+    "desktop/renderer/src/product-workspace/image-icons.js": "9de3750b6814d0013c2960388a509c5e1567bc15648804800dacf40ba6f21c81",
+    "desktop/renderer/src/draft-preview/snapshot.js": "49ea7d513eb493579772edb27b6027476f74daf3cfe1e01b54647f0e07d6a5bf",
+    "desktop/renderer/src/draft-preview/template.js": "f3f759be12b7cf87ffe9b010c92ac16e44418535ea691f52b7bd5b74fe677541",
+    "packages/eval-runner/src/fixtures/graph-preview.ts": "5db43b1c328986a5d76c6bb2237a97e7fc78d2a942c27bf05f993953e1d20ed5",
+    "scripts/capture-agent-preview-evidence.mjs": "f499d736019cd7e66f885af1a2e69cf85fce5ff8740a93014ea67464a28f5602"
+  },
+  "captures": [
+    {
+      "theme": "light",
+      "file": "light-node.png",
+      "width": 576,
+      "height": 844,
+      "bytes": 25229,
+      "sha256": "6f28429b5a20a523406dfcaf845bc0621bfb5aaccdf4c350258ed5a342a64eaa"
+    },
+    {
+      "theme": "light",
+      "file": "light-layer.png",
+      "width": 1164,
+      "height": 703,
+      "bytes": 30691,
+      "sha256": "908da101de9c3bfb0039a7e14202a1347e9d09ddb4249e278ab9e493ff9948fa"
+    },
+    {
+      "theme": "light",
+      "file": "light-moved-layer.png",
+      "width": 1164,
+      "height": 703,
+      "bytes": 29490,
+      "sha256": "0c7b31ae4902d2ccf824d79a05130b04095a5d1d356b7ee079a162fa48554ad8"
+    },
+    {
+      "theme": "dark",
+      "file": "dark-node.png",
+      "width": 576,
+      "height": 844,
+      "bytes": 23165,
+      "sha256": "a60a48cd44e1fc09b9f4c511bd8c623eeade355ad14c2b11465cb0a4b742792d"
+    },
+    {
+      "theme": "dark",
+      "file": "dark-layer.png",
+      "width": 1164,
+      "height": 703,
+      "bytes": 28652,
+      "sha256": "caae3620f2468891e839ebafd1e28285da8f862ecc4a76b273d813c2b5d020a9"
+    },
+    {
+      "theme": "dark",
+      "file": "dark-moved-layer.png",
+      "width": 1164,
+      "height": 703,
+      "bytes": 27592,
+      "sha256": "f92ab85eb5b42fe49d69d45f4b82bc0a0fb64c1ee9589984f1361a10555823a4"
+    }
+  ],
+  "imagePreviewCoverage": [
+    {
+      "theme": "light",
+      "targetKind": "node",
+      "graphImages": 0,
+      "detailImages": 1,
+      "loaded": true
+    },
+    {
+      "theme": "light",
+      "targetKind": "layer",
+      "graphImages": 1,
+      "detailImages": 0,
+      "loaded": true
+    },
+    {
+      "theme": "light",
+      "targetKind": "layer",
+      "graphImages": 1,
+      "detailImages": 0,
+      "loaded": true
+    },
+    {
+      "theme": "dark",
+      "targetKind": "node",
+      "graphImages": 0,
+      "detailImages": 1,
+      "loaded": true
+    },
+    {
+      "theme": "dark",
+      "targetKind": "layer",
+      "graphImages": 1,
+      "detailImages": 0,
+      "loaded": true
+    },
+    {
+      "theme": "dark",
+      "targetKind": "layer",
+      "graphImages": 1,
+      "detailImages": 0,
+      "loaded": true
+    }
+  ],
+  "inAppFrames": {
+    "contentSize": [
+      1420,
+      900
+    ],
+    "layer": {
+      "width": 1164,
+      "height": 703
+    },
+    "node": {
+      "width": 576,
+      "height": 844
+    }
+  },
+  "isolation": "passed",
+  "windowCleanup": "passed",
+  "platform": "macOS ARM64",
+  "electron": "43.0.0"
+}

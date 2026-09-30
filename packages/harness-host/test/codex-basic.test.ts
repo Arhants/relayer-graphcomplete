@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import { loadHarnessConfiguration } from "../src/configuration.js";
 import { createNoopHarnessTraceSink, HarnessTraceStore } from "../src/trace.js";
 import type { CodexAppServerTurnOptions } from "../src/implementations/codex-app-server.js";
-import { buildLayeredNavigationPrompt, CodexBasicHarness, type CodexBasicDependencies } from "../src/implementations/codex-basic.js";
+import { buildLayeredNavigationPrompt, CodexBasicHarness, DRAFT_PREVIEW_GUIDANCE, type CodexBasicDependencies } from "../src/implementations/codex-basic.js";
 import type { HarnessConfiguration, HarnessRunContext, HarnessTraceEvent, HarnessTraceEventInput, HarnessTracePolicy, HarnessTraceSink } from "../src/types.js";
 
 const repositoryRoot = resolve(fileURLToPath(new URL("../../../", import.meta.url)));
@@ -583,7 +583,7 @@ describe("CodexBasicHarness", () => {
         expect(submittedPrompt).toContain("Do not run sed, rg, cat, find, or any other inspection command");
         expect(submittedPrompt).toContain("This restriction applies only to the graph-authoring path");
         expect(submittedPrompt).toContain("ordinary Codex workspace tools under the configured permission policy");
-        expect(submittedPrompt).toContain("LayerLayoutObject accepts exactly one argument: the placements array");
+        expect(submittedPrompt).toContain("LayerLayoutObject takes the placements array, the edge shape and an optional array of edge routes");
         expect(submittedPrompt).toContain("never assign layout.version");
         expect(submittedEnvironment.RELAYER_GRAPH_AUTHORING_NODE).toBeUndefined();
       }
@@ -765,6 +765,22 @@ describe("CodexBasicHarness", () => {
     expect(prompt).toContain("graph.getInteractionInput()");
     expect(prompt).not.toContain("sourceNodeId");
     expect(prompt).not.toContain("sourceLayerId");
+  });
+
+  it("passes the preview folder and teaches previews only when the host granted one", async () => {
+    const submitted: CodexAppServerTurnOptions[] = [];
+    const harness = harnessFixture("auto", async (options) => {
+      submitted.push(options);
+      options.onThreadId("codex-thread");
+      return { threadId: "codex-thread", turnId: "turn-1", status: "completed" };
+    });
+    const plain = runContext(1, "token");
+    const previewed = { ...plain, graph: { ...plain.graph, acquireCapability: () => ({ ...plain.graph.acquireCapability(), previewDirectory: "/tmp/previews-1" }) } };
+
+    await harness.complete(previewed);
+    expect(submitted[0]?.environment.RELAYER_GRAPH_PREVIEW_DIR).toBe("/tmp/previews-1");
+    expect(buildLayeredNavigationPrompt(previewed, "@relayer/graph-client")).toContain(DRAFT_PREVIEW_GUIDANCE);
+    expect(buildLayeredNavigationPrompt(plain, "@relayer/graph-client")).not.toContain("Draft previews are on");
   });
 
   it("teaches capability-scoped bounded search and typed references through executable JavaScript", () => {
