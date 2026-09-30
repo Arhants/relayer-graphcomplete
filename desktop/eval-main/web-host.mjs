@@ -171,8 +171,18 @@ export async function createReviewSurface({ productSession, context, annotationT
   });
 }
 
-export async function createEvalDashboard({ service, rendererDirectory, refreshCatalog, openReview, loadScreenshot, humanTasks, taskActors, openHumanTask, reviewHumanTask, openSettings }) {
+export async function createEvalDashboard({ service, rendererDirectory, refreshCatalog, openReview, loadScreenshot, humanTasks, taskActors, setupRegistry, calibration, openHumanTask, reviewHumanTask, openSettings }) {
   const operations = {
+    calibrationCatalog: () => calibration.catalog(),
+    freezeCalibrationSet: ([input]) => calibration.freeze(input),
+    compareSetupRevisions: ([input]) => calibration.compare(input),
+    recordCalibrationObservation: ([input]) => calibration.observe(input),
+    calibrationReport: ([id]) => calibration.report(id),
+    exportCalibration: () => calibration.export(),
+    calibrationSource: ([ref]) => calibration.source(ref),
+    setupRevisions: () => setupRegistry.catalog(),
+    publishSetup: ([input]) => setupRegistry.publish(input),
+    promoteSetup: ([input]) => setupRegistry.promote(input, humanTasks.annotator),
     openSettings: () => openSettings(),
     humanTasks: () => humanTasks.list(),
     humanTask: ([id]) => humanTasks.get(id),
@@ -190,8 +200,8 @@ export async function createEvalDashboard({ service, rendererDirectory, refreshC
     listRuns: () => service.listRuns(),
     getRun: ([id]) => service.getRun(id),
     createRun: ([selection]) => service.createRun(selection),
-    judgeImportedConversation: ([id, judge]) => service.judgeImportedConversation(id, judge),
-    rejudgeExecution: ([id, judge, authorization]) => service.rejudgeExecution(id, judge, authorization),
+    judgeImportedConversation: ([id, judge, revision]) => service.judgeImportedConversation(id, judge, revision),
+    rejudgeExecution: ([id, judge, authorization, revision]) => service.rejudgeExecution(id, judge, authorization, revision),
     openReview: ([id]) => openReview(id),
     exportAnnotations: ([id]) => service.exportAnnotatedExecution(id),
     loadCandidateTrace: ([id, turn]) => service.candidateTraceContext(id, turn),
