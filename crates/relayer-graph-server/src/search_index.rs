@@ -681,6 +681,36 @@ impl LadybugSearchIndex {
 }
 
 impl SearchIndex for LadybugSearchIndex {
+    fn discover_candidates(
+        &self,
+        source: Vec<relayer_graph_core::query::candidates::TextCandidate>,
+        query: String,
+        limit: usize,
+    ) -> SearchIndexFuture<Vec<relayer_graph_core::query::candidates::TextCandidate>> {
+        let index = self.clone();
+        Box::pin(async move {
+            if source.len() > 10000 || query.len() > 512 || !(1..=48).contains(&limit) {
+                return Err(GraphError::Internal(
+                    "catalog retrieval budget exceeded".into(),
+                ));
+            }
+            let deadline = Instant::now() + Duration::from_secs(2);
+            let _operation = tokio::time::timeout_at(
+                tokio::time::Instant::from_std(deadline),
+                index.runtime.operations.clone().read_owned(),
+            )
+            .await
+            .map_err(|_| GraphError::Internal("catalog retrieval deadline exceeded".into()))?;
+            index
+                .current_store()
+                .run_until(deadline, move |connection| {
+                    query::discover_candidates(connection, source, query, limit)
+                })
+                .await
+                .map_err(internal)
+        })
+    }
+
     fn wait_until_available(&self, target: SearchTarget) -> SearchIndexFuture<()> {
         let index = self.clone();
         Box::pin(async move {

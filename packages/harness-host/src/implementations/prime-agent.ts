@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { realpathSync } from "node:fs";
 import { lstat, mkdir, realpath, stat } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { RELAYER_ICON_NAMES, type GraphCapability } from "@relayer/graph-client";
+import { type GraphCapability } from "@relayer/graph-client";
 import { nativeExecutionHandle, type NativeExecutionHandle } from "../completion-execution.js";
 import {
   parseNativeSessionResetReason,
@@ -29,7 +29,7 @@ import type {
   HarnessTraceSupport,
   JsonObject,
 } from "../types.js";
-import { CURRENT_WORKSPACE_GUIDANCE, GRAPH_PRESENTATION_GUIDANCE } from "./graph-presentation-guidance.js";
+import { CURRENT_WORKSPACE_GUIDANCE, GRAPH_PRESENTATION_GUIDANCE, NODE_ICON_GUIDANCE } from "./graph-presentation-guidance.js";
 import { LAYER_EDGE_SHAPE_GUIDANCE } from "./layer-edge-shape-guidance.js";
 import {
   personalPresentationNativeInstructions,
@@ -1293,7 +1293,7 @@ export const PYTHON_GRAPH_API_REFERENCE = `Graph client reference (every graph m
 - Graph objects do not expose client_key after submission; keep your own references to the objects you submitted.`;
 
 /** Rules the graph service enforces on authored objects, stated so the first attempt passes. */
-const PYTHON_GRAPH_AUTHORING_RULES = `Every node and every optional action icon must be one of: ${RELAYER_ICON_NAMES.join(", ")}. Action variants are "chip", "pill", "wide", or "card". Only a card accepts description, and a card requires one. Apart from the interaction node's one root expand action or an exact frozen attached-node navigation grant, add actions only on draft nodes created for this interaction. Reuse alone grants no action authority. Preserve existing accepted-node actions and semantic content. Use only supported client operations; if a required full presentation replacement is unavailable, do not add an unbound action or bypass the client boundary.`;
+const PYTHON_GRAPH_AUTHORING_RULES = `${NODE_ICON_GUIDANCE} Action variants are "chip", "pill", "wide", or "card". Only a card accepts description, and a card requires one. Apart from the interaction node's one root expand action or an exact frozen attached-node navigation grant, add actions only on draft nodes created for this interaction. Reuse alone grants no action authority. Preserve existing accepted-node actions and semantic content. Use only supported client operations; if a required full presentation replacement is unavailable, do not add an unbound action or bypass the client boundary.`;
 
 // Present only when the product granted this completion a broker, as in codex.basic.
 function semanticChildGuidancePython(context: HarnessRunContext): string {

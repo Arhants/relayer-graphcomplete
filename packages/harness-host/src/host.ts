@@ -2217,7 +2217,7 @@ function libraryScope(scope: VisualBridgeScope): VisualAssetScope {
 }
 
 const READ_ONLY_VISUAL_OPERATIONS = new Set([
-  "list-registries", "list-tags", "list-assets", "find", "inspect", "download", "resolve",
+  "list-registries", "list-tags", "list-assets", "find", "inspect", "download", "resolve", "icon-candidates", "inspect-icon",
 ]);
 const MUTATING_VISUAL_OPERATIONS = new Set([
   "add", "create-tag", "move-tag", "associate", "organize", "archive",
@@ -2256,7 +2256,8 @@ function operationScope(request: VisualBridgeRequest): VisualAssetScope {
   }
   if (!READ_ONLY_VISUAL_OPERATIONS.has(request.operation.kind)
     && !MUTATING_VISUAL_OPERATIONS.has(request.operation.kind)
-    && request.operation.kind !== "prepare-detail") {
+    && request.operation.kind !== "prepare-detail"
+    && request.operation.kind !== "prepare-icon") {
     throw new VisualAssetsError("visual_assets_operation_unsupported", `Unsupported visual asset operation: ${request.operation.kind}`);
   }
   return scope;
@@ -2368,9 +2369,42 @@ async function executeVisualAssetOperation(
     case "list-tags": return library.listTags({ scope, ...page, ...(operation.parentTagId === undefined ? {} : { parentTagId: operation.parentTagId as string | null }) });
     case "list-assets": return library.listAssets({ scope, ...page });
     case "find": return library.find({ scope, tagId: stringField(operation, "tagId"), ...page });
+    case "icon-candidates": {
+      const assets = new Map<string, VisualAsset>();
+      const tagNames = new Map<string, string>();
+      for (const visibleScope of [scope, { kind: "library" } as const]) {
+        const parentIds: (string | null)[] = [null];
+        for (let parentIndex = 0; parentIndex < parentIds.length; parentIndex += 1) {
+          let tagCursor: string | undefined;
+          do {
+            const result = await library.listTags({ scope: visibleScope, parentTagId: parentIds[parentIndex]!, limit: 100, ...(tagCursor === undefined ? {} : { cursor: tagCursor }) });
+            for (const tag of result.items) {
+              if (!tagNames.has(tag.id)) parentIds.push(tag.id);
+              tagNames.set(tag.id, tag.name);
+            }
+            tagCursor = result.nextCursor ?? undefined;
+            if (tagNames.size > 10000) throw new VisualAssetsError("catalog_too_large", "Icon discovery catalog exceeds its candidate budget");
+          } while (tagCursor !== undefined);
+        }
+        let cursor: string | undefined;
+        do {
+          const result = await library.listAssets({ scope: visibleScope, limit: 100, ...(cursor === undefined ? {} : { cursor }) });
+          for (const asset of result.items) assets.set(asset.id, asset);
+          cursor = result.nextCursor ?? undefined;
+          if (assets.size > 10000) throw new VisualAssetsError("catalog_too_large", "Icon discovery catalog exceeds its candidate budget");
+        } while (cursor !== undefined);
+      }
+      return { candidates: [...assets.values()].map((asset) => ({
+        id: `image:${asset.id}`, name: asset.name, description: asset.description ?? "",
+        aliases: [], categories: [], tags: asset.tagIds.map((id) => tagNames.get(id) ?? id), useCases: [],
+        icon: { kind: "image", assetId: asset.id }, kind: "image",
+      })) };
+    }
+    case "inspect-icon":
     case "inspect": {
       const assetId = stringField(operation, "assetId");
-      await visibleAsset(library, scope, assetId, true);
+      if (operation.kind === "inspect-icon") await visibleAssetAcross(library, [scope, { kind: "library" }], assetId, true);
+      else await visibleAsset(library, scope, assetId, true);
       const inspected = await library.inspect(assetId);
       return { asset: inspected.asset, preview: await serializedFile(inspected.preview) };
     }
@@ -2392,6 +2426,7 @@ async function executeVisualAssetOperation(
       return library.add({
         scope,
         name: stringField(operation, "name"),
+        ...(operation.description === undefined ? {} : { description: stringField(operation, "description") }),
         tagIds,
         ...(operation.registryId === undefined ? {} : { registryId: String(operation.registryId) }),
         file: Object.freeze({
@@ -2447,6 +2482,18 @@ async function executeVisualAssetOperation(
         };
       }));
       return { assets };
+    }
+    case "prepare-icon": {
+      if (Object.keys(operation).sort().join(",") !== "assetId,kind,scope") {
+        throw new VisualAssetsError("visual_assets_request_invalid", "Image icon preparation accepts only an asset reference");
+      }
+      const asset = await visibleAssetAcross(library, visibleScopes, stringField(operation, "assetId"));
+      if (asset.archived) throw new VisualAssetsError("asset_unavailable", "Archived assets cannot be used for new image icons");
+      const file = await library.download(asset.id);
+      return { assetId: asset.id, digestSha256: asset.digest.replace(/^sha256:/u, ""),
+        mediaType: asset.mediaType, byteLength: asset.byteLength,
+        provenanceSource: asset.provenance.source, provenanceFileName: asset.provenance.fileName,
+        content: Buffer.from(await file.read()).toString("base64") };
     }
     case "prepare-detail": {
       const package_ = operation.package as CanonicalNodeDetailPackage;

@@ -234,13 +234,59 @@ function decodeAssetContent(record, path) {
   return Object.freeze({ digestSha256, mediaType, byteLength, contentBase64 });
 }
 
+function validatedIcon(value, path) {
+  if (typeof value === "string") return requireString(value, path);
+  const icon = requireRecord(value, path);
+  if (icon.kind !== "image") fail("icon_invalid", path, "Unsupported icon reference.");
+  requireString(icon.assetId, `${path}.assetId`);
+  if (!/^[a-f0-9]{64}$/u.test(icon.digestSha256 ?? "") || !SAFE_ASSET_MEDIA_TYPES.has(icon.mediaType)
+    || (icon.fit != null && !["contain", "cover"].includes(icon.fit))
+    || (icon.framing != null && !["none", "circle", "rounded"].includes(icon.framing))
+    || Object.keys(icon).some(key => !["kind", "assetId", "digestSha256", "mediaType", "fit", "framing"].includes(key))) {
+    fail("icon_invalid", path, "Image icons require a valid accepted pin and presentation.");
+  }
+  return icon;
+}
+function iconAssetPin(value) {
+  if (value?.kind !== "image") return null;
+  return { id: value.assetId, digestSha256: value.digestSha256, mediaType: value.mediaType, representation: "image" };
+}
+
 function validateAssetAssociations(turns, contentByDigest) {
   const associations = new Map();
   const referencedDigests = new Set();
+  function verifyPin(pin, association) {
+    if (!association || !pin || pin.id !== association.assetId || pin.digestSha256 !== association.digestSha256 || pin.mediaType !== association.mediaType) {
+      fail("asset_inventory_mismatch", "iconAsset", "Image icon association does not match its pin.");
+    }
+    const content = contentByDigest.get(association.digestSha256);
+    if (!content || content.mediaType !== association.mediaType || content.byteLength !== association.byteLength) fail("asset_inventory_mismatch", "iconAsset", "Image icon bytes are missing or inconsistent.");
+    requireRecord(association.provenance, "iconAsset.provenance");
+    requireString(association.provenance.fileName, "iconAsset.provenance.fileName");
+    if (!["user", "system"].includes(association.provenance.source)) fail("asset_provenance_invalid", "iconAsset.provenance.source", "Invalid image provenance.");
+    referencedDigests.add(pin.digestSha256);
+    associations.set(`${pin.id}\0${pin.digestSha256}\0${pin.mediaType}`, content);
+  }
   for (const turn of turns) {
+    for (const context of turn.contexts ?? []) {
+      const pin = iconAssetPin(context.target?.icon);
+      if (pin || context.target?.iconAsset) verifyPin(pin, context.target?.iconAsset);
+    }
+    const rootAction = turn.acceptedView?.rootAction;
+    const rootPin = iconAssetPin(rootAction?.icon);
+    if (rootPin || rootAction?.iconAsset) verifyPin(rootPin, rootAction?.iconAsset);
     for (const layer of turn.acceptedView?.layers ?? []) {
+      if (layer.actions.some(action => action.iconAsset != null)) fail("unexpected_icon_asset", "actions.iconAsset", "Layer action images use source-node associations.");
       for (const node of layer.nodes ?? []) {
-        const pins = node.authoredDetail?.assets ?? [];
+        const allPins = [...(node.authoredDetail?.assets ?? []), iconAssetPin(node.icon),
+          ...turn.acceptedView.layers.flatMap(layer => layer.actions).filter(action => action.sourceNodeId === node.id).map(action => iconAssetPin(action.icon))].filter(Boolean);
+        const unique = new Map();
+        for (const pin of allPins) {
+          const previous = unique.get(pin.id);
+          if (previous && (previous.digestSha256 !== pin.digestSha256 || previous.mediaType !== pin.mediaType)) fail("asset_pin_conflict", "icon", "Image pins conflict.");
+          unique.set(pin.id, pin);
+        }
+        const pins = [...unique.values()];
         const nodeAssociations = node.authoredDetailAssets ?? [];
         if (!Array.isArray(pins) || !Array.isArray(nodeAssociations) || pins.length !== nodeAssociations.length) {
           fail("asset_inventory_mismatch", `turn[${turn.sequence - 1}].acceptedView`, "Node Detail visual asset inventory is inconsistent.");
@@ -341,7 +387,7 @@ function validateAction(action, path, { sourceLayerRequired = false } = {}) {
   const variant = requireString(own(value, "variant", `${path}.variant`), `${path}.variant`);
   if (!ACTION_VARIANTS.has(variant)) fail("action_variant_invalid", `${path}.variant`, "Unknown action variant.");
   if (value.clientKey != null) requireString(value.clientKey, `${path}.clientKey`);
-  if (value.icon != null) requireString(value.icon, `${path}.icon`);
+  if (value.icon != null) validatedIcon(value.icon, `${path}.icon`);
   if (value.description != null) requireString(value.description, `${path}.description`);
   if (kind === "navigate") {
     const relation = requireString(own(value, "relation", `${path}.relation`), `${path}.relation`);
@@ -380,7 +426,8 @@ function validateLayer(resolved, path, allDefinitions, exportVersion) {
     const nodePath = `${path}.nodes[${index}]`;
     const item = requireRecord(node, nodePath);
     const id = requirePortableId(own(item, "id", `${nodePath}.id`), "node", `${nodePath}.id`);
-    for (const field of ["kind", "icon", "title", "detail"]) requireString(own(item, field, `${nodePath}.${field}`), `${nodePath}.${field}`, { allowEmpty: field === "detail" });
+    validatedIcon(own(item, "icon", `${nodePath}.icon`), `${nodePath}.icon`);
+    for (const field of ["kind", "title", "detail"]) requireString(own(item, field, `${nodePath}.${field}`), `${nodePath}.${field}`, { allowEmpty: field === "detail" });
     requireString(own(item, "state", `${nodePath}.state`), `${nodePath}.state`);
     if (item.state !== "accepted") fail("node_state_invalid", `${nodePath}.state`, "Public snapshots may contain accepted nodes only.");
     if (item.clientKey != null) requireString(item.clientKey, `${nodePath}.clientKey`);
@@ -671,6 +718,7 @@ function validateTurn(turn, path, manifestEntry, exportVersion) {
       requireRecord(context, contextPath);
       requireRecord(context.source, `${contextPath}.source`);
       requireRecord(context.target, `${contextPath}.target`);
+      if (context.target.icon != null) validatedIcon(context.target.icon, `${contextPath}.target.icon`);
       requirePortableId(context.id, "action", `${contextPath}.id`);
       requirePortableId(context.target.id, "node", `${contextPath}.target.id`);
       requirePortableId(context.source.interactionNodeId, "node", `${contextPath}.source.interactionNodeId`);

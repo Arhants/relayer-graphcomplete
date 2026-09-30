@@ -32,3 +32,9 @@ export type { GraphPreview } from "./preview.js";
 export * from "./query.js";
 export * from "./types.js";
 export * from "./visual-assets.js";
+
+export * from "./image-icons.js";
+
+export * from "./icon-discovery.js";
+
+export * from "./image-icon-detail.js";

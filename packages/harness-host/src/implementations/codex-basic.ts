@@ -1,5 +1,5 @@
 import { threadIconGuidance } from "./thread-icon-guidance.js";
-import { RELAYER_ICON_NAMES, type GraphCapability, type GraphNode } from "@relayer/graph-client";
+import { type GraphCapability, type GraphNode } from "@relayer/graph-client";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
@@ -11,7 +11,7 @@ import {
   type NativeSessionResetReason,
 } from "../native-session-reset.js";
 import { redactTraceData } from "../trace.js";
-import { CURRENT_WORKSPACE_GUIDANCE, GRAPH_PRESENTATION_GUIDANCE } from "./graph-presentation-guidance.js";
+import { CURRENT_WORKSPACE_GUIDANCE, GRAPH_PRESENTATION_GUIDANCE, NODE_ICON_GUIDANCE } from "./graph-presentation-guidance.js";
 import { LAYER_EDGE_SHAPE_GUIDANCE } from "./layer-edge-shape-guidance.js";
 import {
   personalPresentationNativeInstructions,
@@ -767,8 +767,8 @@ ${LAYER_EDGE_SHAPE_GUIDANCE}
 
 Every new layer, including every child layer, requires an intentional authored layout. Coordinates are normalized numbers from 0 through 1 and describe semantic relative position independently of the viewport. Place a one-node layer at (0.5, 0.5). Keep flow or time moving consistently, use a parent or summary node to anchor hierarchy, group related nodes spatially, align comparisons deliberately, and avoid accidental overlap or edge crossings where a clearer arrangement is available. The renderer changes the camera for the viewport; do not derive coordinates from pixels, window size, or inspector state.
 
-Every node icon, and every optional action icon, must use exactly one supported Relayer icon name. Unsupported names are rejected so that you can repair the object. Choose the closest semantic name from:
-${RELAYER_ICON_NAMES.join(", ")}
+Node and action icons accept supported symbol names or registered image references. Invalid draft references are repairable.
+${NODE_ICON_GUIDANCE}
 
 Relayer graph affordances:
 - A node can be a complete explanation in the current layer.
@@ -918,13 +918,13 @@ await graph.addAction(node, { kind: "invoke", sourceLayer: rootLayer, label: "Fo
 
 For every layer, choose the member whose detail should open first. Set layer.defaultNode to that NodeObject before submitLayer. Make this choice intentionally for the task; it does not change graph position or node order. The UI uses it only when there is no remembered user selection.
 
-Layers normally contain 1 to 5 nodes. A layer may contain 6 to 8 nodes only when keeping them together matters; pass a private sizeJustification to submitLayer. Never mention or expose the size justification in user-facing node text. More than 8 nodes must be split. Layer edges are visible and undirected. Every node needs a supported icon, short title, and useful markdown detail. Optional action icons must also be supported: ${RELAYER_ICON_NAMES.join(", ")}.
+Layers normally contain 1 to 5 nodes. A layer may contain 6 to 8 nodes only when keeping them together matters; pass a private sizeJustification to submitLayer. Never mention or expose the size justification in user-facing node text. More than 8 nodes must be split. Layer edges are visible and undirected. Every node needs a supported icon, short title, and useful markdown detail. ${NODE_ICON_GUIDANCE}
 
 Every new root, expansion, and reference layer requires a version-1 LayerLayoutObject(placements, edgeShape, edgeRoutes?) with exactly one NodePlacementObject(node, x, y) per member node. Coordinates are normalized numbers from 0 through 1 and express semantic relative position independently of the viewport. Place a one-node layer at (0.5, 0.5). Keep flow or time moving consistently, use a parent or summary node to anchor hierarchy, group related nodes spatially, align comparisons deliberately, and avoid accidental overlap or edge crossings where a clearer arrangement is available. Do not use pixels, window size, or inspector state. Example: const layout = new LayerLayoutObject([new NodePlacementObject(first, 0.25, 0.5), new NodePlacementObject(second, 0.75, 0.5)], "elbow-horizontal"); const layer = new LayerObject([first, second], [edge], layout); a routed loop-back: new LayerLayoutObject(placements, "elbow-horizontal", [{ edge: loopBack, ends: [{ node: last, side: "top" }, { node: first, side: "top" }], waypoints: [{ x: 0.9, y: 0.1 }, { x: 0.1, y: 0.1 }] }]);
 ${LAYER_EDGE_SHAPE_GUIDANCE}
 
 Layer edges are exactly what the user sees and are undirected. Every node needs a supported icon, a short title, and useful markdown detail. Optional action icons must also use a supported Relayer icon name:
-${RELAYER_ICON_NAMES.join(", ")}
+${NODE_ICON_GUIDANCE}
 
 Action variants are "chip", "pill", "wide", or "card". A card requires description; other variants do not accept one.
 

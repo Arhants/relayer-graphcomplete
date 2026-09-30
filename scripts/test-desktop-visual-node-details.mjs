@@ -32,6 +32,7 @@ let evalService;
 let productSession;
 let reviewWindow;
 let keepaliveWindow;
+let failureStage = "electron-ready";
 
 app.setName("Relayer Visual Node Detail Evidence");
 app.setPath("userData", join(dataDirectory, "electron-profile"));
@@ -56,9 +57,9 @@ async function productRequest(session, path, options = {}) {
   });
   const value = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const error = new Error(value.error || value.message || `Product request failed (${response.status}).`);
+    const error = new Error(value.error?.message || value.message || (typeof value.error === "string" ? value.error : `Product request failed (${response.status}).`));
     error.status = response.status;
-    error.code = value.code;
+    error.code = value.error?.code || value.code;
     throw error;
   }
   return value;
@@ -328,6 +329,24 @@ async function openReview({ execution, threadId, turnId, rootLayerId }) {
   return { window, session, state };
 }
 
+function failureDiagnostic(error) {
+  const diagnostic = { stage: failureStage, type: typeof error };
+  if (error && typeof error === "object") {
+    diagnostic.fields = Object.getOwnPropertyNames(error);
+    for (const key of ["name", "message", "code", "status", "stack"]) {
+      const value = error[key];
+      if (typeof value === "string" || typeof value === "number") diagnostic[key] = value;
+    }
+    if (error.error && typeof error.error === "object") {
+      diagnostic.remote = Object.fromEntries(["code", "message", "status"].flatMap(key => {
+        const value = error.error[key];
+        return typeof value === "string" || typeof value === "number" ? [[key, value]] : [];
+      }));
+    }
+  } else diagnostic.message = String(error);
+  return diagnostic;
+}
+
 async function run() {
   keepaliveWindow = new BrowserWindow({ width: 1, height: 1, show: false });
   await mkdir(artifactDirectory, { recursive: true });
@@ -338,6 +357,7 @@ async function run() {
     additionalImplementations: { "fixture.node-detail": nodeDetailFixtureFactory },
   });
   services.push(runtime);
+  failureStage = "runtime-start";
   const runtimeSession = await runtime.start();
   const product = new RelayerAppServerService({
     userDataDirectory: dataDirectory,
@@ -357,7 +377,9 @@ async function run() {
     },
   });
   services.push(product);
+  failureStage = "product-start";
   productSession = await product.start();
+  failureStage = "eval-open";
   evalService = await new EvalService({
     stateFile,
     productSession,
@@ -366,11 +388,13 @@ async function run() {
   }).open();
   ipcMain.handle("relayer-eval:review-context", (_event, executionId) => evalService.reviewContext(executionId));
 
+  failureStage = "fixture-run-create";
   const created = await evalService.createRun({
     testCaseIds: ["empty-project.visual-node-detail.single-turn"],
     harnessConfigurationNames: ["fixture-node-detail"],
     judgeConfigurationName: "deterministic-graph-contract",
   });
+  failureStage = "fixture-run-complete";
   const completed = await waitForCompletedRun(created.id);
   const execution = completed.executions[0];
   const threadId = execution.threadIds[0];
@@ -591,10 +615,11 @@ app.whenReady().then(run).then(async (result) => {
   if (resultFile) await writeFile(resultFile, `${JSON.stringify({ ...result, cleanupCompleted: true }, null, 2)}\n`, { mode: 0o600 });
   app.exit(0);
 }).catch(async (error) => {
-  console.error(error);
+  const diagnostic = failureDiagnostic(error);
+  console.error(JSON.stringify(diagnostic, null, 2));
   process.exitCode = 1;
   if (resultFile) {
-    await writeFile(resultFile, `${JSON.stringify({ passed: false, error: error?.stack || String(error) }, null, 2)}\n`, { mode: 0o600 })
+    await writeFile(resultFile, `${JSON.stringify({ passed: false, error: diagnostic.stack || diagnostic.message || `Failure during ${diagnostic.stage}`, diagnostic }, null, 2)}\n`, { mode: 0o600 })
       .catch(() => undefined);
   }
   await stop().catch((cleanupError) => console.error(cleanupError));

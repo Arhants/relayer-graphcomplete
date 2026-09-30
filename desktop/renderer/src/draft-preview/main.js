@@ -1,5 +1,6 @@
 import { createProductWorkspace } from "../product-workspace/index.js";
 import { createPublicViewerAdapter } from "../public-share-viewer/adapter.js";
+import { waitForPreviewImages } from "./image-readiness.js";
 import { draftPreviewReadModel } from "./snapshot.js";
 
 const frames = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
@@ -78,6 +79,7 @@ function bootDraftPreview() {
     },
     async settle() {
       if (target.kind === "layer") document.querySelector("#fitGraph")?.click();
+      await waitForPreviewImages(document.querySelector(target.kind === "layer" ? "#graphStage" : "#inspector"));
       await frames();
       return rectOf(target.kind === "layer" ? "#graphStage" : "#inspector");
     },

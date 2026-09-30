@@ -152,6 +152,18 @@ impl GraphWriter {
         authored_detail: AuthoredDetailUpdate<'_>,
         prepared_assets: Option<&[PreparedDetailAsset]>,
     ) -> Result<GraphNode, GraphError> {
+        self.submit_node_with_prepared_visual_assets(draft, authored_detail, prepared_assets, None)
+            .await
+    }
+
+    pub async fn submit_node_with_prepared_visual_assets(
+        &self,
+        draft: &NodeDraft,
+        authored_detail: AuthoredDetailUpdate<'_>,
+        prepared_assets: Option<&[PreparedDetailAsset]>,
+        prepared_icon: Option<&PreparedDetailAsset>,
+    ) -> Result<GraphNode, GraphError> {
+        validate_prepared_icon(&draft.icon, prepared_icon)?;
         if let AuthoredDetailUpdate::Replace(package) = authored_detail {
             validate_authored_detail(package)?;
             let package_assets = package["assets"]
@@ -180,7 +192,7 @@ impl GraphWriter {
         }
         let canonical_icon = draft.validate()?;
         let normalized_draft = NodeDraft {
-            icon: canonical_icon.into(),
+            icon: canonical_icon,
             ..draft.clone()
         };
         let draft = &normalized_draft;
@@ -230,6 +242,11 @@ impl GraphWriter {
                     .await?;
             }
             AuthoredDetailUpdate::Retain => {}
+        }
+        if let Some(asset) = prepared_icon {
+            AuthoredDetailAssetTable::new(&mut transaction)
+                .pin_icon(node.id, asset)
+                .await?;
         }
         transaction.commit().await?;
         Ok(node)
@@ -454,9 +471,18 @@ impl GraphWriter {
     }
 
     pub async fn add_action(&self, draft: &ActionDraft) -> Result<GraphAction, GraphError> {
+        self.add_action_with_prepared_icon(draft, None).await
+    }
+
+    pub async fn add_action_with_prepared_icon(
+        &self,
+        draft: &ActionDraft,
+        prepared_icon: Option<&PreparedDetailAsset>,
+    ) -> Result<GraphAction, GraphError> {
+        validate_prepared_icon(draft.icon.as_deref().unwrap_or(""), prepared_icon)?;
         let canonical_icon = draft.validate_shape()?;
         let normalized_draft = ActionDraft {
-            icon: canonical_icon.map(str::to_owned),
+            icon: canonical_icon,
             ..draft.clone()
         };
         let draft = &normalized_draft;
@@ -706,6 +732,11 @@ impl GraphWriter {
             )
             .await?;
         }
+        if let Some(asset) = prepared_icon {
+            AuthoredDetailAssetTable::new(&mut transaction)
+                .pin_icon(draft.source_node_id, asset)
+                .await?;
+        }
         transaction.commit().await?;
         Ok(action)
     }
@@ -858,4 +889,31 @@ impl GraphWriter {
         }
         Ok(())
     }
+}
+
+fn validate_prepared_icon(
+    value: &str,
+    asset: Option<&PreparedDetailAsset>,
+) -> Result<(), GraphError> {
+    if let Some(icon) = super::model::image_icon::image_icon(value) {
+        let matching = asset.is_some_and(|asset| {
+            icon.asset_id == asset.asset_id
+                && icon.digest_sha256.as_deref() == Some(&asset.digest_sha256)
+                && icon.media_type.as_deref() == Some(&asset.media_type)
+        });
+        if !matching {
+            return Err(GraphError::validation(
+                "image_icon_unpinned",
+                "icon",
+                "Image icons must resolve registered bytes through the authenticated visual asset bridge.",
+            ));
+        }
+    } else if asset.is_some() {
+        return Err(GraphError::validation(
+            "image_icon_unexpected",
+            "icon",
+            "Image content requires an image icon.",
+        ));
+    }
+    Ok(())
 }

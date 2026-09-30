@@ -1,0 +1,79 @@
+{
+  "purpose": "Deterministic marine ecology visual inspection fixture; does not prove model selection or biological completeness.",
+  "records": [
+    {
+      "subject": "coral",
+      "scientificName": "Acropora palmata",
+      "taxonId": 93312,
+      "taxonUrl": "https://api.inaturalist.org/v1/taxa?q=Acropora%20palmata&per_page=1",
+      "observationUrl": null,
+      "photoId": 652846455,
+      "sourceUrl": "https://inaturalist-open-data.s3.amazonaws.com/photos/652846455/medium.jpg",
+      "license": "cc-by",
+      "attribution": "(c) Ryan McMinds, some rights reserved (CC BY)",
+      "filename": "coral.jpg",
+      "sha256": "f88781d9f12c1d2954e49a577358464ba5898f1d6b2631fd0b3b99e1a28cc5d2",
+      "byteLength": 125537
+    },
+    {
+      "subject": "jellyfish",
+      "scientificName": "Aurelia aurita",
+      "taxonId": 48328,
+      "taxonUrl": "https://api.inaturalist.org/v1/taxa?q=Aurelia%20aurita&per_page=1",
+      "observationUrl": "https://www.inaturalist.org/observations/356040248",
+      "photoId": 649274082,
+      "sourceUrl": "https://inaturalist-open-data.s3.amazonaws.com/photos/649274082/medium.jpg",
+      "license": "cc-by",
+      "attribution": "(c) Fraser Higgins, some rights reserved (CC BY)",
+      "filename": "jellyfish.jpg",
+      "sha256": "b8a57f9c3da315129c6c0119bb10439dbe1769426472ba74bb75397ee3dcf529",
+      "byteLength": 114829,
+      "selection": "Inspected for close subject framing and distinguishability at graph icon size; deterministic fixture author choice."
+    },
+    {
+      "subject": "octopus",
+      "scientificName": "Octopus vulgaris",
+      "taxonId": 49315,
+      "taxonUrl": "https://api.inaturalist.org/v1/taxa?q=Octopus%20vulgaris&per_page=1",
+      "observationUrl": "https://www.inaturalist.org/observations/184933472",
+      "photoId": 322883970,
+      "sourceUrl": "https://inaturalist-open-data.s3.amazonaws.com/photos/322883970/medium.jpeg",
+      "license": "cc0",
+      "attribution": "no rights reserved",
+      "filename": "octopus.jpg",
+      "sha256": "efd787a291eb6d3a01300973f53e6380531a0933187e931f083f0aafc546c033",
+      "byteLength": 154288,
+      "selection": "Inspected for close subject framing and distinguishability at graph icon size; deterministic fixture author choice."
+    },
+    {
+      "subject": "sea-turtle",
+      "scientificName": "Chelonia mydas",
+      "taxonId": 39659,
+      "taxonUrl": "https://api.inaturalist.org/v1/taxa?q=Chelonia%20mydas&per_page=1",
+      "observationUrl": "https://www.inaturalist.org/observations/344728230",
+      "photoId": 628142620,
+      "sourceUrl": "https://inaturalist-open-data.s3.amazonaws.com/photos/628142620/medium.jpg",
+      "license": "cc-by",
+      "attribution": "(c) Matteo Bellucci, some rights reserved (CC BY)",
+      "filename": "sea-turtle.jpg",
+      "sha256": "a25d9d4913730a7aab650be528aeef693d6894e3488ec4e142dbe4b5d4823758",
+      "byteLength": 61174,
+      "selection": "Inspected for close subject framing and distinguishability at graph icon size; deterministic fixture author choice."
+    },
+    {
+      "subject": "plankton",
+      "scientificName": "Coscinodiscus",
+      "taxonId": 123865,
+      "taxonUrl": "https://api.inaturalist.org/v1/taxa?q=Coscinodiscus&per_page=1",
+      "observationUrl": "https://www.inaturalist.org/observations/50324895",
+      "photoId": 79908537,
+      "sourceUrl": "https://inaturalist-open-data.s3.amazonaws.com/photos/79908537/medium.jpeg",
+      "license": "cc-by",
+      "attribution": "(c) Allison Gong, some rights reserved (CC BY)",
+      "filename": "plankton.jpg",
+      "sha256": "a43118f303e7a9f454f9a38ae40c55f7bba855f8da98d08fb88b88f56fcbbb95",
+      "byteLength": 92833,
+      "selection": "Inspected for close subject framing and distinguishability at graph icon size; deterministic fixture author choice."
+    }
+  ]
+}

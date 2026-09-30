@@ -5,7 +5,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { MAX_HARNESS_APPROVAL_TEXT_LENGTH, parseHarnessApprovalRequestInput } from "../src/approval.js";
-import { RELAYER_ICON_NAMES } from "@relayer/graph-client";
 import { PrimeAgentHarness, PYTHON_GRAPH_API_REFERENCE } from "../src/implementations/prime-agent.js";
 import { createNoopHarnessTraceSink, HarnessTraceStore } from "../src/trace.js";
 import type { HarnessConfiguration, HarnessRunContext, HarnessTraceEventInput, HarnessTraceSink } from "../src/types.js";
@@ -3343,7 +3342,7 @@ function expectGraphAuthoringRules(prompt: string): void {
   expect(prompt).toContain("Top-level cell code starts at column 0; never indent it.");
   expect(prompt).toContain("```python\nfrom relayer_graph import GraphSession\ngraph = await GraphSession.current()\n```");
   expect(prompt).toContain(PYTHON_GRAPH_API_REFERENCE);
-  expect(prompt).toContain(`must be one of: ${RELAYER_ICON_NAMES.join(", ")}.`);
+  expect(prompt).toContain("await graph.icons.discover(query");
   expect(prompt).toContain("Only a card accepts description, and a card requires one.");
   // Graph core exempts the interaction root before enforcing draft ownership, so the rule states that exception.
   expect(prompt).toContain("Reuse alone grants no action authority");

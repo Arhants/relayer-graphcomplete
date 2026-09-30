@@ -1,3 +1,4 @@
+import { isImageIcon } from "@relayer/graph-client";
 import type { CompletionOutput } from "@relayer/graph-client";
 import type { HarnessConfiguration } from "@relayer/harness-host";
 import { isNaturalGraphMemoryQueryShape } from "./natural-graph-memory-query.js";
@@ -112,7 +113,7 @@ export function checkBasicOutput(
         : "The accepted layer has one finite normalized v1 placement per visible node.",
     },
     { name: "response-action", passed: output.rootAction.kind === "navigate" && output.rootAction.relation === "expand" && output.rootAction.sourceLayerId == null && output.rootAction.targetLayerId === layer.layer.id, detail: "Interaction has one accepted root expansion action." },
-    { name: "visible-layer", passed: layer.nodes.length >= 1 && layer.nodes.length <= 8 && layer.nodes.every((node) => node.icon.trim() && node.title.trim() && node.detail.trim()), detail: `${layer.nodes.length} complete visible nodes.` },
+    { name: "visible-layer", passed: layer.nodes.length >= 1 && layer.nodes.length <= 8 && layer.nodes.every((node) => (typeof node.icon === "string" ? node.icon.trim() : isImageIcon(node.icon) && node.icon.digestSha256 && node.icon.mediaType) && node.title.trim() && node.detail.trim()), detail: `${layer.nodes.length} complete visible nodes.` },
     { name: "exact-edges", passed: layer.edges.every((edge) => edge.endpoints[0] !== edge.endpoints[1] && nodeIds.has(edge.endpoints[0]) && nodeIds.has(edge.endpoints[1])), detail: `${layer.edges.length} visible undirected edges stay inside the layer.` },
     { name: "connected", passed: visited.size === layer.nodes.length, detail: `${visited.size}/${layer.nodes.length} nodes connected.` },
   ];

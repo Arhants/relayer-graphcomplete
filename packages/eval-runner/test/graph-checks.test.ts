@@ -3,13 +3,13 @@ import type { CompletionOutput } from "@relayer/graph-client";
 import { taskSystemFixtureConfiguration } from "../src/fixtures/task-system.js";
 import { checkBasicOutput, checkNodeNavigation, selectEvalPermissionProfile } from "../src/cases/graph-checks.js";
 
-function navigationOutput(actions: CompletionOutput["rootLayer"]["actions"] = []): CompletionOutput {
+function navigationOutput(actions: CompletionOutput["rootLayer"]["actions"] = [], icon: CompletionOutput["rootLayer"]["nodes"][number]["icon"] = "N"): CompletionOutput {
   return {
     nodeId: 1,
     rootAction: { id: 1, sourceNodeId: 1, sourceLayerId: null, kind: "navigate" as const, relation: "expand" as const, label: "Response", variant: "pill", targetLayerId: 3, state: "accepted" as const },
     rootLayer: {
       layer: { id: 3, nodes: [2], edges: [], state: "accepted" as const },
-      nodes: [{ id: 2, kind: "concept", icon: "N", title: "Overview", detail: "Details", state: "accepted" as const }],
+      nodes: [{ id: 2, kind: "concept", icon, title: "Overview", detail: "Details", state: "accepted" as const }],
       edges: [],
       actions,
     },
@@ -17,6 +17,12 @@ function navigationOutput(actions: CompletionOutput["rootLayer"]["actions"] = []
 }
 
 describe("desktop Eval graph checks", () => {
+  it("accepts pinned image icons through the visible layer production check", () => {
+    const output = navigationOutput([], { kind: "image", assetId: "coral", digestSha256: "a".repeat(64), mediaType: "image/png" });
+    expect(checkBasicOutput(output, 1).find(check => check.name === "visible-layer")?.passed).toBe(true);
+    const unpinned = navigationOutput([], { kind: "image", assetId: "coral" });
+    expect(checkBasicOutput(unpinned, 1).find(check => check.name === "visible-layer")?.passed).toBe(false);
+  });
   it("selects an Eval permission profile supported by the harness", () => {
     expect(selectEvalPermissionProfile(taskSystemFixtureConfiguration)).toBe("auto");
     expect(selectEvalPermissionProfile({

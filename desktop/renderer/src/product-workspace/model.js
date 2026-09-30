@@ -179,6 +179,7 @@ export function workspaceBreadcrumbItems(state, thread, selection) {
     layerId: entry.layerId,
     actionId: entry.actionId,
     sourceNodeId: entry.sourceNodeId,
+    sourceLayerId: entry.sourceLayerId ?? (pathIndex === 0 ? entry.layerId : path[pathIndex - 1]?.layerId),
     current: pathIndex === path.length - 1,
   }));
 }

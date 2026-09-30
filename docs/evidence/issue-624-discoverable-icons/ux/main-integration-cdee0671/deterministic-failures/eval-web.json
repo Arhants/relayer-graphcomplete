@@ -1,0 +1,38 @@
+{
+  "passed": false,
+  "exitCode": 1,
+  "command": "CARGO_TARGET_DIR=/Volumes/2T-SSD/cargo/icon-624-private CARGO_INCREMENTAL=0 npm run test:eval-web",
+  "sourceDigest": "2e663600790a98d7c688e5d8e6bec393efad97a998558597ab36a39e439eabcd",
+  "sourceDigestPolicy": {
+    "encoding": "sorted tracked/nonignored untracked path+NUL+bytes+NUL",
+    "excludedPaths": [
+      "docs/evidence/issue-624-icons/README.md",
+      "docs/evidence/issue-624-icons/reviews.json"
+    ],
+    "excludedPrefixes": [
+      "docs/evidence/issue-624-discoverable-icons/ux/"
+    ]
+  },
+  "nativeBinaries": {
+    "relayer-graph-server": {
+      "sha256": "66aea0fdf658459f923ea384c2f03989be94f833a41a2330ce116718d1b944f5",
+      "byteLength": 117275816
+    },
+    "relayer-app-server": {
+      "sha256": "6fb6c0742758cface2e5dc7cb785024a118497b58781301e12dc8be0b41e63a7",
+      "byteLength": 79049936
+    }
+  },
+  "checkpointResults": {
+    "interruptedStartup": "PASS pending native child terminated and profile lock released",
+    "followupSend": "FAIL selector #sendInteraction:not([disabled]) timed out30000ms at scripts/test-eval-web.mjs:231",
+    "laterScenarios": "UNKNOWN unexecuted"
+  },
+  "cleanup": "Runner finally completed; no matching Eval child from this worktree remained. Unrelated preexisting eval-calibration-lineage process untouched. No separate cleanup receipt emitted.",
+  "classification": "Known unchanged model-selection fixture failure; not proof that Eval-web suite passed. No retry.",
+  "log": {
+    "path": "eval-web.log",
+    "sha256": "4cc5ca9c24b8809c3c516a40bf3ee37b80a212ddc4d35863cb72864af17d8ffb"
+  },
+  "paidInferenceCalls": 0
+}

@@ -1,0 +1,237 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "real-agent-authored-single-run",
+  "implementationCommit": "7aecc95bf0d721e03d27e750e934cb61152fd110",
+  "sourceDigest": "a03571b99283b96a22685ae16cde82823e9b432d06c5c18c55c56e496670f154",
+  "sourceDigestPolicy": {
+    "algorithm": "sha256",
+    "encoding": "sorted git tracked and nonignored untracked path + NUL + exact bytes + NUL",
+    "excludedPaths": [
+      "docs/evidence/issue-624-icons/README.md",
+      "docs/evidence/issue-624-icons/reviews.json"
+    ],
+    "excludedPrefixes": [
+      "docs/evidence/issue-624-discoverable-icons/ux/"
+    ],
+    "reason": "Delivery receipts and generated evidence outputs cannot recursively certify their own bytes; product source and fixture inputs remain included."
+  },
+  "status": "accepted",
+  "harness": "codex-basic",
+  "model": "gpt-5.6-sol",
+  "runtimeVersion": "codex-cli 0.147.0",
+  "runtimeIdentity": {
+    "executableSha256": "19c4f144c5226a9f17c58e6f0fa854843b0f77a6eb420f40e2745a12f10f5d37",
+    "recipeId": "codex@0.147.0",
+    "recipeDigest": "e6ec3b51b050408548eab1fed8e43d8d891582ee818f4be6784f1645f2c306e2"
+  },
+  "nativeBinaries": {
+    "relayer-graph-server": {
+      "sha256": "52f2dd1300ffa3476bf6e3eff45db9f4700a87c1ed64113c93fdb305c5293621",
+      "byteLength": 115648552
+    },
+    "relayer-app-server": {
+      "sha256": "4f6515b96be174b64a756c7e43d050092531c3d35f4f22550c9ac237cba409c9",
+      "byteLength": 76854928
+    }
+  },
+  "harnessDigest": "sha256:057ab71df2cbb62e6f5e9f312cf5d3804dfa6e6e2088098dc5bb2fb7b3c193dd",
+  "operatorIdentity": {
+    "driverSha256": "0754397dc94d7ad45b8ea2370d49ed707f5a67213b5da331bbfc8577e6440fbf",
+    "configSha256": "8589a1b4d8004c161aa5466535070652dc85dacb80b87f1b0a8be2cea9fc3d53"
+  },
+  "providerAcquisitions": 1,
+  "executionAccesses": 1,
+  "inferenceKind": "real codex subscription-backed inference",
+  "dollarChargeKnown": false,
+  "sourceUnchanged": true,
+  "nativeBinariesUnchanged": true,
+  "cleanupPassed": true,
+  "trace": {
+    "productInteractionId": 1,
+    "completionId": 21,
+    "status": "complete",
+    "format": "relayer-harness-trace-v1",
+    "sha256": "sha256:e264630f4ce2d2e9fe0d78ed9c46b8e2a0d067d8a0187010bfc6fb639a88cdc9",
+    "byteLength": 552686,
+    "eventCount": 461,
+    "coverage": {
+      "prompt": "full",
+      "messages": "full",
+      "reasoningSummaries": "full",
+      "modelCalls": "full",
+      "toolCalls": "full",
+      "usage": "full",
+      "childStreams": "none",
+      "nativeArtifacts": "none"
+    },
+    "coverageComplete": true,
+    "completionBrokerAvailable": true,
+    "ref": "traces/1/manifest.json"
+  },
+  "actualGraph": {
+    "rootNodeCount": 7,
+    "rootNodes": [
+      {
+        "title": "Marine ecology",
+        "icon": "network"
+      },
+      {
+        "title": "Coral",
+        "icon": {
+          "assetId": "asset_6f46584d-cb70-4689-9d72-7bd99b24a41c",
+          "digestSha256": "f88781d9f12c1d2954e49a577358464ba5898f1d6b2631fd0b3b99e1a28cc5d2",
+          "fit": "cover",
+          "framing": "circle",
+          "kind": "image",
+          "mediaType": "image/jpeg"
+        }
+      },
+      {
+        "title": "Plankton",
+        "icon": {
+          "assetId": "asset_bec4e344-b1bc-4a6f-9da3-1205f2bad4e0",
+          "digestSha256": "a43118f303e7a9f454f9a38ae40c55f7bba855f8da98d08fb88b88f56fcbbb95",
+          "fit": "cover",
+          "framing": "circle",
+          "kind": "image",
+          "mediaType": "image/jpeg"
+        }
+      },
+      {
+        "title": "Jellyfish",
+        "icon": {
+          "assetId": "asset_b4d3d6f5-d199-4a0c-aa54-5ff7f1c1e230",
+          "digestSha256": "b8a57f9c3da315129c6c0119bb10439dbe1769426472ba74bb75397ee3dcf529",
+          "fit": "cover",
+          "framing": "circle",
+          "kind": "image",
+          "mediaType": "image/jpeg"
+        }
+      },
+      {
+        "title": "Octopus",
+        "icon": {
+          "assetId": "asset_9bfdf408-89fd-4475-b668-1c68f37c1152",
+          "digestSha256": "efd787a291eb6d3a01300973f53e6380531a0933187e931f083f0aafc546c033",
+          "fit": "cover",
+          "framing": "circle",
+          "kind": "image",
+          "mediaType": "image/jpeg"
+        }
+      },
+      {
+        "title": "Sea turtle",
+        "icon": {
+          "assetId": "asset_2734e115-fc77-4275-b4e7-7d39131803cc",
+          "digestSha256": "a25d9d4913730a7aab650be528aeef693d6894e3488ec4e142dbe4b5d4823758",
+          "fit": "cover",
+          "framing": "circle",
+          "kind": "image",
+          "mediaType": "image/jpeg"
+        }
+      },
+      {
+        "title": "Reef monitoring",
+        "icon": "binoculars"
+      }
+    ]
+  },
+  "replay": {
+    "passed": true,
+    "cleanupPassed": true,
+    "paidInferenceCalls": 0,
+    "exportSha256": "b07eb0ed7b20b8cf559b463cc660c12004206195567848bec58e2ec8674d2f4d",
+    "driverSha256": "4540d7953ff2fa36e076a9898ddd3ae34bc0fb085bc48c7b47604c9006dc183d",
+    "exportImportPinsPreserved": true,
+    "sourceDigestUnchanged": true,
+    "nativeBinariesUnchanged": true
+  },
+  "reviews": [
+    {
+      "reviewer": "/root/catalog",
+      "scope": "ignored live operator driver and config",
+      "digestSha256": "32163c97c21b870cc9efba72a789942cedeefc7ea24c9b9b72fc93743639c9f8",
+      "verdict": "no unresolved findings"
+    },
+    {
+      "reviewer": "/root/catalog",
+      "scope": "private prompt, accepted-state, result, cleanup, trace events/operations/manifest",
+      "digestSha256": "506981d92eec79abb074f15f7a88707ec283a6092f4f3c1ffee53983deabd59e",
+      "verdict": "single-run functional and semantic claims supported; no broad quality or repair proof"
+    },
+    {
+      "reviewer": "/root/discovery",
+      "scope": "actual graph, trace, export and replay overview/manifest",
+      "digestSha256": "fa5cee5596713fd7160e003d3c3e8b6311290edbae6c7ecaf174c2584311e517",
+      "verdict": "bounded functional and labeled visual claims supported; general selection/ecological quality unknown"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "graph-overview-light.png",
+      "sha256": "7ed7cd92ae5f77a661078fed7d7684e31ae02c8655785649d638d17797d0b9ed",
+      "byteLength": 274436
+    },
+    {
+      "path": "graph-overview-dark.png",
+      "sha256": "56b08299c98d2dd6cea124de5099efeb39673d75575faf0c47237d1a857ef003",
+      "byteLength": 264288
+    },
+    {
+      "path": "light-node-1.png",
+      "sha256": "ae7a784e1860b7fdb6b847f7f993d45cddd2b000da5c11fc87893b9621b7af30",
+      "byteLength": 309130
+    },
+    {
+      "path": "dark-node-1.png",
+      "sha256": "dd4ffca6f514992d0b63ec4ec49b920bd2f1fa8f228054a9aff2b132ea4e0f56",
+      "byteLength": 298450
+    },
+    {
+      "path": "light-node-2.png",
+      "sha256": "147c9d9f7b19c283d04bb23a899cb731578c76aecc8d530b436e0545f2b703e7",
+      "byteLength": 1028216
+    },
+    {
+      "path": "dark-node-4.png",
+      "sha256": "85c18a2aa6915b3b1800e2517ac2dc97e0da6487214bca72fe8dd382018db8c9",
+      "byteLength": 791701
+    }
+  ],
+  "limitations": [
+    "Subscription-backed inference: separate USD charge not measured.",
+    "Licensed image inputs supplied; autonomous image sourcing not exercised.",
+    "Single run supports exercised agent selection, not broad selection quality or label-independent recognition.",
+    "No graph rejection/repair occurred; initial precompletion output404 is not repair proof.",
+    "Screenshots are zero-inference replay of the actual accepted export, not a video of live generation.",
+    "Replay operator bootstrap and pending-image inspection failures were preserved and repaired without production changes or additional inference.",
+    "Full trace and operator source retained locally rather than publishing provider-native details."
+  ],
+  "discoveryObservation": {
+    "queries": [
+      "coral reef",
+      "jellyfish",
+      "octopus",
+      "sea turtle",
+      "plankton microscope",
+      "reef monitoring"
+    ],
+    "resultCounts": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "httpStatuses": [
+      200,
+      200,
+      200,
+      200,
+      200,
+      200
+    ],
+    "limitation": "Every whitespace token must match metadata; compound-domain wording can miss existing symbols."
+  }
+}

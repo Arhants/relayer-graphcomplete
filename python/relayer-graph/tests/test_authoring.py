@@ -902,7 +902,7 @@ class IconVocabularyTests(unittest.TestCase):
     def test_resolves_aliases_without_accepting_arbitrary_lucide_names(self):
         self.assertEqual(resolve_relayer_icon_name("CIRCLE_ALERT"), "alert-circle")
         self.assertEqual(resolve_relayer_icon_name("file pen"), "file-edit")
-        self.assertFalse(is_supported_relayer_icon("alarm-clock"))
+        self.assertTrue(is_supported_relayer_icon("alarm-clock"))
         self.assertFalse(is_supported_relayer_icon("🧭"))
 
 

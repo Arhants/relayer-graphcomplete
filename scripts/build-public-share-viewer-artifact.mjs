@@ -30,6 +30,7 @@ const browserResources = Object.freeze([
   "src/product-workspace/edge-shapes.js",
   "src/product-workspace/graph-layout.js",
   "src/product-workspace/icons.js",
+  "src/product-workspace/image-icons.js",
   "src/product-workspace/index.js",
   "src/product-workspace/interaction-graph.js",
   "src/product-workspace/layer-selection.js",

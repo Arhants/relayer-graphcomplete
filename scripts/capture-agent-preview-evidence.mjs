@@ -27,6 +27,8 @@ const sourceFiles = [
   "desktop/main/services/draft-preview-renderer.mjs",
   "desktop/main/services/isolated-page-capture.mjs",
   "desktop/renderer/src/draft-preview/main.js",
+  "desktop/renderer/src/draft-preview/image-readiness.js",
+  "desktop/renderer/src/product-workspace/image-icons.js",
   "desktop/renderer/src/draft-preview/snapshot.js",
   "desktop/renderer/src/draft-preview/template.js",
   "packages/eval-runner/src/fixtures/graph-preview.ts",
@@ -67,12 +69,47 @@ async function waitFor(label, check, timeoutMs = 60_000) {
 
 async function main() {
   const previewSession = session.fromPartition("draft-preview-capture");
+  const imagePreviewCoverage = [];
+  let renderingSnapshot;
+  class ImageObservedWindow extends BrowserWindow {
+    constructor(options) {
+      super(options);
+      const capture = this.webContents.capturePage.bind(this.webContents);
+      this.webContents.capturePage = async (...args) => {
+        const observed = await this.webContents.executeJavaScript(`(() => {
+          const root = document.querySelector(${JSON.stringify('#draftPreviewHost')});
+          const graph = [...root.querySelectorAll('#nodeLayer .relayer-image-icon img')];
+          const shadow = root.querySelector('.node-detail-runtime-host')?.shadowRoot;
+          const details = [...(shadow?.querySelectorAll('img') ?? [])];
+          return { graphImages: graph.length, detailImages: details.length,
+            loaded: [...graph, ...details].every(image => image.complete && image.naturalWidth > 0) };
+        })()`);
+        const expected = renderingSnapshot.target.kind === "layer" ? 1 : 0;
+        assert(observed.graphImages === expected && observed.loaded, "Preview screenshot captured an unloaded graph image");
+        if (renderingSnapshot.target.kind === "node") assert(observed.detailImages === 1, "Preview screenshot omitted its Detail image");
+        imagePreviewCoverage.push({ theme, targetKind: renderingSnapshot.target.kind, ...observed });
+        return capture(...args);
+      };
+    }
+  }
+
+  const renderer = createElectronDraftPreviewRenderer({ BrowserWindow: ImageObservedWindow, session, rendererDirectory, getTheme: () => theme });
   const runtime = new GraphCompleteRuntimeService({
     userDataDirectory: data,
     graphServerBinary: join(root, "target/debug/relayer-graph-server"),
     configurationPaths: [join(root, "harnesses/fixture-graph-preview.yaml")],
     additionalImplementations: { "fixture.graph-preview": graphPreviewFixtureFactory },
-    draftPreviewRenderer: createElectronDraftPreviewRenderer({ BrowserWindow, session, rendererDirectory, getTheme: () => theme }),
+    draftPreviewRenderer: { async render(input) {
+      const { snapshot } = input;
+      const icons = snapshot.nodes.filter(node => node.icon?.kind === "image");
+      const details = snapshot.nodes.flatMap(node => node.authoredDetail?.assets ?? []);
+      assert(snapshot.target.kind === "layer" ? icons.length === 1 : details.length === 1, "Preview fixture must exercise registered image icons or Detail images");
+      for (const icon of icons) assert(snapshot.assets.some(asset => asset.id === icon.icon.assetId && asset.digestSha256 === icon.icon.digestSha256 && asset.mediaType === icon.icon.mediaType), "Layer icon bytes missing from preview");
+      for (const detail of details) assert(snapshot.assets.some(asset => asset.id === detail.id && asset.digestSha256 === detail.digestSha256 && asset.mediaType === detail.mediaType), "Detail image bytes missing from preview");
+      renderingSnapshot = snapshot;
+      const result = await renderer.render(input);
+      return result;
+    } },
     retainDraftPreviews: true,
   });
   services.push(runtime);
@@ -163,6 +200,7 @@ async function main() {
   const receipt = {
     sourceFiles: Object.fromEntries(await Promise.all(sourceFiles.map(async (path) => [path, sha256(await readFile(join(root, path)))]))),
     captures,
+    imagePreviewCoverage,
     inAppFrames: inApp,
     isolation: "passed",
     windowCleanup: "passed",

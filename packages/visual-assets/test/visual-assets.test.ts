@@ -53,6 +53,21 @@ function packageFor(assetIds: readonly string[]) {
 }
 
 describe("visual_assets deterministic library interface", () => {
+  it("persists agent-authored descriptions across a catalog reopen and rejects oversize metadata", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "relayer-icon-description-"));
+    const scope = { kind: "thread" as const, threadId: 1 };
+    const options = { authority: { projects: [], standaloneThreadIds: [1] } };
+    try {
+      const path = join(directory, "catalog.json");
+      const first = await createFileVisualAssetsLibrary(options, path);
+      const asset = await first.add({ file: memoryHarnessFile("octopus.svg", "image/svg+xml", validSvg), scope,
+        name: "Octopus", description: "Eight-armed marine cephalopod for reef ecology", tagIds: [] });
+      const reopened = await createFileVisualAssetsLibrary(options, path);
+      expect((await reopened.inspect(asset.id)).asset.description).toBe(asset.description);
+      await expect(Promise.resolve().then(() => first.add({ file: memoryHarnessFile("octopus.svg", "image/svg+xml", validSvg), scope,
+        name: "Oversize", description: "x".repeat(4097), tagIds: [] }))).rejects.toMatchObject({ code: "asset_description_invalid" });
+    } finally { await rm(directory, { recursive: true, force: true }); }
+  });
   it("validates one imported content record through the library media seam", async () => {
     const library = createMemoryVisualAssetsLibrary({ authority: { projects: [], standaloneThreadIds: [1] } });
     createMemoryVisualDetailPersistence(library);

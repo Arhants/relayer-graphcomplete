@@ -64,11 +64,17 @@ describe("Sticker structure", () => {
     expect(shareImageSvg(aliased)).toContain(`fill="${roles["accent-solid"].dark}" font-family`);
   });
 
-  it("gives every allowlisted icon exactly one presentation family", () => {
+  it("preserves legacy families and presents expanded symbols neutrally", async () => {
+    const catalog = JSON.parse(await read("docs/icon-catalog.json"));
     const counts = {};
-    for (const name of RELAYER_ICON_NAMES) counts[relayerIconFamily(name)] = (counts[relayerIconFamily(name)] ?? 0) + 1;
+    for (const name of catalog.legacyNames) counts[relayerIconFamily(name)] = (counts[relayerIconFamily(name)] ?? 0) + 1;
     // Design brief Appendix A (13 / 18 / 23 / 21 / 8 / 10 coloured, 23 neutral) plus the temporary everyday icons (#613).
     expect(counts).toEqual({ f1: 13, f2: 18, f3: 26, f4: 26, f5: 12, f6: 10, neutral: 23 });
+    const expanded = RELAYER_ICON_NAMES.filter(name => !catalog.legacyNames.includes(name));
+    // The upstream file-pen alias resolves to existing file-edit and retains its family.
+    expect(expanded.filter(name => relayerIconFamily(name) !== "neutral")).toEqual(["file-pen"]);
+    expect(relayerIconFamily("file-pen")).toBe("f1");
+    expect(expanded).toHaveLength(catalog.icons.length - catalog.legacyNames.length);
     expect([relayerIconFamily("MessagesSquare"), relayerIconFamily("messagessquare"), relayerIconFamily("not-an-icon"), relayerIconFamily(undefined)])
       .toEqual(["f5", "f5", "neutral", "neutral"]);
   });

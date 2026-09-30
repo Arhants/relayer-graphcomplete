@@ -287,14 +287,42 @@ async fn draft_snapshot(
             .as_ref()
             .and_then(|detail| detail.get("assets"))
             .and_then(Value::as_array);
+        let mut pins = std::collections::BTreeMap::new();
         for asset in declared.into_iter().flatten() {
-            let Some(asset_id) = asset.get("id").and_then(Value::as_str) else {
+            let (Some(id), Some(digest), Some(media_type)) = (
+                asset.get("id").and_then(Value::as_str),
+                asset.get("digestSha256").and_then(Value::as_str),
+                asset.get("mediaType").and_then(Value::as_str),
+            ) else {
                 return Err(());
             };
+            if pins
+                .insert(id.to_owned(), (digest.to_owned(), media_type.to_owned()))
+                .is_some_and(|prior| prior != (digest.to_owned(), media_type.to_owned()))
+            {
+                return Err(());
+            }
+        }
+        if let Some(icon) = relayer_graph_core::image_icon(&node.icon) {
+            let (Some(digest), Some(media_type)) = (icon.digest_sha256, icon.media_type) else {
+                return Err(());
+            };
+            let pin = (digest, media_type);
+            if pins
+                .insert(icon.asset_id, pin.clone())
+                .is_some_and(|prior| prior != pin)
+            {
+                return Err(());
+            }
+        }
+        for (asset_id, (digest, media_type)) in pins {
             let stored = writer
-                .visible_detail_asset(node.id, asset_id)
+                .visible_detail_asset(node.id, &asset_id)
                 .await
                 .map_err(|_| ())?;
+            if stored.digest_sha256 != digest || stored.media_type != media_type {
+                return Err(());
+            }
             assets.push(SnapshotAsset {
                 node_id: node.id,
                 id: stored.asset_id,
@@ -593,7 +621,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_draft_node_s_image_assets_reach_the_render() {
+    async fn draft_image_icons_and_detail_assets_reach_the_render_without_duplicates() {
         let renderer = FakeRenderer::default();
         let fixture = Fixture::new(GraphPreviewCapability::Enabled, Some(&renderer), 100).await;
         let package = json!({
@@ -608,11 +636,11 @@ mod tests {
             .writer_for_subgraph(fixture.interaction)
             .await
             .unwrap()
-            .submit_node_with_prepared_detail_assets(
+            .submit_node_with_prepared_visual_assets(
                 &relayer_graph_core::NodeDraft {
                     client_key: "drawn".into(),
                     kind: "concept".into(),
-                    icon: "box".into(),
+                    icon: json!({"kind":"image","assetId":"architecture-diagram","digestSha256":"a9ce00f55032b62526a3abfc5aa6019874beff5d18c90607d663840d14ed11f9","mediaType":"image/png"}).to_string(),
                     title: "Architecture".into(),
                     detail: "Fallback".into(),
                 },
@@ -627,12 +655,49 @@ mod tests {
                     provenance_file_name: "architecture.png".into(),
                     content: b"trusted asset".to_vec(),
                 }]),
+                Some(&relayer_graph_core::PreparedDetailAsset {
+                    asset_id: "architecture-diagram".into(),
+                    digest_sha256:
+                        "a9ce00f55032b62526a3abfc5aa6019874beff5d18c90607d663840d14ed11f9".into(),
+                    media_type: "image/png".into(),
+                    byte_length: 13,
+                    provenance_source: "user".into(),
+                    provenance_file_name: "architecture.png".into(),
+                    content: b"trusted asset".to_vec(),
+                }),
             )
             .await
             .unwrap();
-        let plain = fixture.node("plain", "Plain", false).await["node"]["id"]
-            .as_i64()
-            .unwrap();
+        let plain = fixture
+            .graph
+            .writer_for_subgraph(fixture.interaction)
+            .await
+            .unwrap()
+            .submit_node_with_prepared_visual_assets(
+                &relayer_graph_core::NodeDraft {
+                    client_key: "plain".into(),
+                    kind: "concept".into(),
+                    icon: json!({"kind":"image","assetId":"icon-only","digestSha256":"a9ce00f55032b62526a3abfc5aa6019874beff5d18c90607d663840d14ed11f9","mediaType":"image/png"}).to_string(),
+                    title: "Image only".into(),
+                    detail: "No authored Detail".into(),
+                },
+                relayer_graph_core::AuthoredDetailUpdate::Retain,
+                None,
+                Some(&relayer_graph_core::PreparedDetailAsset {
+                    asset_id: "icon-only".into(),
+                    digest_sha256:
+                        "a9ce00f55032b62526a3abfc5aa6019874beff5d18c90607d663840d14ed11f9".into(),
+                    media_type: "image/png".into(),
+                    byte_length: 13,
+                    provenance_source: "user".into(),
+                    provenance_file_name: "architecture.png".into(),
+                    content: b"trusted asset".to_vec(),
+                }),
+            )
+            .await
+            .unwrap()
+            .id
+            .value();
         let edge = fixture
             .post(
                 "/api/graph/edges",
@@ -645,9 +710,41 @@ mod tests {
         let layer = fixture.layer([plain, drawn.id.value()], edge, 0.2).await;
 
         assert_eq!(layer["preview"]["status"], "rendered");
+        let writer = fixture
+            .graph
+            .writer_for_subgraph(fixture.interaction)
+            .await
+            .unwrap();
+        let node_snapshot = draft_snapshot(&writer, PreviewTarget::Node { node_id: drawn.id })
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            node_snapshot.assets.len(),
+            1,
+            "A shared Detail/icon pin is sent only once"
+        );
+        assert!(
+            draft_snapshot(
+                &writer,
+                PreviewTarget::Node {
+                    node_id: NodeId::new(plain).unwrap()
+                }
+            )
+            .await
+            .unwrap()
+            .is_none(),
+            "An image icon alone does not change authored-Detail-only node preview eligibility"
+        );
         assert_eq!(
             renderer.last_snapshot()["assets"],
             json!([{
+                "nodeId": plain,
+                "id": "icon-only",
+                "digestSha256": "a9ce00f55032b62526a3abfc5aa6019874beff5d18c90607d663840d14ed11f9",
+                "mediaType": "image/png",
+                "contentBase64": base64::engine::general_purpose::STANDARD.encode(b"trusted asset"),
+            }, {
                 "nodeId": drawn.id,
                 "id": "architecture-diagram",
                 "digestSha256": "a9ce00f55032b62526a3abfc5aa6019874beff5d18c90607d663840d14ed11f9",

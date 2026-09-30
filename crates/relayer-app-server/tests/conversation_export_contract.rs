@@ -20,6 +20,7 @@ fn action(
         label: "Open".into(),
         variant: ExportActionVariant::Pill,
         icon: None,
+        icon_asset: None,
         description: None,
         target_layer_id: target_layer_id.map(Into::into),
         interaction_text: None,
@@ -40,6 +41,7 @@ fn invoke(id: &str, source_node_id: &str, source_layer_id: &str) -> ExportAction
         label: "Follow up".into(),
         variant: ExportActionVariant::Pill,
         icon: None,
+        icon_asset: None,
         description: None,
         target_layer_id: None,
         interaction_text: Some("Continue".into()),
@@ -60,6 +62,7 @@ fn input(id: &str, source_node_id: &str, source_layer_id: &str) -> ExportAction 
         label: "Respond".into(),
         variant: ExportActionVariant::Pill,
         icon: None,
+        icon_asset: None,
         description: None,
         target_layer_id: None,
         interaction_text: None,
@@ -167,6 +170,7 @@ fn context(id: &str, annotations: &[&str]) -> ExportInteractionContext {
             id: "node:1".into(),
             kind: "concept".into(),
             icon: "file".into(),
+            icon_asset: None,
             title: "Node node:1".into(),
             detail: "Durable accepted detail".into(),
             state: ExportRecordState::Accepted,
@@ -2128,6 +2132,95 @@ fn reused_layer_cannot_claim_two_portable_owners() {
         third.contexts[0].source.owner_turn_id = Some("turn:2".into());
     }
     assert_rejected_with_parity(&fixture, "context_owner_conflict");
+}
+
+#[test]
+fn typed_image_icons_require_exact_portable_asset_inventory_for_nodes_roots_and_contexts() {
+    for carrier in ["node", "root", "context"] {
+        let mut fixture = records_with_visual_assets(SAFE_SVG, &["asset-a"]);
+        let ConversationExportRecord::Turn(turn) = &mut fixture[2] else {
+            unreachable!()
+        };
+        turn.interaction_node_id = Some(
+            turn.accepted_view
+                .as_ref()
+                .unwrap()
+                .interaction_node_id
+                .clone(),
+        );
+        let view = turn.accepted_view.as_mut().unwrap();
+        let node = &mut view.layers[0].nodes[0];
+        let asset = node.authored_detail_assets[0].clone();
+        let icon = serde_json::json!({"kind":"image","assetId":asset.asset_id,"digestSha256":asset.digest_sha256,"mediaType":asset.media_type}).to_string();
+        node.authored_detail = None;
+        node.authored_detail_assets.clear();
+        match carrier {
+            "node" => {
+                node.icon = icon.clone();
+                node.authored_detail_assets.push(asset.clone());
+            }
+            "root" => {
+                view.root_action.icon = Some(icon.clone());
+                view.root_action.icon_asset = Some(asset.clone());
+            }
+            _ => {
+                let mut attached = context("action:image-context", &[]);
+                attached.target.id = "node:external-image".into();
+                attached.target.icon = icon.clone();
+                attached.target.icon_asset = Some(asset.clone());
+                turn.contexts.push(attached);
+            }
+        }
+        validate_export_records(&fixture).unwrap();
+        validate_incrementally(&fixture).unwrap();
+        let mut missing = fixture.clone();
+        let ConversationExportRecord::Turn(turn) = &mut missing[2] else {
+            unreachable!()
+        };
+        match carrier {
+            "node" => turn.accepted_view.as_mut().unwrap().layers[0].nodes[0]
+                .authored_detail_assets
+                .clear(),
+            "root" => turn.accepted_view.as_mut().unwrap().root_action.icon_asset = None,
+            _ => turn.contexts[0].target.icon_asset = None,
+        }
+        assert_rejected_with_parity(
+            &missing,
+            if carrier == "node" {
+                "authored_detail_asset_inventory_mismatch"
+            } else {
+                "icon_asset_inventory_mismatch"
+            },
+        );
+        let mut corrupted_pin = fixture.clone();
+        let ConversationExportRecord::Turn(turn) = &mut corrupted_pin[2] else {
+            unreachable!()
+        };
+        let association = match carrier {
+            "node" => {
+                &mut turn.accepted_view.as_mut().unwrap().layers[0].nodes[0].authored_detail_assets
+                    [0]
+            }
+            "root" => turn
+                .accepted_view
+                .as_mut()
+                .unwrap()
+                .root_action
+                .icon_asset
+                .as_mut()
+                .unwrap(),
+            _ => turn.contexts[0].target.icon_asset.as_mut().unwrap(),
+        };
+        association.digest_sha256 = "f".repeat(64);
+        assert_rejected_with_parity(
+            &corrupted_pin,
+            if carrier == "node" {
+                "authored_detail_asset_pin_mismatch"
+            } else {
+                "icon_asset_pin_mismatch"
+            },
+        );
+    }
 }
 
 #[test]

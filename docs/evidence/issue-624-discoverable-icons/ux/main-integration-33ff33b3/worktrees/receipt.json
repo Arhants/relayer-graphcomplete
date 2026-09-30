@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "deterministic-production-worktree-desktop-proof",
+  "command": "CARGO_TARGET_DIR=/Volumes/2T-SSD/cargo/icon-624-private CARGO_INCREMENTAL=0 node scripts/run-worktree-test.mjs",
+  "wrapperExitCode": 0,
+  "passed": true,
+  "restartPersistence": true,
+  "checkpoints": {
+    "registeredCheckoutListScroll": true,
+    "externalCheckoutSelection": true,
+    "cachedRemoteDefaultBase": true,
+    "sendOnlyMutation": true,
+    "interruptedCreateDurableReopenReuse": true,
+    "exactThreadWorkingDirectory": true,
+    "selectedCommittedBase": true,
+    "acceptedGraphAfterServerReopen": true,
+    "missingSavedCwdBlocksExecution": true,
+    "missingSavedCwdHistoryReadable": true,
+    "rootConsolidationAcceptedLayerVisibility": true,
+    "harnessReceivesExactCwd": true,
+    "environmentSelectedCheckout": true,
+    "environmentRejectsForeignThread": true,
+    "environmentIgnoresStaleThreadResponse": true
+  },
+  "cleanupPassed": true,
+  "cleanupObservation": "The child shutdown awaited each service.close and removal of its isolated data directory before process.exit; any close failure sets exitCode 1. The wrapper and child exited 0 after all 15 checkpoints.",
+  "sourceHashes": {
+    "scripts/test-desktop-worktrees.mjs": "3ced30ae116c227d4c873e2fd8ba49bcf6fa08fb3f096d7af17cad0fbcc6568a",
+    "scripts/run-worktree-test.mjs": "e41b1fc0a6a9e8d3ee4c06915e2e3f8e1b89c7f740974cadcd3dae03bad7ac71",
+    "desktop/main/services/worktree-service.mjs": "e5d810e8b6b72f479cd18a9288a5b57c98cd5a26d3a1f374f068e5ffd6d348a9",
+    "desktop/main/ipc/register-ipc.mjs": "b2b60b094b94444d13113a7dfe2bae66f7ecaecd9c1405a07c2db79c9c6c152c",
+    "desktop/preload/index.cjs": "706dac45a1c4ce472d0133c10dff8e362bbd9174ad32d87792efe0d272445789",
+    "desktop/renderer/src/checkout.js": "2902e02aa0df597d90f0cd15f40ae73ea3410b47113a2a24e9ed14f6e88ae39f",
+    "desktop/renderer/styles.css": "037bd53722500a0093f801d2302e4856ecb541250a729e7c114980fc1dbd2f56",
+    "desktop/renderer/src/worktree-controller.js": "8ef7bdf6d8b97ef298e083ad42c7e87670e4bd588468970a43c1f73da60c0831",
+    "desktop/renderer/src/threads.js": "f6f5c0fed116a163099424006ccbbec7c3ca0ee4496490f27c13818ff51afd24",
+    "desktop/renderer/src/composer-drafts.js": "15b619a244c6b27996805c60868b21123332376b7553380f82a8148103aa532c",
+    "desktop/renderer/src/environment-context.js": "9813114cc78844ce28c8532ef4585262be1c915f8c5cfac53334b623e69b66a6",
+    "desktop/renderer/src/product-workspace/workspace.js": "b5d2bfd3f7df3b0aefc9822b46003e718a26d599a6cba87c24a2717933bc5762",
+    "crates/relayer-app-server/src/api/environment.rs": "0e48dae7b28c2ac064ec119719e8e5ca908e3be41a93722dd1915975c4580d51"
+  },
+  "binaryHashes": {
+    "relayer-app-server": "ada6858cadff323ead50ecfd27159eb15b1da13687888c37fb48765192660e9a",
+    "relayer-graph-server": "2f15f1cabc24acdf8d99cf4cc22c9dfd2ec886d4deffc7319cb61eb5fb152996"
+  },
+  "originalResult": {
+    "file": "result.json",
+    "sha256": "753c22dbe030da34168d251afaf365a4cc8e209b6a8b175724d51133d733e020"
+  },
+  "screenshots": [
+    {
+      "checkpoint": "scrollingCheckouts",
+      "file": "07-many-registered-checkouts.png",
+      "sha256": "02719768cfeb579919f73f76a554487d523c5c0cd1205a630d0c6ef35134d9a4"
+    },
+    {
+      "checkpoint": "menu",
+      "file": "01-checkout-menu.png",
+      "sha256": "5b77b11ffcd9f50cf9fb670e105813d5e0c4add15cd80cdeb4313365749bdb39"
+    },
+    {
+      "checkpoint": "retry",
+      "file": "02-retry-after-create.png",
+      "sha256": "2ed2f44e5ac0937be2c8925ece21cf2008b833830037ef909b61bec4879d2b18"
+    },
+    {
+      "checkpoint": "graph",
+      "file": "03-accepted-worktree-thread.png",
+      "sha256": "b97c1906b577d417465ef4ff8223228f7f1123d830bd50128e6ce6ed8c826a10"
+    },
+    {
+      "checkpoint": "reopened",
+      "file": "04-reopened-exact-thread.png",
+      "sha256": "64bfd5016da5b521b34b5d8aa8d7be8c28d34462089147c1aed3fc9d98e8af80"
+    },
+    {
+      "checkpoint": "environment",
+      "file": "06-selected-worktree-environment.png",
+      "sha256": "9e53574322bfb7f72e751c304941f909dbb488436bb8c03610d18a81c59f6e8b"
+    },
+    {
+      "checkpoint": "missingHistory",
+      "file": "05-missing-location-readable-history.png",
+      "sha256": "72267a4500b9303840edd1d6384ea5ac715a559a662062dbbdcd400333c8b58d"
+    }
+  ],
+  "inferenceContext": "Deterministic fixture.task-system; no paid inference invocation."
+}

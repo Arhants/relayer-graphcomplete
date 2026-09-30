@@ -66,6 +66,7 @@ pub struct InteractionInput {
 pub struct InteractionInputNode {
     pub id: NodeId,
     pub kind: String,
+    #[serde(with = "super::image_icon::wire")]
     pub icon: String,
     pub title: String,
     pub detail: String,

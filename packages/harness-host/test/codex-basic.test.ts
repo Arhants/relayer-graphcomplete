@@ -507,11 +507,11 @@ describe("CodexBasicHarness", () => {
     expect(submitted?.prompt).toContain("never place authored graph code in a --eval argument");
     expect(submitted?.prompt).toContain("do not create a script in either the project checkout or a temporary directory");
     expect(submitted?.prompt).toContain('kind: "navigate", relation: "expand", label: "Response"');
-    expect(submitted?.prompt).toContain("must use exactly one supported Relayer icon name");
+    expect(submitted?.prompt).toContain("Node and action icons accept supported symbol names or registered image references");
     expect(submitted?.prompt).toContain("exactly one NodePlacementObject(node, x, y) per layer node");
     expect(submitted?.prompt).toContain("Place a one-node layer at (0.5, 0.5)");
     expect(submitted?.prompt).toContain("independently of the viewport");
-    expect(submitted?.prompt).toContain("square-dashed-kanban");
+    expect(submitted?.prompt).toContain("graph.icons.discover");
     expect(submitted?.prompt).toContain('new NodeObject("info", "Summary", "...", "concept", "summary-node")');
     expect(submitted?.prompt).not.toContain('new NodeObject("lightbulb"');
     expect(submitted?.prompt).toContain('new EdgeObject([summaryNode, detailNode], "summary-detail-edge")');

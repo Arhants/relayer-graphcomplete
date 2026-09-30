@@ -10,6 +10,7 @@
 //! it fail with stable phase-specific errors rather than being silently accepted
 //! or dropped.
 
+pub mod candidates;
 pub mod error;
 pub mod limits;
 pub mod parser;
