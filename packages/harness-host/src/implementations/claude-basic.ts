@@ -24,6 +24,7 @@ import {
   type ClaudeBasicBrowserDependencies,
   type ClaudeBrowserSdk,
 } from "./claude-basic-browser.js";
+import { CLAUDE_PREVIEW_SERVER_NAME, CLAUDE_PREVIEW_TOOL, createClaudeBasicPreviewServer } from "./claude-basic-preview.js";
 import { personalPresentationTraceValues } from "./personal-presentation-guidance.js";
 
 export const CLAUDE_BASIC_KEY = "claude.basic";
@@ -178,6 +179,7 @@ export class ClaudeBasicHarness implements Harness {
       graph,
       context.access,
       context.completionBroker,
+      context.trace,
       resumeSessionId,
       attach,
       signal,
@@ -229,6 +231,7 @@ export class ClaudeBasicHarness implements Harness {
     graph: GraphCapability,
     access: HarnessExecutionAccess,
     completionBroker: HarnessRunContext["completionBroker"],
+    trace: HarnessRunContext["trace"],
     resumeSessionId?: string,
     attach?: (identity: JsonObject) => void,
     signal?: AbortSignal,
@@ -254,14 +257,26 @@ export class ClaudeBasicHarness implements Harness {
       const query = this.dependencies.query ?? loadedSdk!.query;
       const browserSdk = this.dependencies.browserSdk ?? loadedSdk!;
       const browserServer = createClaudeBasicBrowserServer(browserSdk, this.dependencies.browser);
+      // The host grants a preview folder only when previews are on (PRD §11.10).
+      // The preview tool reads nothing else, so every mode pre-approves it (PRD §11.6).
+      const previewServer = graph.previewDirectory === undefined
+        ? undefined
+        : createClaudeBasicPreviewServer(browserSdk, graph.previewDirectory, trace);
       const messages = query({
         prompt,
         options: {
           cwd: this.context.workingDirectory,
           env: environment,
           model,
-          allowedTools: permissionMode === "acceptEdits" ? ["Bash", CLAUDE_BROWSER_TOOL] : ["Bash"],
-          mcpServers: { [CLAUDE_BROWSER_SERVER_NAME]: browserServer },
+          allowedTools: [
+            "Bash",
+            ...(permissionMode === "acceptEdits" ? [CLAUDE_BROWSER_TOOL] : []),
+            ...(previewServer === undefined ? [] : [CLAUDE_PREVIEW_TOOL]),
+          ],
+          mcpServers: {
+            [CLAUDE_BROWSER_SERVER_NAME]: browserServer,
+            ...(previewServer === undefined ? {} : { [CLAUDE_PREVIEW_SERVER_NAME]: previewServer }),
+          },
           permissionMode,
           ...(permissionMode === "bypassPermissions" ? { allowDangerouslySkipPermissions: true } : {}),
           pathToClaudeCodeExecutable: runtime.executable,
@@ -395,6 +410,7 @@ function executionEnvironment(
   environment.RELAYER_GRAPH_URL = graph.url;
   environment.RELAYER_GRAPH_TOKEN = graph.token;
   environment.RELAYER_NODE_ID = String(graph.nodeId);
+  if (graph.previewDirectory !== undefined) environment.RELAYER_GRAPH_PREVIEW_DIR = graph.previewDirectory;
   if (completionBroker !== undefined) {
     environment.RELAYER_COMPLETE_URL = completionBroker.url;
     environment.RELAYER_COMPLETE_TOKEN = completionBroker.token;

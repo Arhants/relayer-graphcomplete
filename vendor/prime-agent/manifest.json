@@ -58,9 +58,9 @@
   },
   "assets": {
     "harnessConfigurations": {
-      "prime-agent-basic.yaml": "51e96a50ca5cba7240437fcd5846d120b01b62c0de738a1d126afadf048848bf"
+      "prime-agent-basic.yaml": "8217762cf5c5791efc0c9b34dffd06e7be25448991385efd259c89078a40cb81"
     },
-    "pythonPackageTreeSha256": "6197ef7c2d3514be18291371712c9cd81ee173ce1c1ecfd68f4d19c3fd396503"
+    "pythonPackageTreeSha256": "7055812d16f15d0f9efd2fa492c52c0949309d2a5330ca5d5792ff37a2dcec52"
   },
   "dependencyClosureSha256ByTarget": {
     "darwin-arm64": "1253fd136c0d63e751fffdae68327a1b5cbb3176f2b9780de372744f8b83ef41"
