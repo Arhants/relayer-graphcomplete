@@ -28,6 +28,8 @@ export const DESIGN_DEFAULT_EDGE_SHAPE = "arc-outward";
 const ARC_CURVATURE = 0.12;
 const ARC_MAX_BEND = 24;
 const ELBOW_CORNER = 8;
+// How far a routed edge runs straight out of a chosen side before it turns (px at zoom 1).
+const ROUTE_STUB = 16;
 // An edge whose line passes this close to the layer's centre, as a share of its length, counts as through it.
 const NEAR_CENTRE = 0.1;
 
@@ -187,10 +189,16 @@ function elbowPath(p, q, boxP, boxQ, axis, zoom) {
 }
 
 // Waypoints follow a dragged node: each moves by a blend of its two ends' movement,
-// weighted by its place along the route, so the route stretches but never turns.
+// weighted by how far along the authored route it sits, so the route stretches but
+// never turns.
 export function graphFollowWaypoints(waypoints, [authoredStart, authoredEnd], [start, end]) {
+  const path = [authoredStart, ...waypoints, authoredEnd];
+  const lengths = path.slice(1).map((point, index) => Math.hypot(point.x - path[index].x, point.y - path[index].y));
+  const total = lengths.reduce((sum, length) => sum + length, 0);
+  let travelled = 0;
   return waypoints.map((point, index) => {
-    const along = (index + 1) / (waypoints.length + 1);
+    travelled += lengths[index];
+    const along = total > 0 ? travelled / total : (index + 1) / (waypoints.length + 1);
     return {
       x: point.x + (1 - along) * (start.x - authoredStart.x) + along * (end.x - authoredEnd.x),
       y: point.y + (1 - along) * (start.y - authoredStart.y) + along * (end.y - authoredEnd.y),
@@ -201,7 +209,9 @@ export function graphFollowWaypoints(waypoints, [authoredStart, authoredEnd], [s
 // An edge with its own route, given in its drawing order: `start` and `end` are
 // { point, box, side } and `waypoints` are screen points between them. The shape
 // styles the path between points: straight segments, one smooth curve for arcs, or
-// right-angle segments for elbows. Elbows and arcs leave a chosen side at a right angle.
+// right-angle segments for elbows. A chosen side is left at a right angle: a short
+// straight run outward comes first, so no route turns back through its own node, and
+// two ends facing the same way meet in a U beyond the further of them.
 export function graphRoutedEdgePath(shape, { start, end, waypoints = [] }, { circle = null, zoom = 1 } = {}) {
   const startSide = NODE_SIDES.includes(start.side) ? start.side : null;
   const endSide = NODE_SIDES.includes(end.side) ? end.side : null;
@@ -210,21 +220,38 @@ export function graphRoutedEdgePath(shape, { start, end, waypoints = [] }, { cir
   }
   const first = routeEnd(start, startSide, waypoints[0] ?? end.point);
   const last = routeEnd(end, endSide, waypoints[waypoints.length - 1] ?? start.point);
-  const points = [first, ...waypoints, last];
   const resolved = resolveEdgeShape(shape);
-  if (resolved === "straight") return polylinePath(points, 0);
-  if (resolved === "elbow-horizontal" || resolved === "elbow-vertical") {
-    const axis = resolved === "elbow-horizontal" ? "x" : "y";
-    const route = [first];
-    for (let index = 1; index < points.length; index += 1) {
-      const leave = (index === 1 && sideAxis(startSide)) || axis;
-      const arrive = (index === points.length - 1 && sideAxis(endSide)) || (leave === "x" ? "y" : "x");
-      route.push(...rightAngleLeg(points[index - 1], points[index], leave, arrive));
-    }
-    return polylinePath(route, ELBOW_CORNER * zoom);
+  const elbow = resolved === "elbow-horizontal" || resolved === "elbow-vertical";
+  if (!elbow && resolved !== "straight") {
+    return waypoints.length
+      ? smoothPath([first, ...waypoints, last], sideNormal(startSide), sideNormal(endSide))
+      : sidedCurve(first, startSide, last, endSide, zoom);
   }
-  if (!waypoints.length) return sidedCurve(first, startSide, last, endSide, zoom);
-  return smoothPath(points);
+  let startOut = outward(first, startSide, ROUTE_STUB * zoom);
+  let endOut = outward(last, endSide, ROUTE_STUB * zoom);
+  if (!waypoints.length && startOut && endOut && startSide === endSide) {
+    const axis = sideAxis(startSide);
+    const extreme = (startSide === "top" || startSide === "left" ? Math.min : Math.max)(startOut[axis], endOut[axis]);
+    startOut = { ...startOut, [axis]: extreme };
+    endOut = { ...endOut, [axis]: extreme };
+  }
+  const points = [first, ...(startOut ? [startOut] : []), ...waypoints, ...(endOut ? [endOut] : []), last];
+  if (resolved === "straight") return polylinePath(points, 0);
+  const axis = resolved === "elbow-horizontal" ? "x" : "y";
+  const across = (direction) => (direction === "x" ? "y" : "x");
+  const route = [first];
+  for (let index = 1; index < points.length; index += 1) {
+    const [p, q] = [points[index - 1], points[index]];
+    if (Math.abs(p.x - q.x) < 0.5 || Math.abs(p.y - q.y) < 0.5) {
+      route.push(q);
+      continue;
+    }
+    // After a side's outward run the route turns across it; before arriving at one it runs across it.
+    const leave = p === startOut ? across(sideAxis(startSide)) : axis;
+    const arrive = q === endOut ? across(sideAxis(endSide)) : across(leave);
+    route.push(...rightAngleLeg(p, q, leave, arrive));
+  }
+  return polylinePath(route, ELBOW_CORNER * zoom);
 }
 
 // An arc between chosen sides leaves each side at a right angle and bows out from it
@@ -233,8 +260,8 @@ export function graphRoutedEdgePath(shape, { start, end, waypoints = [] }, { cir
 function sidedCurve(start, startSide, end, endSide, zoom) {
   const reach = Math.max(0.25 * Math.hypot(end.x - start.x, end.y - start.y), ARC_MAX_BEND * zoom);
   const control = (point, side, toward) => {
-    const normal = { top: [0, -1], bottom: [0, 1], left: [-1, 0], right: [1, 0] }[side];
-    if (normal) return { x: point.x + normal[0] * reach, y: point.y + normal[1] * reach };
+    const normal = sideNormal(side);
+    if (normal) return { x: point.x + normal.x * reach, y: point.y + normal.y * reach };
     return { x: point.x + (toward.x - point.x) / 3, y: point.y + (toward.y - point.y) / 3 };
   };
   const c1 = control(start, startSide, end);
@@ -243,6 +270,15 @@ function sidedCurve(start, startSide, end, endSide, zoom) {
     d: `M${start.x} ${start.y}C${c1.x} ${c1.y} ${c2.x} ${c2.y} ${end.x} ${end.y}`,
     middle: { x: (start.x + 3 * c1.x + 3 * c2.x + end.x) / 8, y: (start.y + 3 * c1.y + 3 * c2.y + end.y) / 8 },
   };
+}
+
+function sideNormal(side) {
+  return { top: { x: 0, y: -1 }, bottom: { x: 0, y: 1 }, left: { x: -1, y: 0 }, right: { x: 1, y: 0 } }[side] ?? null;
+}
+
+function outward(point, side, distance) {
+  const normal = sideNormal(side);
+  return normal ? { x: point.x + normal.x * distance, y: point.y + normal.y * distance } : null;
 }
 
 function sideAxis(side) {
@@ -276,14 +312,24 @@ function rightAngleLeg(p, q, leave, arrive) {
 // Straight segments through the points, with corners rounded to `radius`. The middle
 // is halfway along the drawn length.
 function polylinePath(points, radius) {
-  const pts = points.filter((point, index) => index === 0 || Math.hypot(point.x - points[index - 1].x, point.y - points[index - 1].y) > 0.5);
+  const distinct = points.filter((point, index) => index === 0 || Math.hypot(point.x - points[index - 1].x, point.y - points[index - 1].y) > 0.5);
+  // A point in the middle of a straight run adds nothing.
+  const pts = distinct.filter((point, index) => {
+    if (index === 0 || index === distinct.length - 1) return true;
+    const [previous, next] = [distinct[index - 1], distinct[index + 1]];
+    const cross = (point.x - previous.x) * (next.y - point.y) - (point.y - previous.y) * (next.x - point.x);
+    const dot = (point.x - previous.x) * (next.x - point.x) + (point.y - previous.y) * (next.y - point.y);
+    return Math.abs(cross) > 0.5 || dot < 0;
+  });
   let d = `M${pts[0].x} ${pts[0].y}`;
   for (let index = 1; index < pts.length - 1; index += 1) {
     const [previous, corner, next] = [pts[index - 1], pts[index], pts[index + 1]];
     const inLength = Math.hypot(corner.x - previous.x, corner.y - previous.y);
     const outLength = Math.hypot(next.x - corner.x, next.y - corner.y);
     const r = Math.min(radius, inLength / 2, outLength / 2);
-    if (r < 0.5) {
+    // A route that doubles back keeps its sharp turn; rounding it would draw a spike.
+    const reverses = ((corner.x - previous.x) * (next.x - corner.x) + (corner.y - previous.y) * (next.y - corner.y)) < -0.99 * inLength * outLength;
+    if (r < 0.5 || reverses) {
       d += `L${corner.x} ${corner.y}`;
       continue;
     }
@@ -294,13 +340,28 @@ function polylinePath(points, radius) {
   return { d: `${d}L${last.x} ${last.y}`, middle: halfway(pts) };
 }
 
-// One smooth curve through every point (Catmull-Rom as cubic Béziers).
-function smoothPath(points) {
+// One smooth curve through every point (a Catmull-Rom style spline as cubic Béziers). Repeated
+// points are dropped so the curve never loops back on itself. A side's normal makes the
+// curve leave or enter that side at a right angle.
+function smoothPath(allPoints, startNormal = null, endNormal = null) {
+  const points = allPoints.filter((point, index) => index === 0 || Math.hypot(point.x - allPoints[index - 1].x, point.y - allPoints[index - 1].y) > 0.5);
   const padded = [points[0], ...points, points[points.length - 1]];
   let d = `M${points[0].x} ${points[0].y}`;
   for (let index = 1; index < padded.length - 2; index += 1) {
     const [before, from, to, after] = [padded[index - 1], padded[index], padded[index + 1], padded[index + 2]];
-    d += `C${from.x + (to.x - before.x) / 6} ${from.y + (to.y - before.y) / 6} ${to.x - (after.x - from.x) / 6} ${to.y - (after.y - from.y) / 6} ${to.x} ${to.y}`;
+    // Handles a third of this segment long, so short segments never swing wide.
+    const reach = Math.hypot(to.x - from.x, to.y - from.y) / 3;
+    const unit = (vector) => {
+      const length = Math.hypot(vector.x, vector.y) || 1;
+      return { x: vector.x / length, y: vector.y / length };
+    };
+    const leave = index === 1 && startNormal ? startNormal : unit({ x: to.x - before.x, y: to.y - before.y });
+    const enter = index === padded.length - 3 && endNormal
+      ? { x: -endNormal.x, y: -endNormal.y }
+      : unit({ x: after.x - from.x, y: after.y - from.y });
+    const c1 = { x: from.x + leave.x * reach, y: from.y + leave.y * reach };
+    const c2 = { x: to.x - enter.x * reach, y: to.y - enter.y * reach };
+    d += `C${c1.x} ${c1.y} ${c2.x} ${c2.y} ${to.x} ${to.y}`;
   }
   return { d, middle: halfway(points) };
 }

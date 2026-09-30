@@ -59,6 +59,10 @@ const SCENES = [
     routes: [{ edge: 3, ends: [[3, "top"], [0, "top"]], waypoints: [[.92, .15], [.08, .15]] }],
   },
   {
+    shape: "elbow-horizontal", label: "loop-elbow-sides", nodes: PIPELINE, edges: PIPELINE_LOOP,
+    routes: [{ edge: 3, ends: [[3, "top"], [0, "top"]] }],
+  },
+  {
     shape: "straight", label: "loop-sides", nodes: PIPELINE, edges: PIPELINE_LOOP,
     routes: [{ edge: 3, shape: "arc-outward", ends: [[3, "top"], [0, "top"]] }],
   },
@@ -194,15 +198,18 @@ function checkScene(scene, observed, theme) {
   const routes = new Map((scene.routes ?? []).map((route) => [route.edge, route]));
   observed.edges.forEach((edge, index) => {
     const edgeShape = resolveEdgeShape(routes.get(index)?.shape ?? scene.shape ?? undefined);
-    if (edge.shape !== edgeShape) failures.push(`edge ${index} shape ${edge.shape}`);
+    if (edge.shape !== edgeShape || !drawing[edge.shape]) {
+      failures.push(`edge ${index} shape ${edge.shape}`);
+      return;
+    }
     if (edge.routed !== routes.has(index)) failures.push(`edge ${index} routed ${edge.routed}`);
     if (edge.d.lastIndexOf("M") !== 0 || [...commands(edge.d)].some((letter) => !drawing[edgeShape][0].includes(letter))) failures.push(`edge ${index} path ${edge.d}`);
   });
-  const bends = observed.edges.filter((edge) => drawing[edge.shape][1]?.test(edge.d));
+  const bends = observed.edges.filter((edge) => drawing[edge.shape]?.[1]?.test(edge.d));
   if (drawing[expected][1] && !bends.length) failures.push("no bend");
   for (const index of routes.keys()) {
     const edge = observed.edges[index];
-    if (drawing[edge.shape][1] && !drawing[edge.shape][1].test(edge.d)) failures.push(`routed edge ${index} does not bend`);
+    if (drawing[edge.shape]?.[1] && !drawing[edge.shape][1].test(edge.d)) failures.push(`routed edge ${index} does not bend`);
   }
   if (observed.markers) failures.push(`${observed.markers} direction markers`);
   if (failures.length) throw new Error(`${theme} ${label}: ${failures.join("; ")}`);

@@ -144,8 +144,7 @@ class LayerLayout:
     placements: tuple[NodePlacement, ...]
     # Absent only on layers accepted before edge shapes existed; read it as "default".
     edge_shape: str | None = None
-    # Per-edge routes as the server returns them: edgeId, optional shape, ends and waypoints.
-    edge_routes: tuple[Mapping[str, Any], ...] = ()
+    edge_routes: tuple["EdgeRoute", ...] = ()
 
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> "LayerLayout":
@@ -153,7 +152,32 @@ class LayerLayout:
             int(value["version"]),
             tuple(NodePlacement.from_dict(item) for item in value["placements"]),
             value.get("edgeShape"),
-            tuple(value.get("edgeRoutes") or ()),
+            tuple(EdgeRoute.from_dict(item) for item in value.get("edgeRoutes") or ()),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class EdgeEnd:
+    node_id: int
+    side: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class EdgeRoute:
+    """A stored edge route: waypoints are listed from ends[0] to ends[1], which is not a direction."""
+
+    edge_id: int
+    shape: str | None = None
+    ends: tuple[EdgeEnd, ...] = ()
+    waypoints: tuple[tuple[float, float], ...] = ()
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> "EdgeRoute":
+        return cls(
+            int(value["edgeId"]),
+            value.get("shape"),
+            tuple(EdgeEnd(int(end["nodeId"]), end.get("side")) for end in value.get("ends") or ()),
+            tuple((float(point["x"]), float(point["y"])) for point in value.get("waypoints") or ()),
         )
 
 
@@ -226,7 +250,7 @@ class EdgeRouteObject:
     edge: "EdgeReference"
     shape: EdgeShape | None = None
     ends: tuple[EdgeEndObject, EdgeEndObject] | None = None
-    waypoints: Sequence[tuple[float, float]] = ()
+    waypoints: Sequence[tuple[float, float] | Mapping[str, float]] = ()
 
 
 @dataclass(slots=True)
@@ -268,6 +292,23 @@ class CompletionInputGraph:
             raise ValidationError("completion input graph has an invalid interactionNode")
         return cls(node)
 
+
+def _route_payload(route: EdgeRouteObject) -> dict[str, Any]:
+    """Serialize a route, leaving out what it does not set."""
+    payload: dict[str, Any] = {"edgeId": _edge_id(route.edge)}
+    if route.shape is not None:
+        payload["shape"] = route.shape
+    if route.ends is not None:
+        payload["ends"] = [
+            {"nodeId": _node_id(end.node), **({} if end.side is None else {"side": end.side})}
+            for end in route.ends
+        ]
+    if route.waypoints:
+        payload["waypoints"] = [
+            {"x": point["x"], "y": point["y"]} if isinstance(point, Mapping) else {"x": point[0], "y": point[1]}
+            for point in route.waypoints
+        ]
+    return payload
 
 class RelayerGraphClient:
     def __init__(self, url: str, token: str, node_id: int, *, timeout: float = 30.0) -> None:
@@ -347,17 +388,8 @@ class RelayerGraphClient:
                     for item in layer.layout.placements
                 ],
                 "edgeShape": layer.layout.edge_shape,
-                **({"edgeRoutes": [
-                    {
-                        "edgeId": _edge_id(route.edge),
-                        "shape": route.shape,
-                        "ends": None if route.ends is None else [
-                            {"nodeId": _node_id(end.node), "side": end.side} for end in route.ends
-                        ],
-                        "waypoints": [{"x": x, "y": y} for x, y in route.waypoints],
-                    }
-                    for route in layer.layout.edge_routes
-                ]} if layer.layout.edge_routes else {}),
+                **({"edgeRoutes": [_route_payload(route) for route in layer.layout.edge_routes]}
+                   if layer.layout.edge_routes else {}),
             },
             "sizeJustification": size_justification,
         })

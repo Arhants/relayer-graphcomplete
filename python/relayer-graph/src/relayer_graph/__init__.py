@@ -3,7 +3,7 @@
 from .authoring import (ActionVariant, CompletionInputGraph, EdgeObject, GraphAuthoringClient, GraphEdge,
                         GraphLayer, GraphNode, InteractionContext, InteractionInput, InteractionPermissions,
                         InteractionInputNode, SubmittedInput,
-                        EdgeEndObject, EdgeRouteObject, LayerLayout, LayerLayoutObject,
+                        EdgeEnd, EdgeEndObject, EdgeRoute, EdgeRouteObject, LayerLayout, LayerLayoutObject,
                         InputControl, InputOption, LayerObject, NavigateRelation, NodeObject, NodePlacement,
                         NodePlacementObject, RelayerGraphClient)
 from .exceptions import (APIError, AuthenticationError, ConfigurationError,
@@ -34,7 +34,7 @@ __all__ = [
     "NodeObject", "EdgeObject", "LayerObject", "NodePlacementObject", "LayerLayoutObject",
     "GraphNode", "GraphEdge", "GraphLayer", "InteractionContext", "InteractionInput", "InteractionPermissions", "InteractionInputNode", "SubmittedInput",
     "NodePlacement", "LayerLayout", "EDGE_SHAPES", "EdgeShape", "NODE_SIDES", "NodeSide",
-    "MAX_EDGE_ROUTE_WAYPOINTS", "EdgeEndObject", "EdgeRouteObject",
+    "MAX_EDGE_ROUTE_WAYPOINTS", "EdgeEndObject", "EdgeRouteObject", "EdgeEnd", "EdgeRoute",
     "ActionVariant", "NavigateRelation", "InputControl", "InputOption",
     "CompletionInputGraph",
     "complete", "CompletionHandle", "CompletionCurrent", "CompletionCurrentSnapshot", "CompletionWatch",

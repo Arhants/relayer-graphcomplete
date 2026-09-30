@@ -124,45 +124,54 @@ describe("layer edge shapes", () => {
     // A four-step row whose last step loops back to the first, over the top.
     const collect = { x: 100, y: 200 };
     const evaluate = { x: 700, y: 200 };
-    const loop = (shape, waypoints = [{ x: 700, y: 80 }, { x: 100, y: 80 }]) => graphRoutedEdgePath(shape, {
-      start: { point: evaluate, box: pill, side: "top" },
-      end: { point: collect, box: pill, side: "top" },
+    const route = (shape, { from = evaluate, to = collect, fromSide = "top", toSide = "top", waypoints = [] } = {}) => graphRoutedEdgePath(shape, {
+      start: { point: from, box: pill, side: fromSide },
+      end: { point: to, box: pill, side: toSide },
       waypoints,
     });
+    const over = [{ x: 700, y: 80 }, { x: 100, y: 80 }];
     const numbers = (d) => d.match(/-?[\d.]+/g).map(Number);
 
     it("leaves and enters the chosen sides and passes through every waypoint", () => {
-      expect(loop("straight").d).toBe("M700 182L700 80L100 80L100 182");
+      expect(route("straight", { waypoints: over }).d).toBe("M700 182L700 80L100 80L100 182");
       // Elbows turn at right angles with rounded corners, leaving the top side vertically.
-      expect(loop("elbow-horizontal").d).toBe("M700 182L700 88Q700 80 692 80L108 80Q100 80 100 88L100 182");
-      // Arcs draw one smooth curve whose segments end on each waypoint.
-      const arc = loop("arc-outward").d;
-      expect(arc).toMatch(/^M700 182C[^A-Z]+ 700 80C[^A-Z]+ 100 80C[^A-Z]+ 100 182$/);
-      expect(loop("arc-circle").d).toBe(arc);
-      for (const shape of EDGE_SHAPES) expect(loop(shape).d).toMatch(/^M[^M]+$/);
+      expect(route("elbow-horizontal", { waypoints: over }).d).toBe("M700 182L700 88Q700 80 692 80L108 80Q100 80 100 88L100 182");
+      // Arcs draw one smooth curve, leaving the sides vertically, whose segments end on each waypoint.
+      const arc = route("arc-outward", { waypoints: over }).d;
+      expect(arc).toMatch(/^M700 182C700 [\d.]+ [^A-Z]+ 700 80C[^A-Z]+ 100 80C[^A-Z]+ 100 [\d.]+ 100 182$/);
+      expect(route("arc-circle", { waypoints: over }).d).toBe(arc);
+      // Repeated waypoints never make the curve loop.
+      expect(route("arc-outward", { waypoints: [{ x: 400, y: 80 }, { x: 400, y: 80 }] }).d.match(/C/g)).toHaveLength(2);
+      for (const shape of EDGE_SHAPES) expect(route(shape, { waypoints: over }).d).toMatch(/^M[^M]+$/);
     });
 
-    it("arcs a sides-only route out of its sides and keeps routeless ends on the shape's own path", () => {
-      // Both ends at the top: the curve leaves and enters vertically and bows up over the row by a quarter of its length.
-      const sidesOnly = loop("arc-outward", []);
-      expect(sidesOnly.d).toBe("M700 182C700 32 100 32 100 182");
-      expect(sidesOnly.middle).toEqual({ x: 400, y: 69.5 });
-      // No sides and no waypoints: exactly the layer shape's path, whatever the route order.
+    it("joins two ends facing the same way in a U beyond the further of them", () => {
+      // Sides alone: out of both tops, across above the row, never along the pills' tops.
+      expect(route("elbow-horizontal").d).toBe("M700 182L700 174Q700 166 692 166L108 166Q100 166 100 174L100 182");
+      expect(route("straight").d).toBe("M700 182L700 166L100 166L100 182");
+      // Uneven ends meet above the higher one.
+      expect(route("elbow-vertical", { from: { x: 700, y: 260 } }).d).toBe("M700 242L700 174Q700 166 692 166L108 166Q100 166 100 174L100 182");
+      // An arc leaves and enters vertically and bows up over the row by a quarter of its length.
+      const arc = route("arc-outward");
+      expect(arc.d).toBe("M700 182C700 32 100 32 100 182");
+      expect(arc.middle).toEqual({ x: 400, y: 69.5 });
+    });
+
+    it("keeps routeless ends on the shape's own path and treats unknown sides as automatic", () => {
       const plain = graphRoutedEdgePath("elbow-vertical", { start: { point: evaluate, box: pill }, end: { point: collect, box: pill } });
       expect(plain).toEqual(graphEdgePath("elbow-vertical", collect, evaluate, { sourceBox: pill }));
-      // A side this build does not know is treated as automatic.
-      expect(graphRoutedEdgePath("straight", { start: { point: evaluate, box: pill, side: "north" }, end: { point: collect, box: pill } }))
+      expect(route("straight", { fromSide: "north", toSide: null }))
         .toEqual(graphEdgePath("straight", evaluate, collect, { sourceBox: pill }));
     });
 
-    it("moves waypoints with a dragged node without turning the route", () => {
-      const waypoints = [{ x: 700, y: 80 }, { x: 100, y: 80 }];
+    it("moves waypoints with a dragged node by their distance along the route, never turning it", () => {
       const authored = [evaluate, collect];
-      expect(graphFollowWaypoints(waypoints, authored, authored)).toEqual(waypoints);
-      // Evaluate drops 90px: the waypoint nearer it follows by two thirds, the far one by a third.
-      const moved = graphFollowWaypoints(waypoints, authored, [{ x: 700, y: 290 }, collect]);
-      expect(moved).toEqual([{ x: 700, y: 140 }, { x: 100, y: 110 }]);
-      expect(numbers(loop("straight", moved).d)).toEqual([700, 182, 700, 140, 100, 110, 100, 182]);
+      expect(graphFollowWaypoints(over, authored, authored)).toEqual(over);
+      // Evaluate drops 70px. The route runs 120 + 600 + 120, so the waypoint above it
+      // follows by 6/7 of that and the far one by 1/7; neither moves sideways.
+      const moved = graphFollowWaypoints(over, authored, [{ x: 700, y: 270 }, collect]);
+      expect(moved).toEqual([{ x: 700, y: 140 }, { x: 100, y: 90 }]);
+      expect(numbers(route("straight", { from: { x: 700, y: 270 }, waypoints: moved }).d)).toEqual([700, 252, 700, 140, 100, 90, 100, 182]);
     });
   });
 });

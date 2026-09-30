@@ -210,6 +210,14 @@ class AuthoringClientTests(unittest.IsolatedAsyncioTestCase):
         Handler.requests.clear()
         self.client = RelayerGraphClient(self.url, "secret", 7)
 
+    def test_routes_send_only_what_they_set(self):
+        from relayer_graph.authoring import _route_payload
+        self.assertEqual(_route_payload(EdgeRouteObject(4, shape="straight")), {"edgeId": 4, "shape": "straight"})
+        self.assertEqual(
+            _route_payload(EdgeRouteObject(4, ends=(EdgeEndObject(1, "top"), EdgeEndObject(2)), waypoints=({"x": 0.5, "y": 0.1}, (0.2, 0.3)))),
+            {"edgeId": 4, "ends": [{"nodeId": 1, "side": "top"}, {"nodeId": 2}], "waypoints": [{"x": 0.5, "y": 0.1}, {"x": 0.2, "y": 0.3}]},
+        )
+
     async def test_objects_receive_server_ids_and_compose_a_layer(self):
         queue = NodeObject("queue", "Queue", "Waiting work", client_key="queue")
         worker = NodeObject("worker", "Worker", "Claims work", client_key="worker")
@@ -234,8 +242,8 @@ class AuthoringClientTests(unittest.IsolatedAsyncioTestCase):
             ],
             "edgeShape": "elbow-horizontal",
             "edgeRoutes": [{
-                "edgeId": edge.ref.id, "shape": None,
-                "ends": [{"nodeId": worker.ref.id, "side": "top"}, {"nodeId": queue.ref.id, "side": None}],
+                "edgeId": edge.ref.id,
+                "ends": [{"nodeId": worker.ref.id, "side": "top"}, {"nodeId": queue.ref.id}],
                 "waypoints": [{"x": 0.5, "y": 0.1}],
             }],
         })

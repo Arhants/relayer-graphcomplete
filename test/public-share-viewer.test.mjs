@@ -1041,10 +1041,11 @@ describe("public share edge shapes", () => {
       const edgePath = (id) => windowRef.document.querySelector(`[data-edge="${id}"] .graph-edge`).getAttribute("d");
       const [startRoot, rootEnd] = [edgePath("edge:start-root"), edgePath("edge:root-end")];
       expect(startRoot).toMatch(/^M[^MA]+A[^MA]+$/);
-      // The routed edge draws in its own shape: two straight segments through its waypoint.
+      // The routed edge draws in its own shape: straight segments out of End's top, through its waypoint.
       const routed = windowRef.document.querySelector('[data-edge="edge:root-end"]');
       expect([routed.hasAttribute("data-edge-routed"), routed.getAttribute("data-edge-shape")]).toEqual([true, "straight"]);
-      expect(rootEnd).toMatch(/^M[^A-Z]+L[^A-Z]+L[^A-Z]+$/);
+      expect(rootEnd).toMatch(/^M[^A-Z]+L[^A-Z]+L[^A-Z]+L[^A-Z]+$/);
+      const points = (d) => d.match(/-?[\d.]+/g).map(Number).reduce((list, value, index, all) => (index % 2 ? list : [...list, { x: value, y: all[index + 1] }]), []);
       expect(canvas.querySelector("marker, [marker-start], [marker-mid], [marker-end]")).toBeNull();
       // Dragging a node reshapes only the edges it is on.
       windowRef.HTMLElement.prototype.setPointerCapture ??= () => {};
@@ -1054,6 +1055,18 @@ describe("public share edge shapes", () => {
       expect(edgePath("edge:start-root")).not.toBe(startRoot);
       expect(edgePath("edge:root-end")).toBe(rootEnd);
       start.dispatchEvent(new windowRef.PointerEvent("pointerup", { bubbles: true, pointerId: 3 }));
+      // Dragging End, which the route leaves from, carries its waypoint part of the way, without turning it.
+      const end = windowRef.document.querySelector('[data-node="node:end"]');
+      end.dispatchEvent(new windowRef.PointerEvent("pointerdown", { bubbles: true, pointerId: 4, buttons: 1, clientX: 500, clientY: 100 }));
+      end.dispatchEvent(new windowRef.PointerEvent("pointermove", { bubbles: true, pointerId: 4, buttons: 1, clientX: 500, clientY: 160 }));
+      const [before, after] = [points(rootEnd), points(edgePath("edge:root-end"))];
+      const moved = (index) => ({ x: after[index].x - before[index].x, y: after[index].y - before[index].y });
+      expect(moved(0).y).toBeGreaterThan(0);
+      expect(moved(2).x).toBeCloseTo(0, 6);
+      expect(moved(2).y).toBeGreaterThan(0);
+      expect(moved(2).y).toBeLessThan(moved(0).y);
+      expect(after[3]).toEqual(before[3]);
+      end.dispatchEvent(new windowRef.PointerEvent("pointerup", { bubbles: true, pointerId: 4 }));
 
       viewer.adapter.selectTurnById("turn:2");
       viewer.render();

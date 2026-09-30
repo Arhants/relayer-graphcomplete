@@ -96,7 +96,8 @@ that one edge its own shape, the side of each of its two nodes where it attaches
 ("top", "right", "bottom", "left"), and up to 4 waypoints: layout coordinates
 from 0 through 1 that the edge passes through, listed from the route's first end
 to its second. Try sides first; for example, attach both ends of a loop-back at
-"top" to arc it over the row. Add waypoints only when sides are not enough. A
+"top" to arc it over the row. Pick sides that face where the edge goes. Add
+waypoints only when sides are not enough. A
 route's ends are just the edge's two nodes, not a direction.
 
 ```python

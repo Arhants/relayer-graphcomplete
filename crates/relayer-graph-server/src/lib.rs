@@ -2334,7 +2334,7 @@ struct EdgeRouteRequest {
     #[serde(default)]
     shape: Value,
     #[serde(default)]
-    ends: Vec<EdgeEndRequest>,
+    ends: Option<Vec<EdgeEndRequest>>,
     #[serde(default)]
     waypoints: Vec<PointRequest>,
 }
@@ -2392,6 +2392,7 @@ impl From<LayerDraftRequest> for LayerDraft {
                         shape: repairable_edge_shape(route.shape),
                         ends: route
                             .ends
+                            .unwrap_or_default()
                             .into_iter()
                             .map(|end| relayer_graph_core::EdgeEnd {
                                 node_id: end.node_id,
@@ -5806,6 +5807,38 @@ mod tests {
         assert_eq!(
             out_of_range["error"]["issues"][2]["code"],
             "unsupported_edge_shape"
+        );
+
+        // A route's nulls and non-string sides stay repairable rather than failing to parse.
+        let misrouted = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/graph/layers")
+                    .header("content-type", "application/json")
+                    .header("authorization", format!("Bearer {graph_token}"))
+                    .body(Body::from(format!(
+                        r#"{{"clientKey":"root","nodes":[{}],"edges":[],"layout":{{"version":1,"placements":[{{"nodeId":{},"x":0.5,"y":0.5}}],"edgeShape":"default","edgeRoutes":[{{"edgeId":999,"shape":null,"ends":null,"waypoints":[{{"x":0.5,"y":0.5}}]}}]}}}}"#,
+                        answer.id.value(), answer.id.value()
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(misrouted.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let misrouted: Value =
+            serde_json::from_slice(&to_bytes(misrouted.into_body(), usize::MAX).await.unwrap())
+                .unwrap();
+        let codes = misrouted["error"]["issues"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|issue| issue["code"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            codes,
+            ["edge_route_outside_layer", "edge_route_ends_required"]
         );
 
         let valid = app
