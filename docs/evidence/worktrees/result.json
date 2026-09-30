@@ -25,20 +25,20 @@
     "desktop/main/ipc/register-ipc.mjs": "b2b60b094b94444d13113a7dfe2bae66f7ecaecd9c1405a07c2db79c9c6c152c",
     "desktop/preload/index.cjs": "706dac45a1c4ce472d0133c10dff8e362bbd9174ad32d87792efe0d272445789",
     "desktop/renderer/src/checkout.js": "2902e02aa0df597d90f0cd15f40ae73ea3410b47113a2a24e9ed14f6e88ae39f",
-    "desktop/renderer/styles.css": "312f8f0e520e8f302e172077860bd99e2e15bff8a09fcf74776ddb35fa014594",
+    "desktop/renderer/styles.css": "e07fc77e163eec9a1fafa604ae5249c1dbb367c3c365e6c99a64d13fadbbd2b9",
     "desktop/renderer/src/worktree-controller.js": "8ef7bdf6d8b97ef298e083ad42c7e87670e4bd588468970a43c1f73da60c0831",
     "desktop/renderer/src/threads.js": "f6f5c0fed116a163099424006ccbbec7c3ca0ee4496490f27c13818ff51afd24",
     "desktop/renderer/src/composer-drafts.js": "15b619a244c6b27996805c60868b21123332376b7553380f82a8148103aa532c",
     "desktop/renderer/src/environment-context.js": "9813114cc78844ce28c8532ef4585262be1c915f8c5cfac53334b623e69b66a6",
-    "desktop/renderer/src/product-workspace/workspace.js": "dd752d5e9b80709b68595f2aa932bf36dee224161c2f6c607797e3885f599d15",
-    "crates/relayer-app-server/src/api/environment.rs": "0e48dae7b28c2ac064ec119719e8e5ca908e3be41a93722dd1915975c4580d51"
+    "desktop/renderer/src/product-workspace/workspace.js": "0be598d5a5569cf99151292e7faa4505c0acab2cfab2ae8a61b77c7c9605e44d",
+    "crates/relayer-app-server/src/api/environment.rs": "8b8f4e98da4a64c4f1c0186b30257477b470d142cd6605f9ac61a8fea46e03e7"
   },
   "binaryHashes": {
-    "relayer-app-server": "a2bed0fb4080886a178f763db5198ec066d13c90c9328294a5896706bb00a4ab",
-    "relayer-graph-server": "239ac417e2bdc5f5478c5a7bb0385e8e03cf346c033fbb3801ffcb996f50d996"
+    "relayer-app-server": "d78b4832b6087cd27143bdff37cb85383e7ef500c0c9cd5573b46175dee4bbe5",
+    "relayer-graph-server": "b16be607f5284bceef9a0d512788b1303ce9bc43a5e1012b628403defc071ca6"
   },
-  "planId": "84c26f1c50c24d0e8adacb3599d8347e",
-  "workingDirectory": "/private/var/folders/dw/zlxwg4f160x18375bk2bx6h00000gn/T/relayer-worktrees-lB3aPB/worktrees/84c26f1c50c24d0e8adacb3599d8347e",
+  "planId": "a4f5f32082084273b7c8c228b641cf1c",
+  "workingDirectory": "/Volumes/2T-SSD/tmp/issue-622-verification/relayer-worktrees-eOVdgI/worktrees/a4f5f32082084273b7c8c228b641cf1c",
   "acceptedInteractions": 1,
   "evidence": {
     "scrollingCheckouts": "docs/evidence/worktrees/07-many-registered-checkouts.png",

@@ -30,6 +30,8 @@ const THREAD_COLUMNS: &[(&str, &str, bool, i64)] = &[
     ("personal_presentation_version_key", "TEXT", false, 0),
     ("working_directory", "TEXT", false, 0),
     ("checkout_context_json", "TEXT", false, 0),
+    ("icon", "TEXT", false, 0),
+    ("icon_selection_eligible", "INTEGER", true, 0),
 ];
 const CONVERSATION_IMPORT_COLUMNS: &[(&str, &str, bool, i64)] = &[
     ("id", "TEXT", true, 1),

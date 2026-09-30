@@ -1,0 +1,69 @@
+{
+  "sourceDigest": "dc408847b23f5fc05eb4d666a5f8773d411f77d48abe1de5e25d65d5467411c1",
+  "baseCommit": "58242373a3f508e6642051ed092374bb7362da3d",
+  "plan": "merge-integration.md subsequent edge-shape integration",
+  "checkCommand": "failed only stale annotation receipt after native/crash/package/type and 3339 JS passed; three declared skips",
+  "repairedCheckpoint": "real annotation capture regenerated; receipt test passed alongside social receipt; total2pass",
+  "remainder": "secret2pass, Python64pass, receipt lints/readability pass",
+  "build": "passed",
+  "heavy": {
+    "edgeShapes": "22 generated actual renderer images boththemes; representative4 inspected",
+    "social": "actual boththemes passed",
+    "agentPreview": "actual Electron boththemesframes/isolation/cleanup passed; siximagebytes same as previously inspected, receipt source refreshed",
+    "evalPreview": "scenario passed; firstcleanupENOTEMPTY failed; unchangedretry scenario andcleanup passed",
+    "compiled": "4passed",
+    "prime": "actual cleanroot ready true with updated recipe identity",
+    "annotations": "actual A-to-B passed zero paid"
+  },
+  "unknowns": "Historical full Eval web failure and later scenarios unobserved; paid source611 proof only. No current paid/live preview/signed/release proof.",
+  "logs": {
+    "check": {
+      "path": "docs/evidence/issue-622-thread-icons/integration-logs/edge-check.txt",
+      "sha256": "a892ec71fb74088aa52e0fb104758c1aa52892760fe0f6e3dc2085c44cce3b59"
+    },
+    "build": {
+      "path": "docs/evidence/issue-622-thread-icons/integration-logs/edge-build.txt",
+      "sha256": "d000728fad9ba7f93bb869bea14e09a22c90137a7c0739d60ad9af7a37e7315d"
+    },
+    "social": {
+      "path": "docs/evidence/issue-622-thread-icons/integration-logs/edge-social.txt",
+      "sha256": "12241f80dd8a4e6ef93d5b182a1dbcb668a50ebaaf8e6300d3c40f82931183cb"
+    },
+    "shapes": {
+      "path": "docs/evidence/issue-622-thread-icons/integration-logs/edge-shapes.txt",
+      "sha256": "63363d8a9a945a444aad52eac2d0a337d475a7871a8b215db77e7dc8b21b2ad1"
+    },
+    "prime": {
+      "path": "docs/evidence/issue-622-thread-icons/integration-logs/edge-prime.txt",
+      "sha256": "1e418c4a728c852ceddca6a219907165b05a77bbe33f8fd41fe5d88f05bcf47e"
+    },
+    "agent-preview": {
+      "path": "docs/evidence/issue-622-thread-icons/integration-logs/edge-agent-preview.txt",
+      "sha256": "0845e541c784b26b3443749052b4745fd6ec142f61d3f00faf8b82d51b4742c7"
+    },
+    "eval-preview": {
+      "path": "docs/evidence/issue-622-thread-icons/integration-logs/edge-eval-preview.txt",
+      "sha256": "794ced7cd941306507bf21c8509b9feab55705e5310070db35f5d8dcfd724d60"
+    },
+    "eval-preview-retry": {
+      "path": "docs/evidence/issue-622-thread-icons/integration-logs/edge-eval-preview-retry.txt",
+      "sha256": "db1e8db181f4d7a41406483cd0b272ec6be0f18358123c8335bc775fc6f59538"
+    },
+    "annotations": {
+      "path": "docs/evidence/issue-622-thread-icons/integration-logs/edge-annotations.txt",
+      "sha256": "341365dfb3b150b048ed4ba8e982843dd1310af43feb64f768a9dedc9f5e9958"
+    },
+    "compiled": {
+      "path": "docs/evidence/issue-622-thread-icons/integration-logs/edge-compiled.txt",
+      "sha256": "f99a6a74c9c94ba5c3867850ca4f6a2a45fadc994b48c0e2af02fc02abc0ecf8"
+    },
+    "receipts": {
+      "path": "docs/evidence/issue-622-thread-icons/integration-logs/edge-receipts.txt",
+      "sha256": "640e732b259c3c0e75219db5d0e4e8d6549e493f87145c9d0e9513c19b49514b"
+    },
+    "remainder": {
+      "path": "docs/evidence/issue-622-thread-icons/integration-logs/edge-remainder.txt",
+      "sha256": "0c460f0bf1356c320c4fb3555127670e8b1163eb85076eb11d91883d51776a11"
+    }
+  }
+}

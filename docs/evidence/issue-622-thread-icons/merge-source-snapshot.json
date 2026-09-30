@@ -1,0 +1,248 @@
+{
+  "schemaVersion": 1,
+  "baseCommit": "3dc56dd9cff4bd1fd9c1faaf199ed195578a7224",
+  "sourceDigest": "775a6cad19f169c685f3e1c3e1fc12fe311c636469d0e266ea46ee61fdeb6bda",
+  "digestFormat": "sorted path NUL bytes NUL; excludes docs/evidence; diff against exact merged main parent",
+  "sourceFiles": [
+    {
+      "path": "crates/relayer-app-server/src/api.rs",
+      "sha256": "9df2b0b4fccf2c0ed7b8728926f9e97313f1290fd7ec4f0251c87530650bc75a"
+    },
+    {
+      "path": "crates/relayer-app-server/src/api/conversation_imports.rs",
+      "sha256": "36328ef3b64a6294decad02d367cf52d7f91de912e769b2f14bfb356cec04ce6"
+    },
+    {
+      "path": "crates/relayer-app-server/src/api/threads.rs",
+      "sha256": "41be885204cd731848f49e4236ca45e404f6349074abc49b72f3f86e17f12c11"
+    },
+    {
+      "path": "crates/relayer-app-server/src/api/types.rs",
+      "sha256": "51c82e0924bfc8d528478a3f858c77e253140f496cf7eb3dd8bc6f7b4c6308ed"
+    },
+    {
+      "path": "crates/relayer-app-server/src/app_server.rs",
+      "sha256": "8fce005291acfb89eed79d980b10cb24e7b9fd24c2d244f401360e0cc960a367"
+    },
+    {
+      "path": "crates/relayer-app-server/src/main.rs",
+      "sha256": "cfbe6069546cc8dbd474ddeb1354d63c2a1d45c1c3298556badc3b0126346779"
+    },
+    {
+      "path": "crates/relayer-app-server/src/product/execution.rs",
+      "sha256": "e1d9a1f15fcd83ba39f2f8eeb435f990bfc8869ef639462b67ec14899e9e66e7"
+    },
+    {
+      "path": "crates/relayer-app-server/src/product/models.rs",
+      "sha256": "f589cee00e7b222eb82820e19166db2a1f4741d2f9cb00cfa142e06296dbbab6"
+    },
+    {
+      "path": "crates/relayer-app-server/src/product/service.rs",
+      "sha256": "0262708d68921700c20e566d7378f8916a60fedab2a0081d536808845009d861"
+    },
+    {
+      "path": "crates/relayer-app-server/src/runtime.rs",
+      "sha256": "f67d57365dbda98ee7c54136001f4c959f54b9b3b4f07830a64fc233ea1f2435"
+    },
+    {
+      "path": "crates/relayer-app-server/src/storage.rs",
+      "sha256": "b6b1dc64662a10196540512201a25e3c145c7a356dfb1042f1b46916990fc16c"
+    },
+    {
+      "path": "crates/relayer-app-server/src/storage/sqlite/action_invocations.rs",
+      "sha256": "71d54bf0f66c43fe50c92ca6ef6e281112e20af77a4e0e86f5f90a5a4d24963b"
+    },
+    {
+      "path": "crates/relayer-app-server/src/storage/sqlite/approvals.rs",
+      "sha256": "4de5a0316402ae3b957ceef31a8d23f0cd78f7e16e66f79071530953f14ca5cb"
+    },
+    {
+      "path": "crates/relayer-app-server/src/storage/sqlite/attempts.rs",
+      "sha256": "72e985a6d8e736f5f711f87a5c27f2770c759bafb271ac6e141a8773497b7b95"
+    },
+    {
+      "path": "crates/relayer-app-server/src/storage/sqlite/completion_executions.rs",
+      "sha256": "7d258b828ffe56068f3998fd20a36da6f76b208889a7e39e9abc106a9ece3a86"
+    },
+    {
+      "path": "crates/relayer-app-server/src/storage/sqlite/input_drafts.rs",
+      "sha256": "0a8f8dc26927f681152eb24a3c5836862d9ed64a615777d386bee2b4544c1dc1"
+    },
+    {
+      "path": "crates/relayer-app-server/src/storage/sqlite/interactions.rs",
+      "sha256": "b9233c2ad12eee099128814c5c5c7466b35844ae94a617eb36ea4ee39e615a8b"
+    },
+    {
+      "path": "crates/relayer-app-server/src/storage/sqlite/migrations.rs",
+      "sha256": "773e75082919c32c336d6ca9be8c47d904e313a10310d1e6cb93ea6f633d72d2"
+    },
+    {
+      "path": "crates/relayer-app-server/src/storage/sqlite/migrations/0040_thread_icons.sql",
+      "sha256": "bfed0d96a7069706f22a935b5d27738f37185a4bbe405a8dc7b4454e37a6d138"
+    },
+    {
+      "path": "crates/relayer-app-server/src/storage/sqlite/personal_presentation.rs",
+      "sha256": "3db4b902b2b65da75a9d422be08762524277796bf3674758a0d083828d188dbe"
+    },
+    {
+      "path": "crates/relayer-app-server/src/storage/sqlite/schema.rs",
+      "sha256": "04fb49a264ee75661d7c883e16201f879468377ff26e45501ae4bb2380f710e4"
+    },
+    {
+      "path": "crates/relayer-app-server/src/storage/sqlite/stops.rs",
+      "sha256": "39a0543750b692f378b6e7dcb174f3159470783069c7a474ea9cc4bf8ede75b6"
+    },
+    {
+      "path": "crates/relayer-app-server/src/storage/sqlite/threads.rs",
+      "sha256": "594d8a9dfd3461c65b70bc64869d0ab56e6a119971c05e242c04d838f52c4e96"
+    },
+    {
+      "path": "crates/relayer-app-server/tests/product_persistence_flow.rs",
+      "sha256": "c9e65227eaeca6aa66fc26dc4cd5a6c9257228efd70e39ea3abee2c682bec2f1"
+    },
+    {
+      "path": "crates/relayer-app-server/tests/support/completion_traces.rs",
+      "sha256": "28cdc15931878ace0108f53f032f16b3c9331408e9fa3378e07dbc85e5541567"
+    },
+    {
+      "path": "crates/relayer-graph-core/src/graph/completion.rs",
+      "sha256": "04b8b1abb4d8a7755f4d985f2d12b841017f6abcbc2faf457eb4ce6f910e3718"
+    },
+    {
+      "path": "crates/relayer-graph-core/src/graph/writer.rs",
+      "sha256": "17dfbb242260aa38ee5eb436d197f5b637c831e9189b7c445ba8bbcb4ea61aa3"
+    },
+    {
+      "path": "crates/relayer-graph-core/src/storage/sqlite/migrations/0030_thread_icon_proposals.sql",
+      "sha256": "f9def9591e974272198eab9b6349b030b11e8cb521a15d2d40968b15b1565e1f"
+    },
+    {
+      "path": "crates/relayer-graph-core/tests/graph_database.rs",
+      "sha256": "9613ad548fb0101719cd1f1b2e3351bd0a2fba51e5dbb0b784c86a4b37f8a750"
+    },
+    {
+      "path": "crates/relayer-graph-server/src/lib.rs",
+      "sha256": "0e8e5c58e032e94a64fa70fe9c64ed921f6988494df632832ca8019f6e7e6f88"
+    },
+    {
+      "path": "desktop/eval-main/index.mjs",
+      "sha256": "16445be3d73a72c6549a485a02d136a9e21cca534b8c906fc0a1a7604c7e9a99"
+    },
+    {
+      "path": "desktop/main/managed-runtimes/recipes.mjs",
+      "sha256": "0f5ab616ad8d994169b843fa038d9cd85ede9ba292e3b4fd406b3a42ac063e44"
+    },
+    {
+      "path": "desktop/main/services/prime-agent-runtime.mjs",
+      "sha256": "9e2e6aa3c82fe7bcd0e1bd38bbdceed1135c65034b4f3331c49e4bbd2f3a9d1f"
+    },
+    {
+      "path": "desktop/main/services/relayer-app-server.mjs",
+      "sha256": "0d32589c91e90eef921eb2b6821905e782fdd3e2d7094299710344d85b416f5f"
+    },
+    {
+      "path": "desktop/renderer/src/navigation.js",
+      "sha256": "030eabf81a0a8ea23b953526901e64562def3ee8281f55aec205e04019e3b2c5"
+    },
+    {
+      "path": "desktop/renderer/src/product-workspace/icons.js",
+      "sha256": "c5cf5409011161d8d78794cf4a6c2ee12c7b3ebcb34789b88dbbdefb50b89223"
+    },
+    {
+      "path": "desktop/renderer/src/product-workspace/view.js",
+      "sha256": "8f503edd7a926ff234d81faf0e84a4847dd80c2b64b544c0a2d37bcf159ed8bc"
+    },
+    {
+      "path": "desktop/renderer/src/product-workspace/workspace.js",
+      "sha256": "1b80481a8bb57b521af4d459fe210e28bca0d83b39fa0b35e7f54b9f598d5984"
+    },
+    {
+      "path": "desktop/renderer/styles.css",
+      "sha256": "bbd35785f97e1b722afe8631155aa11bdb95f1c8c70c3e2c2cdbd6e7a2fab2ce"
+    },
+    {
+      "path": "desktop/shared/telemetry-module-inventory.mjs",
+      "sha256": "fbf5187623b99d5437b6c012c75ac8342ae4413b33f24033f779d452982388dd"
+    },
+    {
+      "path": "docs/prd/index.html",
+      "sha256": "d90c6a1470eda41a78ba506a544e936bd4d34907a036e0a1e22d2c6a98624059"
+    },
+    {
+      "path": "packages/graph-client/src/client.ts",
+      "sha256": "cfd0656bc53992ff86889caf3ac025ad270347f4a866687d9641c7b1f405730b"
+    },
+    {
+      "path": "packages/graph-client/src/types.ts",
+      "sha256": "82e1bcb99870b3c3bca9a1cb39101954072c5806e7af278538fe54f77b7e673d"
+    },
+    {
+      "path": "packages/graph-client/test/objects.test.ts",
+      "sha256": "16b4ee7baef181d6d19bfdc57aee0467994170d2fd10a08b335c59e5522d9037"
+    },
+    {
+      "path": "packages/harness-host/src/host.ts",
+      "sha256": "b5b2c07960559f4cf20c46b8d0151186329300dd962ce37bc1cc035fd2036811"
+    },
+    {
+      "path": "packages/harness-host/src/implementations/codex-basic.ts",
+      "sha256": "40ec8920c0e741de2f89263127e95f7b39404de3aa8dbbc5cc54c5ce1442abe7"
+    },
+    {
+      "path": "packages/harness-host/src/implementations/prime-agent.ts",
+      "sha256": "0c30bd27fe8601e3f4e8255616c34a22067f1dfd219e4b7a7e5b3e8a503de35d"
+    },
+    {
+      "path": "packages/harness-host/src/implementations/thread-icon-guidance.ts",
+      "sha256": "ef95506bb928925869873bc37281f0c9e9dc53969b8a5084b6745771ad0f3105"
+    },
+    {
+      "path": "packages/harness-host/src/types.ts",
+      "sha256": "95074380ab831b2970c7e582a41c3a24882870f955abee41d285008d7e271d8c"
+    },
+    {
+      "path": "packages/harness-host/test/claude-basic.test.ts",
+      "sha256": "46cd0ed8eda10f71746f630b17de18b2a7afcd5e7c0a73b8a79e1f644e088ead"
+    },
+    {
+      "path": "packages/harness-host/test/codex-basic.test.ts",
+      "sha256": "bdb1407f4d8f0207ec7c557e1999ebacbc2c2a112a4de79ce1f1629c4ab03725"
+    },
+    {
+      "path": "packages/harness-host/test/host.test.ts",
+      "sha256": "dfd04fce9b85b3fa899edcd9ec52f7871e70897ac63e043a4209ed8a73efc4ab"
+    },
+    {
+      "path": "packages/harness-host/test/prime-agent.test.ts",
+      "sha256": "437f67c6c01e423f7738c09ca184b635dac1013c41a448dadb499cbb99b5ea9f"
+    },
+    {
+      "path": "python/relayer-graph/src/relayer_graph/authoring.py",
+      "sha256": "2bf7b5094222e2449477ed57d95af1e0e57f59402512ee4b6166236592b4bec8"
+    },
+    {
+      "path": "python/relayer-graph/tests/test_authoring.py",
+      "sha256": "b8d335b40e8a905456043145e5617db172ef4effdd7703ff5146558eac1e6639"
+    },
+    {
+      "path": "scripts/test-eval-web.mjs",
+      "sha256": "a2632e5b54bdd3c493d9fa82ef791117ac9ad7715afc7087cc4e01ba322fbbde"
+    },
+    {
+      "path": "test/desktop-error-domain-adapters.test.mjs",
+      "sha256": "16e8c8defb5dfb379b8b9a5bb93ec0caae68f80df445298e1770b96e63cc40fa"
+    },
+    {
+      "path": "test/eval-configuration-paths.test.mjs",
+      "sha256": "89f66e7213037a84c115bbbe57d5e6c4bedf7d5cf6185bc3bd35b2313d1b92be"
+    },
+    {
+      "path": "test/thread-icons.test.mjs",
+      "sha256": "c8ae857b295dc40d3d3174094c7e68248c5132c5078d34653e4b41a6d0c1e62c"
+    },
+    {
+      "path": "vendor/prime-agent/manifest.json",
+      "sha256": "9caff5a2066d05c1143764f6e0e215cf1ca135acd0042cf734762c2568557f51"
+    }
+  ]
+}

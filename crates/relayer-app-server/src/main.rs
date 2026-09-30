@@ -42,6 +42,8 @@ struct Arguments {
     #[arg(long, default_value_t = false)]
     allow_harness_override: bool,
     #[arg(long, default_value_t = false)]
+    eval_mode: bool,
+    #[arg(long, default_value_t = false)]
     allow_conversation_import: bool,
     #[arg(long, default_value_t = false)]
     read_only_control_token_stdin: bool,
@@ -143,6 +145,7 @@ async fn run(
             harness_configurations: configurations,
             default_harness_configuration: arguments.default_harness_configuration,
             allow_harness_override: arguments.allow_harness_override,
+            eval_mode: arguments.eval_mode,
             standalone_workspaces_directory: arguments.data_dir.join("workspaces"),
         }),
         (None, None, None, None, None) => None,
@@ -250,5 +253,37 @@ async fn shutdown_signal(parent_disconnected: oneshot::Receiver<()>) {
             _ = tokio::signal::ctrl_c() => {},
             _ = parent_disconnected => {},
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn thread_icon_eval_mode_is_an_explicit_host_startup_flag() {
+        let base = [
+            "relayer-app-server",
+            "--data-dir",
+            "/tmp/product",
+            "--web-dir",
+            "/tmp/web",
+            "--permission-catalog",
+            "/tmp/permissions",
+            "--producer-desktop-version",
+            "test",
+            "--producer-build-commit",
+            "test",
+            "--producer-platform",
+            "test",
+            "--producer-architecture",
+            "test",
+        ];
+        assert!(!Arguments::try_parse_from(base).unwrap().eval_mode);
+        assert!(
+            Arguments::try_parse_from(base.into_iter().chain(["--eval-mode"]))
+                .unwrap()
+                .eval_mode
+        );
     }
 }

@@ -2595,6 +2595,12 @@ settings:
 <li>Product and Eval use the same renderer-owned history controller and controls. Eval remains read-only and does not maintain a second history stack.</li>
 <li>The renderer shows the immutable accepted snapshot for that turn even if later turns update shared nodes.</li>
 </ul>
+<h4>Stable topic icons for normal threads</h4>
+<p><strong>Product decision (issue #622):</strong> New normal threads start with the current <code>◌</code> icon. During ordinary graph authoring, the agent proposes a semantic topic icon using the same curated library, selection guidance, and validation as graph nodes. There is no separate icon-selection inference or raster generation.</p>
+<p>The first valid proposal becomes permanent only when its carrying completion is accepted. Draft, failed, or stopped work and a model turn ending cannot commit it. Once saved, later completions, title changes, and reopen preserve that icon. Missing, invalid, or failed selection leaves the default visible and allows later executions to retry; selection failure cannot reject otherwise valid graph work.</p>
+<p>The thread list and opened workspace title display the same saved icon. Execution-status indicators remain independent. This version has no user icon controls. Existing threads keep the default permanently, including after later execution; no backfill occurs. Eval threads keep their ordinal numbers and are excluded.</p>
+<p>Deterministic checkpoint mappings and exact-source verification are recorded in <a href="../evidence/issue-622-thread-icons/README.md">thread icon evidence</a>. Checkpoints cover provider selection, node-library validation, acceptance authority, write-once persistence and reopen, default and retry, legacy eligibility, Eval exclusion, and both renderer surfaces. Live inference and release proof are outside this change's authorized verification context.</p>
+
 <h3>6.2 Authored Node Detail compiler foundation</h3>
 <p>This foundation implements Issue #363’s client contract for #241. It expresses #338 through ordinary link and asset bindings.</p>
 <ul>

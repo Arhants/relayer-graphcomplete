@@ -101,6 +101,7 @@ mod tests {
         let store = SqliteProductStore::open(&path).await.unwrap();
         let thread = store
             .insert_thread_with_initial_interaction(crate::storage::NewThreadRecord {
+                icon_selection_eligible: true,
                 title: "Stop",
                 project_id: None,
                 initial_message: "Work",

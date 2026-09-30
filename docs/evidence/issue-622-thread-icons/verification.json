@@ -1,0 +1,127 @@
+{
+  "schemaVersion": 1,
+  "sourceDigest": "6f6236d78a0607e86aabb39373e827a278a3e25255477a31c20b39df9cd932d2",
+  "environment": {
+    "node": "24.19.0",
+    "rust": "1.98.0",
+    "cargoTarget": "private isolated target",
+    "nativeCache": "verified pinned Ladybug bundle; no cold CMake build",
+    "rustTestThreads": 1,
+    "temporaryStorage": "private external TMPDIR"
+  },
+  "runs": [
+    {
+      "command": "npm run check",
+      "outcome": "passed",
+      "localLog": "/tmp/issue-622-check-node24.log",
+      "logSha256": "ca37e44017bccbd2d2b10d259ab5558e610e5d5b41786af150e2463f592aac69"
+    },
+    {
+      "command": "npm run build",
+      "outcome": "passed",
+      "localLog": "/tmp/issue-622-build-sequential.log",
+      "logSha256": "47887877addbe2f1dcd6afb0d04199c7e1baa9fda01c29f9d5f058770d6b8688"
+    },
+    {
+      "command": "npm run test:eval-compiled-runtime",
+      "outcome": "passed: 4 scenarios",
+      "localLog": "/tmp/issue-622-eval-compiled.log",
+      "logSha256": "a385cc5a6c4fd1848de53560fd76735c29566ca587f4fbe5eff881b4780bddd1"
+    },
+    {
+      "command": "npm run test:prime-managed-runtime",
+      "outcome": "passed: real clean-root kernel readiness",
+      "localLog": "/tmp/issue-622-prime-managed.log",
+      "logSha256": "ce5b3c1568fb9e1e4465b330c547d3d0490cff9bf25405ad6a65cd34f242543a"
+    },
+    {
+      "command": "npm run evidence:share-preview",
+      "outcome": "passed: real light/dark capture, cancellation, cleanup, source stability",
+      "localLog": "/tmp/issue-622-preview-capture.log",
+      "logSha256": "bdd746012b0b1855749f01f826f913a870f6f2830e364877c99b93fa502780e4"
+    },
+    {
+      "command": "npm run test:eval-web",
+      "outcome": "failed: human follow-up Send unavailable at line 231; later scenarios unknown",
+      "localLog": "/tmp/issue-622-eval-web-private.log",
+      "logSha256": "25213d17ed1ce392e19bc0017f487bc41f42d214690f1184b7b79a2437681f75"
+    }
+  ],
+  "fullCheckEvidence": {
+    "rustSuiteSummaries": [
+      "test result: ok. 341 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 131.07s",
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+      "test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.21s",
+      "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.49s",
+      "test result: ok. 38 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 48.25s",
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.29s",
+      "test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.38s",
+      "test result: ok. 107 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.95s",
+      "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s",
+      "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s",
+      "test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.97s",
+      "test result: ok. 40 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.47s",
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s",
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.28s",
+      "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.45s",
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s",
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.42s",
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+      "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.53s",
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+      "test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.11s",
+      "test result: ok. 107 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.99s",
+      "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s",
+      "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s",
+      "test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.19s",
+      "test result: ok. 40 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.67s",
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s",
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s",
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.37s",
+      "test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 13.88s",
+      "test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.62s",
+      "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.91s",
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s",
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.06s",
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.42s",
+      "test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.39s",
+      "test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 22.11s",
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.14s",
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+    ],
+    "iconAndAcceptanceScenarios": [
+      "test api::threads::tests::thread_icon_api_creation_persists_normal_and_eval_eligibility ... ok",
+      "test runtime::tests::thread_icon_eligibility_is_forwarded_only_when_requested_and_capabilities_are_revoked ... ok",
+      "test storage::sqlite::attempts::tests::accepted_attempt_and_interaction_commit_as_one_terminal_unit ... ok",
+      "test storage::sqlite::completion_executions::tests::live_acceptance_atomically_projects_interaction_and_execution ... ok",
+      "test storage::sqlite::migrations::tests::schema_39_thread_icons_never_backfill_legacy_threads ... ok",
+      "test storage::sqlite::threads::icon_tests::thread_icon_acceptance_retry_write_once_and_reopen ... ok",
+      "test storage::sqlite::threads::icon_tests::thread_icon_eval_exclusion_and_acceptance_recovery ... ok",
+      "test tests::thread_icon_eval_mode_is_an_explicit_host_startup_flag ... ok",
+      "test persists_project_thread_and_interaction_across_restart ... ok",
+      "test thread_icon_proposal_is_nonblocking_first_valid_and_accepted_only ... ok",
+      "test thread_icon_proposal_survives_reopen_but_advance_and_stop_do_not_accept_it ... ok",
+      "test tests::thread_icon_proposals_enforce_capability_and_ignore_invalid_selection ... ok",
+      "test thread_icon_proposal_is_nonblocking_first_valid_and_accepted_only ... ok",
+      "test thread_icon_proposal_survives_reopen_but_advance_and_stop_do_not_accept_it ... ok",
+      "test tests::thread_icon_proposals_enforce_capability_and_ignore_invalid_selection ... ok"
+    ],
+    "javascript": "247 files passed, 1 declared skipped; 3294 tests passed, 3 declared skipped",
+    "secretBoundary": "2 passed in separate selected run",
+    "python": "61 passed",
+    "prdReadability": "passed",
+    "ladybugReceipts": "passed"
+  },
+  "limits": [
+    "Eval web heavy runner failed; exact storage row diagnosis inferred because runner cleanup removed DB",
+    "No paid inference, live model semantic compliance, signed/release or thread-icon visual screenshot proof"
+  ],
+  "earlierFailuresPreservedIn": "README.md"
+}

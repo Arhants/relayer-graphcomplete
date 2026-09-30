@@ -1,0 +1,9 @@
+
+ RUN  v4.1.10 /Volumes/2T-SSD/worktrees/thread-icons-622
+
+
+ Test Files  2 passed (2)
+      Tests  2 passed (2)
+   Start at  12:31:23
+   Duration  164ms (transform 26ms, setup 0ms, import 49ms, tests 39ms, environment 0ms)
+

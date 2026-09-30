@@ -54,6 +54,8 @@ pub(crate) struct ProjectAlias {
 pub(crate) struct Thread {
     pub(crate) id: ThreadId,
     pub(crate) title: String,
+    pub(crate) icon: Option<String>,
+    pub(crate) icon_selection_eligible: bool,
     pub(crate) project_id: Option<ProjectId>,
     pub(crate) working_directory: Option<String>,
     pub(crate) checkout_context: Option<serde_json::Value>,

@@ -19,7 +19,7 @@ import {
   humanTurns,
   workspaceTurns,
 } from "./model.js";
-import { createLucideIcon, createRelayerIcon, relayerIconFamily } from "./icons.js";
+import { createLucideIcon, createRelayerIcon, relayerIconFamily, renderThreadTitle } from "./icons.js";
 import { interactionActivity, NODE_RUN_STATE, nodeRunState, THREAD_ACTIVITY } from "./run-state.js";
 import { graphLayoutSignature, nodesInReadingOrder, projectLayerNodePositions } from "./graph-layout.js";
 import { graphEdgePath, graphFollowWaypoints, graphLayerCircle, graphRoutedEdgePath, resolveEdgeShape } from "./edge-shapes.js";
@@ -4610,7 +4610,7 @@ export function createProductWorkspace({
     shareController?.render();
     void loadAnnotations(thread);
     renderHistoryNavigation();
-    $("#threadTitle").textContent = thread.title;
+    renderThreadTitle(root, thread);
     const project = environmentProjectForThread(state.projects, thread);
     const permissionProfile = state.permissionProfiles?.find((item) => item.id === thread.permissionProfileId);
     const permissionLabel = permissionProfile?.label || thread.permissionProfileId;

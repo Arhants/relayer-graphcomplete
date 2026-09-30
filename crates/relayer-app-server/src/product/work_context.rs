@@ -288,6 +288,7 @@ mod tests {
     }
     fn command(project_id: ProjectId) -> CreateThreadCommand {
         CreateThreadCommand {
+            icon_selection_eligible: true,
             title: None,
             project_id: Some(project_id),
             initial_message: "Task".into(),
@@ -333,6 +334,8 @@ mod tests {
             .create_thread_in_directory(command(project.id), Some(linked.to_str().unwrap()))
             .await
             .unwrap();
+        assert_eq!(thread.icon, None);
+        assert!(thread.icon_selection_eligible);
         let (receipt, created) = service
             .create_thread_with_request(
                 command(project.id),

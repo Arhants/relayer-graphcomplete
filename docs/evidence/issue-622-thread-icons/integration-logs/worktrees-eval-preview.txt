@@ -1,0 +1,5 @@
+
+> relayer-graphcomplete@0.0.0 test:eval-graph-preview
+> node scripts/test-eval-graph-preview.mjs
+
+PASS PREV-003 {"runStatus":"passed","previews":[{"step":"plain node","status":"none"},{"step":"authored node","status":"rendered","width":576,"height":844},{"step":"layer","status":"rendered","width":1164,"height":703},{"step":"moved layer","status":"rendered","width":1164,"height":703},{"step":"unchanged layer","status":"cached","width":1164,"height":703}],"images":["001-node-23-f74f24fbb4c84e2b.png","002-layer-6-193b7135df2a1962.png","003-layer-6-637e1144301abfd7.png"]}

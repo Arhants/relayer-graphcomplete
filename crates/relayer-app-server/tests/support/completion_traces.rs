@@ -202,6 +202,7 @@ impl World {
         let product = ProductService::new(SqliteProductStore::open(&database).await.unwrap(), true);
         let thread = product
             .create_thread(CreateThreadCommand {
+                icon_selection_eligible: true,
                 title: None,
                 project_id: None,
                 initial_message: "Root".into(),
@@ -619,6 +620,7 @@ impl World {
             permission_catalog,
             default_harness_configuration: HARNESS.into(),
             allow_harness_override: true,
+            eval_mode: false,
             allow_conversation_import: false,
             standalone_workspaces_directory: root.path().join("workspaces"),
             export_producer: ExportProducer {
@@ -647,6 +649,7 @@ impl World {
             let working_directory = root.path().to_string_lossy().into_owned();
             let prepared = runtime
                 .prepare(&CompleteInteraction {
+                    thread_icon_selection_eligible: false,
                     require_native_continuity: false,
                     native_history_anchor: None,
                     project_id: None,

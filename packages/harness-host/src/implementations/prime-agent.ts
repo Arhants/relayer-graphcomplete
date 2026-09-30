@@ -1,3 +1,4 @@
+import { threadIconGuidance } from "./thread-icon-guidance.js";
 import { PrimeVisualAuthoring } from "./prime-visual-authoring.js";
 import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
@@ -1108,6 +1109,7 @@ export class PrimeAgentHarness implements Harness {
     return `Complete the current Relayer interaction by using Python in IPython to author a useful graph response.
 
 ${GRAPH_PRESENTATION_GUIDANCE}
+${threadIconGuidance(context, "python")}
 ${PRIME_VISUAL_GUIDANCE}
 ${primeVisualExample(interaction.id)}
 ${CURRENT_WORKSPACE_GUIDANCE}${includePersonalPresentation ? personalPresentationPrompt(context) : ""}
@@ -1151,6 +1153,7 @@ If a graph call fails, edit and rerun the same authoring code with the same clie
     return `Complete the current Relayer interaction by using Python in IPython to author a useful graph response. A flat answer is valid. Add navigation only when opening it would materially improve understanding or support; apply that same test again inside every layer you author.
 
 ${GRAPH_PRESENTATION_GUIDANCE}
+${threadIconGuidance(context, "python")}
 ${PRIME_VISUAL_GUIDANCE}
 ${primeVisualExample(interaction.id)}
 ${CURRENT_WORKSPACE_GUIDANCE}${includePersonalPresentation ? personalPresentationPrompt(context) : ""}

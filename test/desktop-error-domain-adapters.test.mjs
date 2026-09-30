@@ -45,6 +45,24 @@ function fixtureHarnessModule({ start = "return { url: 'http://127.0.0.1:43124',
 }
 
 describe("desktop failure-domain adapters", () => {
+  it.each([undefined, false, true])("passes Eval thread exclusion to the real app-server spawn only for evalMode=%s", async (evalMode) => {
+    const directory = await mkdtemp(join(tmpdir(), "relayer-app-eval-mode-"));
+    directories.push(directory);
+    const spawnProcess = vi.fn(() => readyChild({ ready: true, origin: "http://127.0.0.1:43123", cookieName: "relayer_control" }));
+    const service = new RelayerAppServerService({
+      userDataDirectory: directory, binaryPath: "/test/bin/relayer-app-server",
+      webDirectory: "/test/renderer", permissionCatalogPath: "/test/permissions.json",
+      runtimeSession: { graphUrl: "http://127.0.0.1:43124", harnessUrl: "http://127.0.0.1:43125", graphControlToken: "graph", harnessControlToken: "harness", catalogPath: "/test/catalog.json" },
+      ...(evalMode === undefined ? {} : { evalMode }), spawnProcess,
+    });
+    try {
+      await service.start();
+      expect(spawnProcess).toHaveBeenCalledOnce();
+      const arguments_ = spawnProcess.mock.calls[0][1];
+      expect(arguments_.filter((argument) => argument === "--eval-mode")).toHaveLength(evalMode === true ? 1 : 0);
+    } finally { await service.close(); }
+  });
+
   it("classifies an unhandled harness-host exception without forwarding its raw detail", async () => {
     const processTarget = new EventEmitter();
     const reporters = new Map();

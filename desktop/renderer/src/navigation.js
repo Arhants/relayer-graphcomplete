@@ -1,3 +1,4 @@
+import { threadIconMarkup } from "./product-workspace/icons.js";
 import { checkoutSelectionLocked, selectCheckoutScope, closeCheckoutMenu } from "./checkout.js";
 import { appState, desktop, viewState } from "./state.js";
 import { onboardingTutorialController } from "./onboarding-tutorial.js";
@@ -79,7 +80,7 @@ function threadEntry(thread) {
   const activity = THREAD_ACTIVITY[thread.activity];
   const name = activity ? `${thread.title}, ${activity.label}` : thread.title;
   const tooltip = activity ? `${thread.title} · ${activity.label}` : thread.title;
-  return `<button class="entry ${String(thread.id) === String(viewState.currentThreadId) ? "active" : ""}" data-thread="${escapeHtml(thread.id)}"${activity ? ` data-activity="${escapeHtmlAttribute(thread.activity)}"` : ""} data-review-ref="thread-${escapeHtml(thread.id)}" data-review-kind="thread" aria-label="${escapeHtmlAttribute(name)}" title="${escapeHtmlAttribute(tooltip)}"><span class="entry-icon thread-activity" aria-hidden="true"></span><span>${escapeHtml(thread.title)}</span></button>`;
+  return `<button class="entry ${String(thread.id) === String(viewState.currentThreadId) ? "active" : ""}" data-thread="${escapeHtml(thread.id)}"${activity ? ` data-activity="${escapeHtmlAttribute(thread.activity)}"` : ""} data-review-ref="thread-${escapeHtml(thread.id)}" data-review-kind="thread" aria-label="${escapeHtmlAttribute(name)}" title="${escapeHtmlAttribute(tooltip)}"><span class="entry-icon thread-topic-icon" aria-hidden="true">${threadIconMarkup(thread.icon)}</span><span class="thread-entry-title">${escapeHtml(thread.title)}</span><span class="entry-icon thread-activity" aria-hidden="true"></span></button>`;
 }
 
 function renderThreadActivity() {

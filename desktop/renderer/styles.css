@@ -441,3 +441,11 @@ html[data-theme] .graph-node[data-run-state="failed"]{border:2px solid var(--dan
 .graph-node[data-run-state="draft"] .graph-node-caption{color:var(--draft-text)}
 .graph-node[data-run-state="failed"] .graph-node-caption{color:var(--danger-text)}
 @media(prefers-reduced-motion:reduce){.thread-status-symbol[data-activity="running"] svg,.graph-node[data-run-state="running"] .glyph::after{animation:none}}
+
+.entry-icon.thread-topic-icon svg,.thread-topic-icon svg{display:block;width:16px;height:16px}.thread-topic-icon{flex:none;display:grid;place-items:center;width:16px;height:16px;color:var(--muted)}
+body:not(.sidebar-collapsed) .entry:not([data-activity]) .thread-activity{display:none}
+body.sidebar-collapsed .entry{gap:4px;padding-left:0;padding-right:0}
+
+body.sidebar-collapsed .entry:not([data-activity]) .thread-activity{display:grid}
+
+.thread-entry-title{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

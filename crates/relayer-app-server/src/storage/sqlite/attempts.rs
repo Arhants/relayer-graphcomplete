@@ -2244,8 +2244,9 @@ mod tests {
             .begin_interaction_attempt(receipt(interaction_id, &route), "10")
             .await
             .unwrap();
+        sqlx::query("UPDATE threads SET icon_selection_eligible=1 WHERE id=(SELECT thread_id FROM interactions WHERE id=?1)").bind(interaction_id.value()).execute(&store.pool).await.unwrap();
         let permission = json!({"profile": "auto"});
-        let output = json!({"nodeId": 99});
+        let output = json!({"nodeId":99,"threadIconProposal":"code"});
         store
             .accept_interaction_completion_with_attempt(
                 attempt,
@@ -2262,6 +2263,14 @@ mod tests {
             )
             .await
             .unwrap();
+        let icon: Option<String> = sqlx::query_scalar(
+            "SELECT icon FROM threads WHERE id=(SELECT thread_id FROM interactions WHERE id=?1)",
+        )
+        .bind(interaction_id.value())
+        .fetch_one(&store.pool)
+        .await
+        .unwrap();
+        assert_eq!(icon.as_deref(), Some("code"));
         let row: (String, String, String) = sqlx::query_as(
             "SELECT i.completion_status,a.outcome,a.effect_boundary FROM interactions i JOIN interaction_attempts a ON a.interaction_id=i.id WHERE a.id=?1",
         )
