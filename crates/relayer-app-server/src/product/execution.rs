@@ -96,26 +96,20 @@ impl InteractionExecutionService {
             stop_before_native_execution(execution, &thread, &interaction, prepared, None).await;
             return;
         }
-        let working_directory = match thread.project_id {
-            Some(project_id) => match execution.product.project_path(project_id).await {
-                Ok(path) => path,
-                Err(error) => {
-                    let message = match runtime.discard_prepared(prepared).await {
-                        Ok(()) => error.to_string(),
-                        Err(cleanup) => {
-                            format!("{error}; capability cleanup also failed: {cleanup}")
-                        }
-                    };
-                    record_background_failure(&execution.product, &thread, &interaction, message)
-                        .await;
-                    return;
-                }
-            },
-            None => execution
-                .standalone_workspaces_directory
-                .join(thread.id.value().to_string())
-                .to_string_lossy()
-                .into_owned(),
+        let working_directory = match execution
+            .product
+            .thread_directory(&thread, &execution.standalone_workspaces_directory)
+            .await
+        {
+            Ok(path) => path,
+            Err(error) => {
+                let message = match runtime.discard_prepared(prepared).await {
+                    Ok(()) => error.to_string(),
+                    Err(cleanup) => format!("{error}; capability cleanup also failed: {cleanup}"),
+                };
+                record_background_failure(&execution.product, &thread, &interaction, message).await;
+                return;
+            }
         };
         let permission_profile = match execution
             .permission_catalog

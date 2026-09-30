@@ -3735,6 +3735,17 @@ mod tests {
         permissions.set_mode(0o700);
         fs::set_permissions(&fixture, permissions).unwrap();
 
+        // macOS can scan a newly created executable before its first launch. Warm this
+        // harmless fixture during setup, keeping the sanitizer call's 500ms budget.
+        assert!(
+            Command::new(&fixture)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .unwrap()
+                .success()
+        );
+
         let output = run_bounded_command_with(
             fixture.as_os_str(),
             directory.path(),

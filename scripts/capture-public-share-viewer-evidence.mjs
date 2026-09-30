@@ -27,6 +27,7 @@ const sourceFiles = [
   "desktop/renderer/src/product-workspace/model.js",
   "desktop/renderer/src/product-workspace/view.js",
   "desktop/renderer/src/product-workspace/workspace.js",
+  "desktop/renderer/src/environment-context.js",
   "desktop/renderer/src/product-workspace/workspace-layout.js",
   "desktop/renderer/assets/relayer-logo.svg",
   "desktop/renderer/design/share-og.svg",

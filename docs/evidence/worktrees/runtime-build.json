@@ -1,0 +1,12 @@
+{
+  "relayer-app-server": {
+    "sha256": "a2bed0fb4080886a178f763db5198ec066d13c90c9328294a5896706bb00a4ab",
+    "source": "fresh isolated npm run build after complete final check; main 58242373 and test-only warm fixture delta",
+    "destination": "target/debug/relayer-app-server"
+  },
+  "relayer-graph-server": {
+    "sha256": "239ac417e2bdc5f5478c5a7bb0385e8e03cf346c033fbb3801ffcb996f50d996",
+    "source": "fresh isolated npm run build after complete final check; main 58242373 and test-only warm fixture delta",
+    "destination": "target/debug/relayer-graph-server"
+  }
+}

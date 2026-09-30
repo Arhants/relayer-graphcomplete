@@ -4,6 +4,49 @@ use crate::storage::StorageError;
 use sqlx::{Row, SqliteConnection, sqlite::SqliteRow};
 
 impl SqliteProductStore {
+    pub(crate) async fn all_projects(&self) -> Result<Vec<Project>, StorageError> {
+        let rows =
+            sqlx::query("SELECT id,name,path,created_at,updated_at FROM projects ORDER BY id")
+                .fetch_all(&self.pool)
+                .await?;
+        rows.iter().map(project_from_row).collect()
+    }
+    pub(crate) async fn consolidate_projects(
+        &self,
+        groups: &[(ProjectId, ProjectId, String)],
+    ) -> Result<(), StorageError> {
+        let mut transaction = self.pool.begin_with("BEGIN IMMEDIATE").await?;
+        // Preserve the historical scope before applying presentation aliases.
+        sqlx::query("UPDATE threads SET working_directory=(SELECT path FROM projects WHERE id=threads.project_id) WHERE working_directory IS NULL AND project_id IS NOT NULL").execute(&mut *transaction).await?;
+        // Unverified paths remain separate unresolved entries. Never retain an alias
+        // through a changed or unavailable repository identity.
+        let aliases = sqlx::query("SELECT id FROM projects WHERE group_project_id IS NOT NULL")
+            .fetch_all(&mut *transaction)
+            .await?;
+        for row in aliases {
+            let id: i64 = row.try_get(0)?;
+            if !groups.iter().any(|(verified, _, _)| verified.value() == id) {
+                sqlx::query("UPDATE projects SET group_project_id=NULL WHERE id=?1")
+                    .bind(id)
+                    .execute(&mut *transaction)
+                    .await?;
+            }
+        }
+        for (id, canonical, name) in groups {
+            sqlx::query("UPDATE projects SET group_project_id=?1,name=?2 WHERE id=?3")
+                .bind(if id == canonical {
+                    None
+                } else {
+                    Some(canonical.value())
+                })
+                .bind(name)
+                .bind(id.value())
+                .execute(&mut *transaction)
+                .await?;
+        }
+        transaction.commit().await?;
+        Ok(())
+    }
     pub(crate) async fn list_projects(&self) -> Result<Vec<Project>, StorageError> {
         let mut connection = self.pool.acquire().await?;
         fetch_projects(&mut connection).await
@@ -59,11 +102,31 @@ pub(super) async fn fetch_projects(
     connection: &mut SqliteConnection,
 ) -> Result<Vec<Project>, StorageError> {
     let rows = sqlx::query(
-        "SELECT id,name,path,created_at,updated_at FROM projects ORDER BY created_at ASC",
+        "SELECT id,name,path,created_at,updated_at FROM projects WHERE group_project_id IS NULL ORDER BY created_at ASC",
     )
-    .fetch_all(connection)
+    .fetch_all(&mut *connection)
     .await?;
-    rows.iter().map(project_from_row).collect()
+    let mut projects = rows
+        .iter()
+        .map(project_from_row)
+        .collect::<Result<Vec<_>, _>>()?;
+    for project in &mut projects {
+        let aliases =
+            sqlx::query("SELECT id,path FROM projects WHERE group_project_id=?1 ORDER BY id")
+                .bind(project.id.value())
+                .fetch_all(&mut *connection)
+                .await?;
+        project.aliases = aliases
+            .iter()
+            .map(|row| {
+                Ok(crate::product::ProjectAlias {
+                    id: row.try_get(0)?,
+                    path: row.try_get(1)?,
+                })
+            })
+            .collect::<Result<Vec<_>, sqlx::Error>>()?;
+    }
+    Ok(projects)
 }
 
 pub(super) async fn fetch_project(
@@ -84,6 +147,7 @@ fn project_from_row(row: &SqliteRow) -> Result<Project, StorageError> {
         id: ProjectId::from_database(row.try_get(0)?),
         name: row.try_get(1)?,
         path: row.try_get(2)?,
+        aliases: Vec::new(),
         created_at: row.try_get(3)?,
         updated_at: row.try_get(4)?,
     })
