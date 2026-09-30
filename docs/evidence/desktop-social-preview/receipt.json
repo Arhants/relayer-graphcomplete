@@ -12,7 +12,7 @@
   },
   "rendererArtifact": {
     "directory": "desktop/renderer",
-    "digest": "7b739402ce85f5ae5dc7f4132044f89bde1d05edb6d46cc90203d585d0916b36",
+    "digest": "999276e8ff2d27ae0535e95bad5e318036f66e78caafddeaabae51ed37e458ef",
     "files": {
       "assets/relayer-logo.svg": {
         "bytes": 31624,
@@ -207,8 +207,8 @@
         "sha256": "8e5d307f95b1863fb995606ca32a832de088916716c39476f9d31f2174de002d"
       },
       "src/product-workspace/workspace.js": {
-        "bytes": 258705,
-        "sha256": "e887b6b6ca002345e17dc8568eb057368b63e3e4bc16503349c7f8e62038b1ac"
+        "bytes": 258951,
+        "sha256": "184ae929d7f1d5eef832b89146b87120ee15cc0f663a74616932301c54698538"
       },
       "src/project-composer-navigation.js": {
         "bytes": 282,
@@ -315,13 +315,13 @@
   "captures": [
     {
       "theme": "light",
-      "sha256": "048ab1bc5de0cc63cd9b9493ed314a2984059d278b1f0db1bbc398960df36ac9",
-      "bytes": 100188
+      "sha256": "053766b83d8d3b33e246ff0eb15c4ebbcacb86e8eb7cdebb81c6eb323128ed68",
+      "bytes": 102664
     },
     {
       "theme": "dark",
-      "sha256": "8dadd7c0871c63091f5ea38b7d405b51f9ef8cf42ccdb7c6e1d8aa3a685a9d0a",
-      "bytes": 88553
+      "sha256": "436fccdcd7eb734402c6e5381cfca798fc2c7b999d0e72059e4bf0a7a8da45e5",
+      "bytes": 87670
     }
   ],
   "platform": "macOS ARM64",
