@@ -181,7 +181,7 @@ export async function createEvalDashboard({ service, rendererDirectory, refreshC
     exportCalibration: () => calibration.export(),
     calibrationSource: ([ref]) => calibration.source(ref),
     setupRevisions: () => setupRegistry.catalog(),
-    publishSetup: ([input]) => setupRegistry.publish(input),
+    publishSetup: ([input]) => input?.configFile ? setupRegistry.publishConfig(input) : input?.kind === "judge" ? Promise.reject(Object.assign(new Error("Select a judge config file."), { status: 400 })) : setupRegistry.publish(input),
     promoteSetup: ([input]) => setupRegistry.promote(input, humanTasks.annotator),
     openSettings: () => openSettings(),
     humanTasks: () => humanTasks.list(),

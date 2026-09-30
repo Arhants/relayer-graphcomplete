@@ -1,5 +1,6 @@
 import { CalibrationService } from "../desktop/eval-main/calibration-service.mjs";
-import { mkdtemp, rm, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, readFile, writeFile } from "node:fs/promises";
+import { stringify, parse } from "yaml";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
@@ -103,6 +104,7 @@ it("restricts revision publication/promotion to the dashboard while actor observ
     headers: { Authorization: `Bearer ${new URL(surface.url).hash.slice(1)}`, "Content-Type": "application/json" }, body: JSON.stringify(args) });
   expect((await request(dashboard, "setupRevisions", [])).status).toBe(200);
   expect((await request(dashboard, "promoteSetup", [{ revisionId: f.registry.selected("actor").id, comment: "Human choice" }])).status).toBe(200);
+  expect((await request(dashboard, "publishSetup", [{ kind: "judge", promptVersion: "forged" }])).status).toBe(400);
   for (const operation of ["setupRevisions", "publishSetup", "promoteSetup", "calibrationCatalog", "calibrationSource", "freezeCalibrationSet", "compareSetupRevisions", "recordCalibrationObservation", "exportCalibration"]) expect((await request(actor, operation, [])).status).toBe(403);
   const projection = await fetch(new URL("/eval-api/task", actor.url), { headers: { Authorization: `Bearer ${new URL(actor.url).hash.slice(1)}` } });
   expect(JSON.stringify(await projection.json())).not.toMatch(/setup|feedback|rubric|grade|prompt|calibration/);
@@ -195,4 +197,37 @@ it("reuses byte-identical same-instant exports and never overwrites an existing 
     await expect(f.tasks.export(task.id)).rejects.toMatchObject({ code: "EEXIST" });
     expect(await readFile(first.path, "utf8")).toBe("corrupt export");
   } finally { vi.useRealTimers(); }
+});
+
+
+it("publishes exact judge config files, rejects stale or unsafe files, and retains historical pins across edits/reopen", async () => {
+  const f = await fixture(); const task = await f.start();
+  await f.tasks.grade(task.id, { satisfaction: 2, comment: "Human feedback motivating judge tuning" });
+  const directory = join(f.directory, "judge-configs"); await mkdir(directory);
+  const original = f.registry.judgeConfigs()[0];
+  const data = parse(original.definition.configSource.contents);
+  data.settings = { shellAccess: false, modelReasoningEffort: "low", model: "gpt-test" };
+  const file = "human-tuned-graph.yaml"; const path = join(directory, file);
+  await writeFile(path, stringify(data, { lineWidth: 0 }));
+  const registry = await new SetupRegistry({ stateFile: f.stateFile, judgeConfigDirectory: directory, feedbackLoader: f.registry.feedbackLoader }).open();
+  const config = registry.judgeConfigs()[0];
+  const input = { configFile: file, configDigest: config.digest, predecessorId: registry.selected("judge").id, feedback: [{ sessionId: task.id, gradeIndex: 0 }] };
+  await expect(registry.publishConfig({ ...input, configFile: "../private.yaml" })).rejects.toThrow("unavailable");
+  const published = await registry.publishConfig({ ...input, settings: { model: "forged" }, promptTemplate: "forged" });
+  expect(published).toMatchObject({ promptVersion: "human-tuned-graph", settings: { model: "gpt-test", modelReasoningEffort: "low", shellAccess: false }, configSource: { file, path, digest: config.digest } });
+  expect(published.configSource.contents).toBe(await readFile(path, "utf8"));
+  data.settings.model = "gpt-other";
+  await writeFile(path, stringify(data, { lineWidth: 0 }));
+  await expect(registry.publishConfig(input)).rejects.toThrow("changed");
+  const refreshed = registry.judgeConfigs()[0];
+  const next = await registry.publishConfig({ ...input, predecessorId: published.id, configDigest: refreshed.digest });
+  expect(next.settings.model).toBe("gpt-other");
+  const reopened = await new SetupRegistry({ stateFile: f.stateFile, judgeConfigDirectory: directory }).open();
+  expect(reopened.get(published.id)).toEqual(published);
+  expect(reopened.get(next.id)).toEqual(next);
+  data.settings.shellAccess = true;
+  await writeFile(path, stringify(data));
+  expect(() => registry.judgeConfigs()).toThrow("Unsupported judge config contract");
+  await writeFile(path, "schemaVersion: 1\nschemaVersion: 1\n");
+  expect(() => registry.judgeConfigs()).toThrow("Invalid judge config");
 });
