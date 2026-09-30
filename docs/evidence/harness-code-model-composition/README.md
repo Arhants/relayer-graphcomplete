@@ -16,9 +16,9 @@ without turning each call into a GraphComplete completion.
   active run. The handler accepts one non-empty prompt of at most 16,000
   characters.
 - The host calls `pi-ai` with the exact admitted orchestrator model and request
-  access. It supplies no tools, performs no retry, caps output at 1,024 tokens,
-  and returns only text plus provider usage. Credentials never enter Python or
-  the trace.
+  access. It supplies no tools, performs no automatic host retry, caps output
+  at 1,024 tokens, and returns only text plus provider usage. Credentials never
+  enter Python or the trace.
 - The active run and request cancellation signals bound every call before and
   after provider dispatch. Each call emits sanitized start and completion trace
   events with a safe caller ID, parent ID, depth, host call index, and
@@ -36,7 +36,7 @@ without turning each call into a GraphComplete completion.
 | Promise or boundary | Smallest deterministic checkpoint |
 | --- | --- |
 | The Python reference receives a returned value and changes local recursion and later publication from it | `experimental-authoring-guidance.test.ts` executes the reference with deterministic fake host and graph boundaries under split and stop counterfactuals |
-| The production host bridge dispatches the admitted model call with the declared restrictions | `prime-agent.test.ts` injects only `pi-ai.completeSimple`, then observes exact model/endpoint/access, no tools, no retry, the token bound, result extraction, and usage mapping |
+| The production host bridge dispatches the admitted model call with the declared restrictions | `prime-agent.test.ts` injects only `pi-ai.completeSimple`, then observes exact model/endpoint/access, no tools, no automatic host retry, the token bound, result extraction, and usage mapping |
 | The request uses the admitted model/access while keeping credentials host-only | `prime-agent.test.ts` injects the one-shot completer, verifies the exact root access, and excludes the secret from traces |
 | Stale or cancelled requests cannot continue | the Prime test rejects a stale generation and rejects a non-cooperative result that resolves after request cancellation |
 | Model calls remain correlatable without becoming semantic children | the Prime test requires ordered `experimental.code_model_call` events with safe call-tree fields and prompt/output digests; no completion broker is involved |
@@ -70,9 +70,12 @@ The initial screen contains exactly two serial roots on one admitted Prime model
 one control and one `code-model-recursion-v1` treatment, in an order randomized
 and recorded before inference. Each root gets fresh product data, workspace,
 Prime private state, trace spool, and configuration. Each has a 600-second
-deadline, one stop request, a 30-second settlement grace, and no retry. A
-failure remains evidence. This two-root feasibility screen is not a performance
-comparison or evidence of general improvement.
+deadline, one stop request, a 30-second settlement grace, and no root rerun. The
+host bridge also disables automatic provider retries. A new agent-authored call
+with the same prompt remains observable as a semantic retry and is a protocol
+deviation rather than a hidden host retry. A failure remains evidence. This
+two-root feasibility screen is not a performance comparison or evidence of
+general improvement.
 
 Both roots receive this exact task:
 
@@ -156,7 +159,56 @@ alone. Timing and token usage are descriptive only.
 
 ## Current evidence
 
-The focused deterministic checkpoints pass locally. They are segmented seam
-proof, not an assembled composition result. No live root has run yet, so actual
-provider adoption, graph publication from real returned model values, visual
-quality, cost, and runtime stability remain unknown.
+The focused deterministic checkpoints pass locally. The frozen two-root live
+screen then ran on clean commit `e3b77c36246dbcdd899c70c16946551e3e0f186e`
+with treatment first. Source, binaries, bundles, configurations, task, rubric,
+gate, runtime, and model identities matched before and after both roots. Each
+arm used a separately validated managed runtime with empty private state.
+
+The machine-readable receipt is
+[`live-screen-2026-09-29.json`](./live-screen-2026-09-29.json). Raw provider
+sessions, local databases, auth material, and detailed traces remain in the
+ignored local evidence directory. The committed receipt contains only hashes,
+sanitized aggregates, and the two stopped review screenshots.
+
+The treatment published a useful factual current after 81.240 seconds. It then
+made 33 experimental model calls: 10 completed, 22 failed, and one was cancelled
+at stop. The calls used only 14 unique prompt digests; one identical prompt was
+issued ten times, including explicitly named retry calls. This violated the
+task's no-semantic-retry intent even though the host performed no automatic
+retry and the runner did not rerun the root. All 33 calls stayed at depth zero
+with no parent. The root parsed some successful JSON, but it never produced the
+required returned-value-driven recursive call tree. It stopped at 600.536
+seconds without classifications or a final graph.
+
+The control published a useful factual current after 290.963 seconds. It also
+reached the 600-second deadline without a final graph. Its current moved to
+stopped, while the interaction still reported running after the 30-second
+settlement grace. That mismatch is preserved as
+`stopUnsettledAtGraceDeadline`; it is not treated as a successful settlement.
+The control used one provider-native RLM worker for judgment and emitted 593
+child updates. The treatment used no RLM child. Neither arm created a semantic
+GraphComplete child.
+
+Both visible currents scored 3/8: exact aggregates, a readable overview, and
+useful navigable factual detail. Neither graph contained the eight required
+classifications, rationales, five ranked risks, or a go/no recommendation. The
+treatment's faster first current is descriptive only. There is no settled
+comparison, no quality improvement, and no mechanism pass. Provider dollar
+cost was reported as zero, which this receipt treats as unavailable rather than
+as proof of a zero-cost run.
+The pre-run protocol required a positive dollar cap, but none was recorded.
+Direct user authorization allowed these two roots to proceed; the receipt still
+marks the budget checkpoint failed and does not claim full protocol compliance.
+Browser inspection proved the stopped layouts below, but no contemporaneous
+hashed observation log exists, so the receipt makes no exact renderer-time claim.
+
+![Stopped treatment factual current](./treatment-review-2026-09-29.png)
+
+![Stopped control factual current](./control-review-2026-09-29.png)
+
+This is a bounded negative feasibility result. It proves that the callable can
+return values to executed Python under the admitted Prime route. It does not
+prove the intended recursive composition or support a production default. The
+receipt binds the pre-rebase commit only; later source snapshots do not inherit
+its exact-source live status.
