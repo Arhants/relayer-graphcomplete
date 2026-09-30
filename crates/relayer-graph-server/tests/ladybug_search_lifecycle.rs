@@ -44,11 +44,14 @@ async fn accepted_sqlite_graph(path: &std::path::Path) -> GraphDatabase {
             client_key: "root".into(),
             nodes: vec![queue.id],
             edges: vec![],
-            layout: Some(LayerLayout::v1(vec![NodePlacement {
-                node_id: queue.id,
-                x: 0.5,
-                y: 0.5,
-            }])),
+            layout: Some(LayerLayout::v1(
+                vec![NodePlacement {
+                    node_id: queue.id,
+                    x: 0.5,
+                    y: 0.5,
+                }],
+                "default",
+            )),
             size_justification: None,
         })
         .await
@@ -101,11 +104,14 @@ async fn publish_temporal_current(
             client_key: format!("{key}-layer"),
             nodes: vec![content.id],
             edges: vec![],
-            layout: Some(LayerLayout::v1(vec![NodePlacement {
-                node_id: content.id,
-                x: 0.5,
-                y: 0.5,
-            }])),
+            layout: Some(LayerLayout::v1(
+                vec![NodePlacement {
+                    node_id: content.id,
+                    x: 0.5,
+                    y: 0.5,
+                }],
+                "default",
+            )),
             size_justification: None,
         })
         .await
@@ -229,11 +235,14 @@ async fn draft_target(database: &GraphDatabase, thread: ThreadId) -> NodeId {
             client_key: "worker-root".into(),
             nodes: vec![worker.id],
             edges: vec![],
-            layout: Some(LayerLayout::v1(vec![NodePlacement {
-                node_id: worker.id,
-                x: 0.5,
-                y: 0.5,
-            }])),
+            layout: Some(LayerLayout::v1(
+                vec![NodePlacement {
+                    node_id: worker.id,
+                    x: 0.5,
+                    y: 0.5,
+                }],
+                "default",
+            )),
             size_justification: None,
         })
         .await
@@ -342,18 +351,21 @@ async fn accepted_graph_with_an_edge(
             client_key: "root".into(),
             nodes: nodes.clone(),
             edges: vec![edge.id],
-            layout: Some(LayerLayout::v1(vec![
-                NodePlacement {
-                    node_id: nodes[0],
-                    x: 0.25,
-                    y: 0.5,
-                },
-                NodePlacement {
-                    node_id: nodes[1],
-                    x: 0.75,
-                    y: 0.5,
-                },
-            ])),
+            layout: Some(LayerLayout::v1(
+                vec![
+                    NodePlacement {
+                        node_id: nodes[0],
+                        x: 0.25,
+                        y: 0.5,
+                    },
+                    NodePlacement {
+                        node_id: nodes[1],
+                        x: 0.75,
+                        y: 0.5,
+                    },
+                ],
+                "default",
+            )),
             size_justification: None,
         })
         .await
@@ -1444,11 +1456,14 @@ async fn attached_navigation_publication_matches_rebuild_without_widening_thread
                 client_key: format!("{key}-layer"),
                 nodes: vec![node.id],
                 edges: vec![],
-                layout: Some(LayerLayout::v1(vec![NodePlacement {
-                    node_id: node.id,
-                    x: 0.5,
-                    y: 0.5,
-                }])),
+                layout: Some(LayerLayout::v1(
+                    vec![NodePlacement {
+                        node_id: node.id,
+                        x: 0.5,
+                        y: 0.5,
+                    }],
+                    "default",
+                )),
                 size_justification: None,
                 default_node_id: None,
             })

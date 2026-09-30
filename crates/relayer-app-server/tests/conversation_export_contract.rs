@@ -97,6 +97,7 @@ fn layer(id: &str, node_id: &str, actions: Vec<ExportAction>) -> ExportResolvedL
                     x: 0.5,
                     y: 0.5,
                 }],
+                edge_shape: Some("elbow-horizontal".into()),
             }),
             state: ExportRecordState::Accepted,
         },
@@ -785,6 +786,37 @@ fn preserves_legacy_missing_layout_and_rejects_invalid_portable_layouts() {
     };
     turn.accepted_view.as_mut().unwrap().layers[0].layer.layout = None;
     validate_export_records(&legacy).unwrap();
+
+    // Layers accepted before edge shapes export without the field and read as "default".
+    let mut shapeless = records();
+    let ConversationExportRecord::Turn(turn) = &mut shapeless[1] else {
+        unreachable!()
+    };
+    let layout = turn.accepted_view.as_mut().unwrap().layers[0]
+        .layer
+        .layout
+        .as_mut()
+        .unwrap();
+    layout.edge_shape = None;
+    let json = serde_json::to_value(&*layout).unwrap();
+    assert!(json.get("edgeShape").is_none());
+    assert_eq!(
+        serde_json::from_value::<ExportLayerLayout>(json).unwrap(),
+        *layout
+    );
+    validate_export_records(&shapeless).unwrap();
+
+    let mut unknown_shape = records();
+    let ConversationExportRecord::Turn(turn) = &mut unknown_shape[1] else {
+        unreachable!()
+    };
+    turn.accepted_view.as_mut().unwrap().layers[0]
+        .layer
+        .layout
+        .as_mut()
+        .unwrap()
+        .edge_shape = Some("arc-inward".into());
+    assert_rejected_with_parity(&unknown_shape, "unsupported_edge_shape");
 
     let mut unsupported = records();
     let ConversationExportRecord::Turn(turn) = &mut unsupported[1] else {

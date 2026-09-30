@@ -210,11 +210,11 @@ describe("typed Node Detail authoring compiler", () => {
     const layer = new LayerObject(
       [source],
       [],
-      new LayerLayoutObject([new NodePlacementObject(source, 0.5, 0.5)]),
+      new LayerLayoutObject([new NodePlacementObject(source, 0.5, 0.5)], "default"),
       "source-layer",
       source,
     );
-    const target = new LayerObject([], [], new LayerLayoutObject([]), "target-layer");
+    const target = new LayerObject([], [], new LayerLayoutObject([], "default"), "target-layer");
     const actions = {
       expand: { kind: "navigate", relation: "expand", label: "Expand", sourceLayer: layer, target, clientKey: "expand-action" },
       reference: { kind: "navigate", relation: "reference", label: "Reference", sourceLayer: layer, target, clientKey: "reference-action" },
@@ -243,7 +243,7 @@ describe("typed Node Detail authoring compiler", () => {
     const layer = new LayerObject(
       [owner],
       [],
-      new LayerLayoutObject([new NodePlacementObject(owner, 0.5, 0.5)]),
+      new LayerLayoutObject([new NodePlacementObject(owner, 0.5, 0.5)], "default"),
       "owner-layer",
     );
     const action = {
@@ -273,7 +273,7 @@ describe("typed Node Detail authoring compiler", () => {
 
   it("rejects a one-megabyte action identity before compiling provenance", async () => {
     const owner = new NodeObject("box", "Owner", "Fallback", "concept", "owner-node");
-    const layer = new LayerObject([owner], [], new LayerLayoutObject([]), "owner-layer");
+    const layer = new LayerObject([owner], [], new LayerLayoutObject([], "default"), "owner-layer");
     const action = {
       kind: "invoke",
       label: "Investigate",
@@ -314,7 +314,7 @@ describe("typed Node Detail authoring compiler", () => {
 
     for (const [index, invalid] of invalidCases.entries()) {
       const owner = new NodeObject("box", "Owner", "Fallback", "concept", invalid.ownerKey);
-      const layer = new LayerObject([owner], [], new LayerLayoutObject([]), invalid.layerKey);
+      const layer = new LayerObject([owner], [], new LayerLayoutObject([], "default"), invalid.layerKey);
       const action = {
         kind: "invoke",
         label: "Investigate",
@@ -364,7 +364,7 @@ describe("typed Node Detail authoring compiler", () => {
 
   it("mirrors graph-core select option invariants at each input binding source", () => {
     const owner = new NodeObject("box", "Inputs", "Fallback", "concept", "input-owner");
-    const layer = new LayerObject([owner], [], new LayerLayoutObject([new NodePlacementObject(owner, 0.5, 0.5)]), "input-layer");
+    const layer = new LayerObject([owner], [], new LayerLayoutObject([new NodePlacementObject(owner, 0.5, 0.5)], "default"), "input-layer");
     const input = (clientKey: string, options: readonly { readonly key: string; readonly label: string }[]): InputActionObject => ({
       kind: "input",
       label: "Choose",
@@ -405,7 +405,7 @@ describe("typed Node Detail authoring compiler", () => {
 
     for (const [index, malformed] of malformedCases.entries()) {
       const owner = new NodeObject("box", "Owner", "Fallback", "concept", `malformed-owner-${index}`);
-      const layer = new LayerObject([owner], [], new LayerLayoutObject([]), `malformed-layer-${index}`);
+      const layer = new LayerObject([owner], [], new LayerLayoutObject([], "default"), `malformed-layer-${index}`);
       const action = { ...malformed.action as object, sourceLayer: layer };
       const capability = malformed.key === 42
         ? (detailCapability.invoke as unknown as (key: unknown, action: unknown) => ReturnType<typeof detailCapability.invoke>)(malformed.key, action)
@@ -421,7 +421,7 @@ describe("typed Node Detail authoring compiler", () => {
   it("rejects a draft action whose source layer does not contain the owning node", async () => {
     const owner = new NodeObject("box", "Owner", "Fallback", "concept", "membership-owner");
     const unrelated = new NodeObject("box", "Unrelated", "Fallback", "concept", "membership-unrelated");
-    const unrelatedLayer = new LayerObject([unrelated], [], new LayerLayoutObject([]), "unrelated-layer");
+    const unrelatedLayer = new LayerObject([unrelated], [], new LayerLayoutObject([], "default"), "unrelated-layer");
     const action = {
       kind: "invoke",
       label: "Run",
@@ -449,7 +449,7 @@ describe("typed Node Detail authoring compiler", () => {
   it("rejects a legacy graph capability path that tries to spoof an unrelated source node", () => {
     const owner = new NodeObject("box", "Owner", "Fallback", "concept", "owner-node");
     const unrelated = new NodeObject("box", "Unrelated", "Fallback", "concept", "unrelated-node");
-    const layer = new LayerObject([owner], [], new LayerLayoutObject([new NodePlacementObject(owner, 0.5, 0.5)]), "layer");
+    const layer = new LayerObject([owner], [], new LayerLayoutObject([new NodePlacementObject(owner, 0.5, 0.5)], "default"), "layer");
     const action = { kind: "invoke", label: "Run", interactionText: "Run", sourceLayer: layer, clientKey: "run" } satisfies ActionObject;
     const legacyInvoke = detailCapability.invoke as unknown as (
       key: string,
@@ -467,7 +467,7 @@ describe("typed Node Detail authoring compiler", () => {
 
   it("reports incompatible native hosts at the authored component source", () => {
     const source = new NodeObject("box", "Source", "Fallback", "concept", "source");
-    const layer = new LayerObject([source], [], new LayerLayoutObject([new NodePlacementObject(source, 0.5, 0.5)]), "layer");
+    const layer = new LayerObject([source], [], new LayerLayoutObject([new NodePlacementObject(source, 0.5, 0.5)], "default"), "layer");
     const input = { kind: "input", label: "Choose", control: "single_select", prompt: "Choose", options: [{ key: "a", label: "A" }], sourceLayer: layer, clientKey: "choose" } satisfies ActionObject;
     const detail = source.detailAuthoring;
     detail.setComponent("bad-hosts", html`
@@ -572,7 +572,7 @@ describe("typed Node Detail authoring compiler", () => {
 
   it("reports invalid graph capability declarations at their binding source", () => {
     const source = new NodeObject("box", "Source", "Fallback", "concept", "source");
-    const layer = new LayerObject([source], [], new LayerLayoutObject([new NodePlacementObject(source, 0.5, 0.5)]), "layer");
+    const layer = new LayerObject([source], [], new LayerLayoutObject([new NodePlacementObject(source, 0.5, 0.5)], "default"), "layer");
     const action = { kind: "invoke", label: "Investigate", interactionText: "Investigate", sourceLayer: layer } satisfies ActionObject;
     const detail = source.detailAuthoring;
     detail.setComponent("invalid-action", html`
@@ -897,7 +897,7 @@ describe("typed Node Detail authoring compiler", () => {
 
   it("implements external labels, descendant image alt, and directly referenced hidden names", () => {
     const owner = new NodeObject("box", "Accessible controls", "Fallback", "concept", "accessible-owner");
-    const layer = new LayerObject([owner], [], new LayerLayoutObject([new NodePlacementObject(owner, 0.5, 0.5)]), "accessible-layer");
+    const layer = new LayerObject([owner], [], new LayerLayoutObject([new NodePlacementObject(owner, 0.5, 0.5)], "default"), "accessible-layer");
     const input = {
       kind: "input",
       label: "Search",
@@ -958,7 +958,7 @@ describe("typed Node Detail authoring compiler", () => {
 
   it("rejects native input variants that do not match the bound control", () => {
     const source = new NodeObject("box", "Source", "Fallback", "concept", "source");
-    const layer = new LayerObject([source], [], new LayerLayoutObject([new NodePlacementObject(source, 0.5, 0.5)]), "layer");
+    const layer = new LayerObject([source], [], new LayerLayoutObject([new NodePlacementObject(source, 0.5, 0.5)], "default"), "layer");
     const text = { kind: "input", label: "Explain", control: "text", prompt: "Explain", sourceLayer: layer, clientKey: "text" } satisfies ActionObject;
     const multi = { kind: "input", label: "Choose", control: "multi_select", prompt: "Choose", options: [{ key: "a", label: "A" }], sourceLayer: layer, clientKey: "multi" } satisfies ActionObject;
     const detail = source.detailAuthoring;
@@ -1027,7 +1027,7 @@ describe("typed Node Detail authoring compiler", () => {
 
   it("prevents authored link, action, and input state from spoofing typed capability behavior", () => {
     const source = new NodeObject("box", "Source", "Fallback", "concept", "source");
-    const layer = new LayerObject([source], [], new LayerLayoutObject([new NodePlacementObject(source, 0.5, 0.5)]), "layer");
+    const layer = new LayerObject([source], [], new LayerLayoutObject([new NodePlacementObject(source, 0.5, 0.5)], "default"), "layer");
     const text = { kind: "input", label: "Explain", control: "text", prompt: "Explain", sourceLayer: layer, clientKey: "text" } satisfies ActionObject;
     const single = { kind: "input", label: "Choose", control: "single_select", prompt: "Choose", options: [{ key: "a", label: "A" }], sourceLayer: layer, clientKey: "single" } satisfies ActionObject;
     const invoke = { kind: "invoke", label: "Run", interactionText: "Run", sourceLayer: layer, clientKey: "invoke" } satisfies ActionObject;
@@ -1051,7 +1051,7 @@ describe("typed Node Detail authoring compiler", () => {
 
   it("normalizes native input host state from each typed input declaration", () => {
     const source = new NodeObject("box", "Source", "Fallback", "concept", "source");
-    const layer = new LayerObject([source], [], new LayerLayoutObject([new NodePlacementObject(source, 0.5, 0.5)]), "layer");
+    const layer = new LayerObject([source], [], new LayerLayoutObject([new NodePlacementObject(source, 0.5, 0.5)], "default"), "layer");
     const text = { kind: "input", label: "Explain", control: "text", prompt: "Explain", sourceLayer: layer, clientKey: "text-normalized" } satisfies ActionObject;
     const single = { kind: "input", label: "Choose", control: "single_select", prompt: "Choose", options: [{ key: "a", label: "A" }], sourceLayer: layer, clientKey: "single-normalized" } satisfies ActionObject;
     const multi = { kind: "input", label: "Signals", control: "multi_select", prompt: "Signals", options: [{ key: "a", label: "A" }], sourceLayer: layer, clientKey: "multi-normalized" } satisfies ActionObject;

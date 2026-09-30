@@ -18,7 +18,7 @@ async with RelayerGraphClient.from_env() as graph:
     layout = LayerLayoutObject((
         NodePlacementObject(intro, 0.25, 0.5),
         NodePlacementObject(detail, 0.75, 0.5),
-    ))
+    ), "elbow-horizontal")
     layer = LayerObject((intro, detail), (connection,), layout, client_key="response-layer")
     await graph.submit_layer(layer)
     await graph.add_navigate_action(

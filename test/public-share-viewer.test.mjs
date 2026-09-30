@@ -987,3 +987,73 @@ it("V3 root reference backlinks preserve nonroot mixed-arrival and expansion-cyc
   layers[2].actions.at(-1).targetLayerId = "layer:nested";
   expect(() => parsePublicSnapshot(recordsJsonl(records))).toThrow(expect.objectContaining({ code: "mixed_target_relations" }));
 });
+
+describe("public share edge shapes", () => {
+  function shapedRecords() {
+    const records = invokeFixtureRecords();
+    const root = records[1].acceptedView.layers[0];
+    // "Start" joined the layer after "Root", but its placement puts it first in reading order.
+    for (const [id, title] of [["node:start", "Start"], ["node:end", "End"]]) {
+      root.layer.nodes.push(id);
+      root.nodes.push({ id, kind: "concept", icon: "box", title, detail: "", state: "accepted" });
+    }
+    for (const [id, endpoints] of [["edge:start-root", ["node:root", "node:start"]], ["edge:root-end", ["node:root", "node:end"]]]) {
+      root.layer.edges.push(id);
+      root.edges.push({ id, endpoints, state: "accepted" });
+    }
+    root.layer.layout = {
+      version: 1,
+      placements: [{ nodeId: "node:start", x: .1, y: .2 }, { nodeId: "node:root", x: .5, y: .6 }, { nodeId: "node:end", x: .9, y: .3 }],
+      edgeShape: "arc-circle",
+    };
+    return records;
+  }
+
+  it("keeps each layer's edge shape and reading order from snapshot to canvas", async () => {
+    const records = shapedRecords();
+    const snapshot = parsePublicSnapshot(recordsJsonl(records));
+    expect(snapshot.layerFor("turn:1", "layer:root").layer.layout).toEqual(records[1].acceptedView.layers[0].layer.layout);
+    // A layer shared before edge shapes existed keeps no shape and reads as the default.
+    expect(snapshot.layerFor("turn:2", "layer:child").layer.layout).toEqual({ version: 1, placements: [{ nodeId: "node:child", x: .5, y: .5 }] });
+    const malformed = shapedRecords();
+    malformed[1].acceptedView.layers[0].layer.layout.edgeShape = 3;
+    expect(() => parsePublicSnapshot(recordsJsonl(malformed))).toThrow(expect.objectContaining({ code: "layout_edge_shape_invalid" }));
+
+    const windowRef = new Window({ url: `https://share.example.test/t/${"b".repeat(32)}` });
+    windowRef.document.write(renderPublicViewerTemplate({ snapshot: recordsJsonl(records), presentation: "standalone", sharePath: `/t/${"b".repeat(32)}`, theme: "system" }));
+    const previous = { DOMParser: globalThis.DOMParser, document: globalThis.document, lucide: globalThis.lucide, window: globalThis.window };
+    globalThis.window = windowRef;
+    globalThis.document = windowRef.document;
+    globalThis.DOMParser = windowRef.DOMParser;
+    globalThis.lucide = { Circle: {}, createElement: () => windowRef.document.createElementNS("http://www.w3.org/2000/svg", "svg") };
+    try {
+      const viewer = bootPublicViewer({ documentRef: windowRef.document, windowRef, onRenderError: vi.fn() });
+      await windowRef.happyDOM.waitUntilComplete();
+      const canvas = windowRef.document.querySelector("#edgeCanvas");
+      // Tab and screen-reader order follow the placements, not layer membership.
+      expect([...windowRef.document.querySelectorAll("[data-node]")].map((node) => node.dataset.node)).toEqual(["node:start", "node:root", "node:end"]);
+      expect(canvas.getAttribute("data-edge-shape")).toBe("arc-circle");
+      const edgePath = (id) => windowRef.document.querySelector(`[data-edge="${id}"] .graph-edge`).getAttribute("d");
+      const [startRoot, rootEnd] = [edgePath("edge:start-root"), edgePath("edge:root-end")];
+      for (const path of [startRoot, rootEnd]) expect(path).toMatch(/^M[^MA]+A[^MA]+$/);
+      expect(canvas.querySelector("marker, [marker-start], [marker-mid], [marker-end]")).toBeNull();
+      // Dragging a node reshapes only the edges it is on.
+      windowRef.HTMLElement.prototype.setPointerCapture ??= () => {};
+      const start = windowRef.document.querySelector('[data-node="node:start"]');
+      start.dispatchEvent(new windowRef.PointerEvent("pointerdown", { bubbles: true, pointerId: 3, buttons: 1, clientX: 100, clientY: 100 }));
+      start.dispatchEvent(new windowRef.PointerEvent("pointermove", { bubbles: true, pointerId: 3, buttons: 1, clientX: 100, clientY: 160 }));
+      expect(edgePath("edge:start-root")).not.toBe(startRoot);
+      expect(edgePath("edge:root-end")).toBe(rootEnd);
+      start.dispatchEvent(new windowRef.PointerEvent("pointerup", { bubbles: true, pointerId: 3 }));
+
+      viewer.adapter.selectTurnById("turn:2");
+      viewer.render();
+      await windowRef.happyDOM.waitUntilComplete();
+      expect(windowRef.document.querySelector("#edgeCanvas").getAttribute("data-edge-shape")).toBe("arc-outward");
+      viewer.dispose();
+    } finally {
+      Object.assign(globalThis, previous);
+      await windowRef.close();
+    }
+  });
+});

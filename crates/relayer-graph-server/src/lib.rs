@@ -2321,6 +2321,8 @@ struct LayerLayoutRequest {
     version: Value,
     #[serde(default)]
     placements: Vec<NodePlacementRequest>,
+    #[serde(default)]
+    edge_shape: Value,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2351,9 +2353,19 @@ impl From<LayerDraftRequest> for LayerDraft {
                         y: repairable_coordinate(&placement.y),
                     })
                     .collect(),
+                edge_shape: repairable_edge_shape(layout.edge_shape),
             }),
             size_justification: input.size_justification,
         }
+    }
+}
+
+// A non-string shape is kept as its JSON text so validation names it as unsupported.
+fn repairable_edge_shape(value: Value) -> Option<String> {
+    match value {
+        Value::Null => None,
+        Value::String(shape) => Some(shape),
+        other => Some(other.to_string()),
     }
 }
 
@@ -4265,11 +4277,14 @@ mod tests {
     }
 
     fn authored_layout(node_id: NodeId) -> Option<LayerLayout> {
-        Some(LayerLayout::v1(vec![NodePlacement {
-            node_id,
-            x: 0.5,
-            y: 0.5,
-        }]))
+        Some(LayerLayout::v1(
+            vec![NodePlacement {
+                node_id,
+                x: 0.5,
+                y: 0.5,
+            }],
+            "default",
+        ))
     }
 
     #[tokio::test]
@@ -5217,6 +5232,7 @@ mod tests {
                         x: 0.5,
                         y: 0.5,
                     }],
+                    edge_shape: Some("default".into()),
                 }),
                 size_justification: None,
             })
@@ -5351,6 +5367,7 @@ mod tests {
                         x: 0.5,
                         y: 0.5,
                     }],
+                    edge_shape: Some("default".into()),
                 }),
                 size_justification: None,
             })
@@ -5694,6 +5711,10 @@ mod tests {
             malformed["error"]["issues"][1]["path"],
             "layout.placements[0].y"
         );
+        assert_eq!(
+            malformed["error"]["issues"][2]["code"],
+            "missing_edge_shape"
+        );
 
         let out_of_range = app
             .clone()
@@ -5704,7 +5725,7 @@ mod tests {
                     .header("content-type", "application/json")
                     .header("authorization", format!("Bearer {graph_token}"))
                     .body(Body::from(format!(
-                        r#"{{"clientKey":"root","nodes":[{}],"edges":[],"layout":{{"version":1,"placements":[{{"nodeId":{},"x":-0.01,"y":1.01}}]}}}}"#,
+                        r#"{{"clientKey":"root","nodes":[{}],"edges":[],"layout":{{"version":1,"placements":[{{"nodeId":{},"x":-0.01,"y":1.01}}],"edgeShape":3}}}}"#,
                         answer.id.value(), answer.id.value()
                     )))
                     .unwrap(),
@@ -5726,6 +5747,10 @@ mod tests {
             out_of_range["error"]["issues"][1]["path"],
             "layout.placements[0].y"
         );
+        assert_eq!(
+            out_of_range["error"]["issues"][2]["code"],
+            "unsupported_edge_shape"
+        );
 
         let valid = app
             .clone()
@@ -5736,7 +5761,7 @@ mod tests {
                     .header("content-type", "application/json")
                     .header("authorization", format!("Bearer {graph_token}"))
                     .body(Body::from(format!(
-                        r#"{{"clientKey":"root","nodes":[{}],"edges":[],"layout":{{"version":1,"placements":[{{"nodeId":{},"x":0.25,"y":0.75}}]}}}}"#,
+                        r#"{{"clientKey":"root","nodes":[{}],"edges":[],"layout":{{"version":1,"placements":[{{"nodeId":{},"x":0.25,"y":0.75}}],"edgeShape":"arc-circle"}}}}"#,
                         answer.id.value(), answer.id.value()
                     )))
                     .unwrap(),
@@ -5751,6 +5776,7 @@ mod tests {
         assert_eq!(valid["layer"]["clientKey"], "root");
         assert_eq!(valid["layer"]["layout"]["version"], 1);
         assert_eq!(valid["layer"]["layout"]["placements"][0]["x"], 0.25);
+        assert_eq!(valid["layer"]["layout"]["edgeShape"], "arc-circle");
 
         writer
             .add_action(&ActionDraft {
@@ -6749,11 +6775,14 @@ mod attached_navigation_route_tests {
                 client_key: "source".into(),
                 nodes: vec![node.id],
                 edges: vec![],
-                layout: Some(LayerLayout::v1(vec![NodePlacement {
-                    node_id: node.id,
-                    x: 0.5,
-                    y: 0.5,
-                }])),
+                layout: Some(LayerLayout::v1(
+                    vec![NodePlacement {
+                        node_id: node.id,
+                        x: 0.5,
+                        y: 0.5,
+                    }],
+                    "default",
+                )),
                 default_node_id: None,
                 size_justification: None,
             })
@@ -6798,11 +6827,14 @@ mod attached_navigation_route_tests {
                 client_key: "response".into(),
                 nodes: vec![node.id],
                 edges: vec![],
-                layout: Some(LayerLayout::v1(vec![NodePlacement {
-                    node_id: node.id,
-                    x: 0.5,
-                    y: 0.5,
-                }])),
+                layout: Some(LayerLayout::v1(
+                    vec![NodePlacement {
+                        node_id: node.id,
+                        x: 0.5,
+                        y: 0.5,
+                    }],
+                    "default",
+                )),
                 default_node_id: None,
                 size_justification: None,
             })

@@ -416,11 +416,14 @@ async fn author_answer(graph: &GraphDatabase, interaction: &CreateInteractionRes
             client_key: "search-layer".into(),
             nodes: vec![answer.id],
             edges: vec![],
-            layout: Some(LayerLayout::v1(vec![NodePlacement {
-                node_id: answer.id,
-                x: 0.5,
-                y: 0.5,
-            }])),
+            layout: Some(LayerLayout::v1(
+                vec![NodePlacement {
+                    node_id: answer.id,
+                    x: 0.5,
+                    y: 0.5,
+                }],
+                "default",
+            )),
             size_justification: None,
         })
         .await
@@ -713,11 +716,14 @@ async fn a_different_retry_cannot_confirm_an_orphaned_publication() {
             client_key: "replacement-layer".into(),
             nodes: vec![replacement.id],
             edges: vec![],
-            layout: Some(LayerLayout::v1(vec![NodePlacement {
-                node_id: replacement.id,
-                x: 0.5,
-                y: 0.5,
-            }])),
+            layout: Some(LayerLayout::v1(
+                vec![NodePlacement {
+                    node_id: replacement.id,
+                    x: 0.5,
+                    y: 0.5,
+                }],
+                "default",
+            )),
             size_justification: None,
         })
         .await
@@ -942,11 +948,14 @@ async fn advance_acknowledgement_is_immediately_searchable_through_the_public_ro
             client_key: "working-search-layer".into(),
             nodes: vec![answer.id],
             edges: vec![],
-            layout: Some(LayerLayout::v1(vec![NodePlacement {
-                node_id: answer.id,
-                x: 0.5,
-                y: 0.5,
-            }])),
+            layout: Some(LayerLayout::v1(
+                vec![NodePlacement {
+                    node_id: answer.id,
+                    x: 0.5,
+                    y: 0.5,
+                }],
+                "default",
+            )),
             size_justification: None,
         })
         .await

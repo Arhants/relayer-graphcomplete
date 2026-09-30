@@ -119,6 +119,12 @@ projects normalized coordinates into a stable world plane; responsive fitting,
 panning, zooming, and inspector changes affect only the camera. Historical
 accepted layers without layout data remain readable through one deterministic,
 viewport-independent renderer fallback and are never rewritten during reads.
+The placement list order is the layer's reading order; keyboard and screen-reader
+order follow it. The layout also names one agent-chosen edge shape for all of the
+layer's edges (PRD §6.1, §11.2). It is required when a layer is submitted, but
+reads, the acceptance re-check, import, and share snapshots accept its absence on
+older layers as `default`, which the design resolves to a concrete shape at draw
+time only.
 
 Layers may carry an explicit `defaultNodeId` chosen by the author from their member nodes. Graph core validates membership and preserves the choice through publication, persistence, and portable import/export. Missing values from older clients or accepted layers remain readable. Product opens the chosen detail automatically when no valid user selection exists; legacy layers use their first canonical member. Per-thread, interaction, and layer presentation memory preserves the user's later choice without mutating the accepted layer. Explicit history selection takes precedence. Empty layers do not fabricate a detail node.
 

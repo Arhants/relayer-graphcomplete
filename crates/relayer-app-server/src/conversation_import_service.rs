@@ -552,6 +552,7 @@ fn import_turn(turn: ConversationExportTurn) -> ImportedTurn {
                                         y: placement.y,
                                     })
                                     .collect(),
+                                edge_shape: layout.edge_shape,
                             }
                         }),
                     },

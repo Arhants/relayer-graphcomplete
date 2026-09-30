@@ -62,7 +62,7 @@ export class PrimeVisualAuthoring {
     const node = new NodeObject(input.node.icon, input.node.title, input.node.detail, input.node.kind, input.node.clientKey);
     const makeLayer = (value: z.infer<typeof layer>): LayerObject => new LayerObject(
       value.nodes.map((key) => key === node.clientKey ? node : new NodeObject("", "", "", "concept", key)),
-      [], new LayerLayoutObject([]), value.clientKey,
+      [], new LayerLayoutObject([], "default"), value.clientKey,
     );
     const makeBinding = (value: z.infer<typeof binding>): unknown => {
       if (value.kind === "asset") return assetRef(value.logicalId);

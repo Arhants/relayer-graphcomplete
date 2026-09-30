@@ -1,3 +1,4 @@
+import type { EdgeShape } from "./edge-shapes.js";
 import type { RelayerIconName } from "./icons.js";
 import type { CompiledNodeDetail } from "./detail.js";
 
@@ -35,7 +36,10 @@ export interface NodePlacement {
 
 export interface LayerLayout {
   readonly version: 1;
+  /** List order is the layer's reading order. */
   readonly placements: readonly NodePlacement[];
+  /** Absent only on layers accepted before edge shapes existed; read it as "default". */
+  readonly edgeShape?: EdgeShape;
 }
 
 export interface GraphLayer {

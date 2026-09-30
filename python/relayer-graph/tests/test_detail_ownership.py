@@ -38,8 +38,8 @@ class DetailOwnershipTests(unittest.IsolatedAsyncioTestCase):
     async def test_action_provenance_survives_checkpoint_and_submit_repair(self):
         graph = GraphSession("http://localhost", "token", 1)
         original, repair = graph.bind_node(node("answer")), graph.bind_node(node("answer"))
-        layer = LayerObject([original], [], LayerLayoutObject([]), client_key="source")
-        target = LayerObject([], [], LayerLayoutObject([]), client_key="target")
+        layer = LayerObject([original], [], LayerLayoutObject([], "default"), client_key="source")
+        target = LayerObject([], [], LayerLayoutObject([], "default"), client_key="target")
         actions = [ActionObject("navigate", "Expand", layer, "expand", target=target, relation="expand"),
                    ActionObject("navigate", "Reference", layer, "reference", target=target, relation="reference"),
                    ActionObject("invoke", "Run", layer, "run", interaction_text="Run"),
@@ -66,7 +66,7 @@ class DetailOwnershipTests(unittest.IsolatedAsyncioTestCase):
     def test_invalid_first_action_attachment_cannot_acquire_provenance_on_repair(self):
         graph = GraphSession("http://localhost", "token", 1)
         original, repair = [graph.bind_node(node("answer")) for _ in range(2)]
-        layer = LayerObject([repair], [], LayerLayoutObject([]), client_key="source")
+        layer = LayerObject([repair], [], LayerLayoutObject([], "default"), client_key="source")
         page = html(["<button gc=", ">Run</button>"], action_capability("run", ActionObject("invoke", "Run", layer, "run", interaction_text="Run")))
         original.detail_authoring.set_component("main", page)
         repair.detail_authoring.set_component("main", page)
@@ -77,7 +77,7 @@ class DetailOwnershipTests(unittest.IsolatedAsyncioTestCase):
     def test_repair_provenance_is_per_template_and_requires_exact_unchanged_original(self):
         graph = GraphSession("http://localhost", "token", 1)
         original, repair, stranger = [graph.bind_node(node("answer")) for _ in range(3)]
-        layer = LayerObject([original], [], LayerLayoutObject([]), client_key="source")
+        layer = LayerObject([original], [], LayerLayoutObject([], "default"), client_key="source")
         capability = action_capability("run", ActionObject("invoke", "Run", layer, "run", interaction_text="Run"))
         page = html(["<button gc=", ">Run</button>"], capability)
         original.detail_authoring.set_component("main", page)
@@ -102,7 +102,7 @@ class DetailOwnershipTests(unittest.IsolatedAsyncioTestCase):
         for binding_kind in ("action", "unknown"):
             graph = GraphSession("http://localhost", "token", 1)
             original, repair = graph.bind_node(node("answer")), graph.bind_node(node("answer"))
-            layer = LayerObject([original], [], LayerLayoutObject([]), client_key="source")
+            layer = LayerObject([original], [], LayerLayoutObject([], "default"), client_key="source")
             page = html(["<button gc=", ">Run</button>"], DetailBinding(binding_kind, ActionObject("invoke", "Run", layer, "run", interaction_text="Run"), "run"))
             plain = html("<p>Answer</p>")
             original.detail_authoring.set_component("main", page)

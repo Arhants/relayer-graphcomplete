@@ -1964,10 +1964,21 @@ type GraphEdge = {
   endpoints: readonly [NodeReference, NodeReference]; // undirected
 };
 
+type EdgeShape = &quot;default&quot; | &quot;straight&quot; | &quot;arc-outward&quot; | &quot;arc-circle&quot; | &quot;elbow-horizontal&quot; | &quot;elbow-vertical&quot;;
+
+type NodePlacement = { node: NodeReference; x: number; y: number }; // 0..1
+
+type LayerLayout = {
+  version: 1;
+  placements: NodePlacement[]; // one per node; list order is the layer&#39;s reading order
+  edgeShape: EdgeShape;        // required on submit; absent on older layers means &quot;default&quot;
+};
+
 type GraphLayer = {
   ref: LayerReference;
   nodes: NodeReference[];
   edges: EdgeReference[]; // exact visible connections, never inferred
+  layout: LayerLayout;    // agent-authored geometry
 };
 
 type NavigateRelation = &quot;expand&quot; | &quot;reference&quot;;
@@ -2000,7 +2011,7 @@ type NodeAction =
 <tbody>
 <tr><td><code>submitNode</code></td><td>Required icon/title/detail, supported markup, field and payload limits</td><td>Return exact invalid field and keep the last valid draft</td></tr>
 <tr><td><code>createEdge</code></td><td>Both endpoints submitted, no self-edge, no duplicate undirected edge</td><td>Return the offending endpoint or existing edge</td></tr>
-<tr><td><code>submitLayer</code></td><td>Validate members, edges, uniqueness, connectivity, and size. Layers with 6–8 nodes require a hidden justification. Reject larger layers.</td><td>Return the precise object or size failure. Discard a valid size justification.</td></tr>
+<tr><td><code>submitLayer</code></td><td>Validate members, edges, uniqueness, connectivity, and size. Layers with 6–8 nodes require a hidden justification. Reject larger layers. Require an authored layout with one placement per node and an <code>edgeShape</code> from the closed vocabulary.</td><td>Return the precise object or size failure. Discard a valid size justification. Return <code>missing_edge_shape</code> or <code>unsupported_edge_shape</code> with the allowed values.</td></tr>
 <tr><td><code>addAction</code></td><td>Validate source, authoring layer, kind, relation, target, ownership, visibility, and context-specific authoring permission.</td><td>Return the invalid source, target, provenance, or field.</td></tr>
 <tr><td><code>submit(interaction)</code></td><td>Require one root expand action. Validate the current-authored closure, expand acyclicity, references, authority, and orphan drafts.</td><td>Keep all drafts hidden. Return the exact repairable path.</td></tr>
 </tbody></table>
@@ -2529,7 +2540,7 @@ settings:
 <h3>6.1 Display and navigation</h3>
 <ul>
 <li>The response view contains the first layer of the accepted subgraph, including edges among those response nodes.</li>
-<li>Edges are visually undirected.</li>
+<li>Edges are visually undirected. They carry no arrowheads or other direction marks, and each edge&#39;s path is the same whichever endpoint it is drawn from. Each layer draws all its edges in the shape its agent chose. <code>default</code> uses the design&#39;s default shape, which is arcs in H. A layer conveys reading order through the order and positions of its authored placements. Keyboard and screen-reader order follow the placement order, and an elbow shape follows the reading axis. Layers accepted before edge shapes existed draw with the design&#39;s default.</li>
 <li>The interaction/parent node is not repeated inside its child layer. Its breadcrumb entry includes its icon and title.</li>
 <li>The interaction query and breadcrumb share the same left edge above the canvas.</li>
 <li>Breadcrumbs use readable 13px labels, 16px icons, and 34px navigation controls. Long paths remain horizontally scrollable.</li>

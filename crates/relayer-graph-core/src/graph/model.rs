@@ -38,7 +38,7 @@ pub use input::{
     SubmittedInputValue, interaction_input_authority_digest, interaction_input_semantic_digest,
 };
 pub(crate) use layer::validate_authored_layout;
-pub use layer::{GraphLayer, LayerDraft, LayerLayout, NodePlacement, ResolvedLayer};
+pub use layer::{EDGE_SHAPES, GraphLayer, LayerDraft, LayerLayout, NodePlacement, ResolvedLayer};
 pub(crate) use node::validate_authored_detail;
 pub use node::{
     AcceptedDetailAsset, AcceptedDetailAssetMetadata, AuthoredDetailUpdate, GraphNode,

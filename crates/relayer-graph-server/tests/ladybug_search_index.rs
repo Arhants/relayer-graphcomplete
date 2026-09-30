@@ -69,11 +69,14 @@ async fn build_and_complete(database: &GraphDatabase) -> NodeId {
             client_key: "child".into(),
             nodes: vec![worker.id],
             edges: vec![],
-            layout: Some(LayerLayout::v1(vec![NodePlacement {
-                node_id: worker.id,
-                x: 0.5,
-                y: 0.5,
-            }])),
+            layout: Some(LayerLayout::v1(
+                vec![NodePlacement {
+                    node_id: worker.id,
+                    x: 0.5,
+                    y: 0.5,
+                }],
+                "default",
+            )),
             size_justification: None,
         })
         .await
@@ -84,11 +87,14 @@ async fn build_and_complete(database: &GraphDatabase) -> NodeId {
             client_key: "reference-child".into(),
             nodes: vec![queue.id],
             edges: vec![],
-            layout: Some(LayerLayout::v1(vec![NodePlacement {
-                node_id: queue.id,
-                x: 0.5,
-                y: 0.5,
-            }])),
+            layout: Some(LayerLayout::v1(
+                vec![NodePlacement {
+                    node_id: queue.id,
+                    x: 0.5,
+                    y: 0.5,
+                }],
+                "default",
+            )),
             size_justification: None,
         })
         .await
@@ -99,18 +105,21 @@ async fn build_and_complete(database: &GraphDatabase) -> NodeId {
             client_key: "root".into(),
             nodes: vec![queue.id, worker.id],
             edges: vec![edge.id],
-            layout: Some(LayerLayout::v1(vec![
-                NodePlacement {
-                    node_id: queue.id,
-                    x: 0.2,
-                    y: 0.5,
-                },
-                NodePlacement {
-                    node_id: worker.id,
-                    x: 0.8,
-                    y: 0.5,
-                },
-            ])),
+            layout: Some(LayerLayout::v1(
+                vec![
+                    NodePlacement {
+                        node_id: queue.id,
+                        x: 0.2,
+                        y: 0.5,
+                    },
+                    NodePlacement {
+                        node_id: worker.id,
+                        x: 0.8,
+                        y: 0.5,
+                    },
+                ],
+                "default",
+            )),
             size_justification: None,
         })
         .await
@@ -225,6 +234,7 @@ fn imported_conversation(project_id: Option<ProjectId>) -> ImportedConversation 
                                 x: 0.25,
                                 y: 0.75,
                             }],
+                            edge_shape: None,
                         }),
                     },
                     nodes: vec![ImportedNode {
@@ -921,11 +931,14 @@ async fn an_import_referenced_by_another_thread_is_not_removed_from_either_store
             client_key: "root".into(),
             nodes: vec![answer.id],
             edges: vec![],
-            layout: Some(LayerLayout::v1(vec![NodePlacement {
-                node_id: answer.id,
-                x: 0.5,
-                y: 0.5,
-            }])),
+            layout: Some(LayerLayout::v1(
+                vec![NodePlacement {
+                    node_id: answer.id,
+                    x: 0.5,
+                    y: 0.5,
+                }],
+                "default",
+            )),
             size_justification: None,
         })
         .await

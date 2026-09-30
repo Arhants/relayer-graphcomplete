@@ -20,7 +20,8 @@ import {
 } from "./model.js";
 import { createLucideIcon, createRelayerIcon, relayerIconFamily } from "./icons.js";
 import { interactionActivity, NODE_RUN_STATE, nodeRunState, THREAD_ACTIVITY } from "./run-state.js";
-import { graphLayoutSignature, projectLayerNodePositions } from "./graph-layout.js";
+import { graphLayoutSignature, nodesInReadingOrder, projectLayerNodePositions } from "./graph-layout.js";
+import { graphEdgePath, graphLayerCircle, resolveEdgeShape } from "./edge-shapes.js";
 import { renderMarkdown } from "./markdown.js";
 import { isResolvedInvokeAction, mountCompiledNodeDetail } from "./node-detail-runtime.js";
 import { productWorkspaceMarkup } from "./view.js";
@@ -419,48 +420,7 @@ export function inspectorFitRequestIsCurrent(request, {
     && viewportWidth > 760;
 }
 
-// Where the line from a pill's centre towards another point leaves the pill's outline:
-// flat top and bottom, round ends (a capsule of the given half extents).
-export function graphPillExit(center, toward, { halfWidth, halfHeight }) {
-  const dx = toward.x - center.x;
-  const dy = toward.y - center.y;
-  const distance = Math.hypot(dx, dy);
-  if (!distance) return { x: center.x, y: center.y };
-  const ux = dx / distance;
-  const uy = dy / distance;
-  const flat = Math.max(0, halfWidth - halfHeight);
-  let t = uy ? halfHeight / Math.abs(uy) : Infinity;
-  if (Math.abs(ux * t) > flat) {
-    const cap = Math.sign(ux) * flat;
-    t = ux * cap + Math.sqrt(halfHeight * halfHeight - cap * cap * uy * uy);
-  }
-  return { x: center.x + ux * t, y: center.y + uy * t };
-}
-
-// An edge runs between the outlines of its two node pills.
-export function graphEdgeSegment(source, target, sourceBox, targetBox = sourceBox) {
-  const start = graphPillExit(source, target, sourceBox);
-  const end = graphPillExit(target, source, targetBox);
-  return { x1: start.x, y1: start.y, x2: end.x, y2: end.y };
-}
-
-// Sticker edges are gentle circular arcs. Each bends to the left of its own direction (first
-// endpoint to second) by 0.12 x chord, capped at 24px at zoom 1. The bend depends only on the
-// edge's endpoints, so dragging a node never flips or reshapes any other edge.
-export function graphEdgeArc(segment, { zoom = 1, curvature = 0.12, maxBend = 24 } = {}) {
-  const dx = segment.x2 - segment.x1;
-  const dy = segment.y2 - segment.y1;
-  const chord = Math.hypot(dx, dy);
-  const middle = { x: (segment.x1 + segment.x2) / 2, y: (segment.y1 + segment.y2) / 2 };
-  const sagitta = Math.min(curvature * chord, maxBend * zoom);
-  if (sagitta < 0.5) return { d: `M${segment.x1} ${segment.y1}L${segment.x2} ${segment.y2}`, middle };
-  const radius = (chord * chord / 4 + sagitta * sagitta) / (2 * sagitta);
-  // With y pointing down, the left of the direction is (dy, -dx), which sweep flag 1 draws.
-  return {
-    d: `M${segment.x1} ${segment.y1}A${radius} ${radius} 0 0 1 ${segment.x2} ${segment.y2}`,
-    middle: { x: middle.x + (dy / chord) * sagitta, y: middle.y - (dx / chord) * sagitta },
-  };
-}
+export { graphEdgeSegment, graphPillExit } from "./edge-shapes.js";
 
 export function graphEdgeStrokeWidth(zoom) {
   return 1.5 * zoom;
@@ -1698,6 +1658,7 @@ export function createProductWorkspace({
   const capabilities = workspaceModeCapabilities(mode);
   let graphNodes = [];
   let graphEdges = [];
+  let graphEdgeShape = resolveEdgeShape(undefined);
   let graphSignature = "";
   let graphViewKey = "";
   // Advances on every view entry, so a request made in a view the user left
@@ -5196,7 +5157,8 @@ export function createProductWorkspace({
         .map((node) => [String(node.id), node]),
     );
     graphViewKey = nextViewKey;
-    graphNodes = responseNodes.map((node, index) => ({
+    // Keyboard and screen-reader order follow the layer's reading order.
+    graphNodes = nodesInReadingOrder(state.visibleLayer, responseNodes).map((node, index) => ({
       ...node,
       x: 0,
       y: 0,
@@ -5218,6 +5180,7 @@ export function createProductWorkspace({
       const [source, target] = edge.endpoints || [edge.source, edge.target];
       return ids.has(String(source)) && ids.has(String(target));
     });
+    graphEdgeShape = resolveEdgeShape(state.visibleLayer?.layer?.layout?.edgeShape);
     const nextSignature = graphLayoutSignature(state.visibleLayer, graphNodes, graphEdges);
     const cachedLayoutMatches = cachedView
       ? cachedView.signature === nextSignature
@@ -5419,6 +5382,9 @@ export function createProductWorkspace({
         element.dataset.layoutSource = node.layoutSource;
       }
     }
+    // Arcs orient on the authored layout, so dragging one node never reshapes edges it is not on.
+    const layerCircle = graphLayerCircle(graphNodes.map((node) => graphScreenPoint({ x: node.canonicalX ?? node.x, y: node.canonicalY ?? node.y }, camera)));
+    $("#edgeCanvas").setAttribute("data-edge-shape", graphEdgeShape);
     $("#edgeCanvas").innerHTML = graphEdges.map((edge) => {
       const [source, target] = edge.endpoints || [edge.source, edge.target];
       const a = graphNodes.find((node) => String(node.id) === String(source));
@@ -5427,18 +5393,24 @@ export function createProductWorkspace({
       // Edges stop 4px outside each pill (b-structure-spec: clipped outside every drawn shape).
       const pillBox = (node) => {
         const box = node.pillBox ?? { halfWidth: GRAPH_NODE_HALF_HEIGHT, halfHeight: GRAPH_NODE_HALF_HEIGHT };
-        return { halfWidth: (box.halfWidth + 4) * camera.zoom, halfHeight: (box.halfHeight + 4) * camera.zoom };
+        // A run-state caption hangs below the pill; an edge leaving downward clears it.
+        const bottom = Math.max(box.halfHeight, node.layoutBounds?.bottom ?? 0);
+        return { halfWidth: (box.halfWidth + 4) * camera.zoom, halfHeight: (box.halfHeight + 4) * camera.zoom, bottom: (bottom + 4) * camera.zoom };
       };
-      const segment = graphEdgeSegment(graphScreenPoint(a, camera), graphScreenPoint(b, camera), pillBox(a), pillBox(b));
       const edgeIdentity = edge.id ?? `${source}:${target}`;
       const edgeId = escapeHtml(edgeIdentity);
       const annotatable = annotationEnabled && edge.id != null;
       const anchor = annotatable ? subjectAnchor("edge", { edgeId: edge.id }) : null;
       const count = anchor ? annotationCount(anchor) : 0;
-      const arc = graphEdgeArc(segment, { zoom: camera.zoom });
-      const middleX = arc.middle.x;
-      const middleY = arc.middle.y;
-      return `<g class="graph-edge-group" data-edge="${edgeId}"><path class="graph-edge" aria-hidden="true" style="stroke-width:${graphEdgeStrokeWidth(camera.zoom)}" d="${arc.d}"/><path class="graph-edge-hit ${annotatable ? "" : "hidden"}" tabindex="0" role="button" aria-label="Open relationship comments" d="${arc.d}"/>${annotatable && count ? `<g class="edge-annotation-badge" aria-hidden="true" transform="translate(${middleX} ${middleY})"><circle r="9"></circle><text y="3">${count}</text></g>` : ""}</g>`;
+      const path = graphEdgePath(graphEdgeShape, graphScreenPoint(a, camera), graphScreenPoint(b, camera), {
+        sourceBox: pillBox(a),
+        targetBox: pillBox(b),
+        circle: layerCircle,
+        zoom: camera.zoom,
+      });
+      const middleX = path.middle.x;
+      const middleY = path.middle.y;
+      return `<g class="graph-edge-group" data-edge="${edgeId}"><path class="graph-edge" aria-hidden="true" style="stroke-width:${graphEdgeStrokeWidth(camera.zoom)}" d="${path.d}"/><path class="graph-edge-hit ${annotatable ? "" : "hidden"}" tabindex="0" role="button" aria-label="Open relationship comments" d="${path.d}"/>${annotatable && count ? `<g class="edge-annotation-badge" aria-hidden="true" transform="translate(${middleX} ${middleY})"><circle r="9"></circle><text y="3">${count}</text></g>` : ""}</g>`;
     }).join("");
     if (annotationEnabled) {
       $$("[data-edge]").forEach((group) => {

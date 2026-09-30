@@ -49,8 +49,8 @@ describe("interaction-scoped replacement repair", () => {
     const client = graph();
     const original = client.bindNode(node("answer"));
     const repair = client.bindNode(node("answer"));
-    const sourceLayer = new LayerObject([original], [], new LayerLayoutObject([]), "source");
-    const target = new LayerObject([], [], new LayerLayoutObject([]), "target");
+    const sourceLayer = new LayerObject([original], [], new LayerLayoutObject([], "default"), "source");
+    const target = new LayerObject([], [], new LayerLayoutObject([], "default"), "target");
     const page = html`
       <button gc=${detailCapability.expand("expand", { kind: "navigate", relation: "expand", label: "Expand", sourceLayer, target, clientKey: "expand" })}>Expand</button>
       <button gc=${detailCapability.reference("reference", { kind: "navigate", relation: "reference", label: "Reference", sourceLayer, target, clientKey: "reference" })}>Reference</button>
@@ -77,7 +77,7 @@ describe("interaction-scoped replacement repair", () => {
   it("cannot acquire action provenance by reusing an invalid first attachment", () => {
     const client = graph();
     const original = client.bindNode(node("answer")), repair = client.bindNode(node("answer"));
-    const sourceLayer = new LayerObject([repair], [], new LayerLayoutObject([]), "source");
+    const sourceLayer = new LayerObject([repair], [], new LayerLayoutObject([], "default"), "source");
     const page = html`<button gc=${detailCapability.invoke("run", { kind: "invoke", label: "Run", interactionText: "Run", sourceLayer, clientKey: "run" })}>Run</button>`;
     original.detailAuthoring.setComponent("main", page);
     repair.detailAuthoring.setComponent("main", page);
@@ -90,7 +90,7 @@ describe("interaction-scoped replacement repair", () => {
     const client = graph();
     const original = client.bindNode(node("answer")), repair = client.bindNode(node("answer"));
     const stranger = client.bindNode(node("answer"));
-    const sourceLayer = new LayerObject([original], [], new LayerLayoutObject([]), "source");
+    const sourceLayer = new LayerObject([original], [], new LayerLayoutObject([], "default"), "source");
     const capability = detailCapability.invoke("run", { kind: "invoke", label: "Run", interactionText: "Run", sourceLayer, clientKey: "run" });
     const page = html`<button gc=${capability}>Run</button>`;
     original.detailAuthoring.setComponent("main", page);

@@ -139,3 +139,13 @@ export function graphLayoutSignature(layer, nodes, edges) {
     } : null,
   });
 }
+
+// A layer's reading order is the order of its authored placements. Layers
+// without a layout keep their node order.
+export function nodesInReadingOrder(layer, nodes) {
+  const placements = layer?.layer?.layout?.placements;
+  if (!Array.isArray(placements)) return nodes;
+  const rank = new Map(placements.map((placement, index) => [String(placement.nodeId), index]));
+  const position = (node) => rank.get(String(node.id)) ?? placements.length;
+  return [...nodes].sort((left, right) => position(left) - position(right));
+}

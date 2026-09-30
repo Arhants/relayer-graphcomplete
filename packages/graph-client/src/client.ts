@@ -250,6 +250,7 @@ export class RelayerGraphClient {
             x: placement.x,
             y: placement.y,
           })),
+          edgeShape: layer.layout.edgeShape,
         },
         sizeJustification: options.sizeJustification,
       }),

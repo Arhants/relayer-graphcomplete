@@ -5,7 +5,6 @@ import { describe, expect, it } from "vitest";
 import { designCss, loadDesignFonts, resolveDesignPath, shareImageSvg } from "../scripts/design/build.mjs";
 import { loadStructure } from "../scripts/design/validate.mjs";
 import { RELAYER_ICON_NAMES, relayerIconFamily } from "../desktop/renderer/src/product-workspace/icons.js";
-import { graphEdgeArc } from "../desktop/renderer/src/product-workspace/workspace.js";
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 // Custom properties the renderer sets from JavaScript at runtime.
@@ -72,19 +71,5 @@ describe("Sticker structure", () => {
     expect(counts).toEqual({ f1: 13, f2: 18, f3: 26, f4: 26, f5: 12, f6: 10, neutral: 23 });
     expect([relayerIconFamily("MessagesSquare"), relayerIconFamily("messagessquare"), relayerIconFamily("not-an-icon"), relayerIconFamily(undefined)])
       .toEqual(["f5", "f5", "neutral", "neutral"]);
-  });
-
-  it("bends each edge to the left of its own direction by a capped amount", () => {
-    // Heading right, left is up: a 200px edge bends 24px (0.12 x chord).
-    const right = graphEdgeArc({ x1: 0, y1: 100, x2: 200, y2: 100 });
-    expect(right.middle).toEqual({ x: 100, y: 76 });
-    expect(right.d).toMatch(/^M0 100A\d+(\.\d+)? \d+(\.\d+)? 0 0 1 200 100$/);
-    // The same edge the other way round bends the other way; nothing else about the layer matters.
-    expect(graphEdgeArc({ x1: 200, y1: 100, x2: 0, y2: 100 }).middle).toEqual({ x: 100, y: 124 });
-    // Long edges bend at most 24px, scaled by zoom; tiny edges are straight.
-    expect(graphEdgeArc({ x1: 0, y1: 100, x2: 1000, y2: 100 }).middle).toEqual({ x: 500, y: 76 });
-    expect(graphEdgeArc({ x1: 0, y1: 100, x2: 1000, y2: 100 }, { zoom: 0.5 }).middle).toEqual({ x: 500, y: 88 });
-    expect(graphEdgeArc({ x1: 5, y1: 5, x2: 5, y2: 5 }).d).toBe("M5 5L5 5");
-    expect(graphEdgeArc({ x1: 0, y1: 0, x2: 3, y2: 0 }).d).toBe("M0 0L3 0");
   });
 });
