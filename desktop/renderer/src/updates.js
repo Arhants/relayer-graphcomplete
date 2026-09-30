@@ -25,13 +25,17 @@ export function renderUpdate(next) {
     available: `Version ${updateState.availableVersion} available`,
     downloading: `Downloading · ${updateState.percent || 0}%`,
     ready: "Ready to restart",
-    failed: "Couldn’t check for updates",
+    failed: updateState.errorStage === "download" ? "Couldn’t download the update"
+      : updateState.errorStage === "install" ? "Couldn’t install the update"
+        : updateState.errorStage === "update" ? "Couldn’t finish the update" : "Couldn’t check for updates",
   };
-  $("#updateStatus").textContent = labels[updateState.phase] || updateState.phase;
+  const detail = updateState.phase === "failed" && updateState.error
+    ? `${labels.failed}. ${updateState.error}` : labels[updateState.phase] || updateState.phase;
+  $("#updateStatus").textContent = detail;
   $("#updateTitle").textContent = updateState.phase === "ready" ? "Ready to restart"
     : updateState.phase === "failed" ? "Update failed"
       : "Update available";
-  $("#updateDetail").textContent = labels[updateState.phase] || "A newer Relayer build is available.";
+  $("#updateDetail").textContent = detail;
   $("#updateAction").textContent = updateState.phase === "ready" ? "Restart to update"
     : updateState.phase === "failed" ? "Try again"
       : updateState.phase === "downloading" ? `Downloading ${updateState.percent || 0}%`

@@ -1440,6 +1440,7 @@ type InteractionModelBinding = {
 <li>When an update is available, a small highlighted circular download icon appears at the bottom-right of the sidebar. No version number or update label is permanently shown.</li>
 <li>Clicking the icon opens one compact prompt describing the update with a single <code>Download update</code> action and a dismiss control.</li>
 <li>Download and verification occur without blocking chat. Installation is deferred while Complete is committing graph work.</li>
+<li>When an update operation fails, Settings and the update prompt show the failed operation and a safe explanation with a diagnostic code. Retry clears the prior failure when discovery resumes. A local updater history survives app restart and retains at most 256 KiB. It records time, operation, phase, channel, app and offered versions, platform, architecture, approved failure codes, and HTTP status. It excludes raw exceptions, URLs, headers, response bodies, paths, and credentials. Diagnostic storage failure never blocks updating. Handled updater failures are not sent to telemetry.</li>
 <li>Before installation, Relayer saves the product state. On first launch, SQLite applies each recognized migration in a transaction. It validates the new schema before it serves product data. If migration or startup fails, Relayer must fail closed. It must not change the last recoverable database state. It must offer a recovery procedure. It must not install an older binary automatically.</li>
 </ol>
 <h3>10.3 Verification</h3>

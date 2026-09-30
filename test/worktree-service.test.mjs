@@ -215,7 +215,8 @@ describe('real Git worktree lifecycle', () => {
     }, 30_000);
     test('blocks unknown defaults, changed bases and retains created tree when subfolder absent', async () => {
         const { repo, service } = await fixture();
-        git(repo, 'config', '--unset', 'init.defaultBranch');
+        // A local unknown default cannot inherit the developer's global default.
+        git(repo, 'config', 'init.defaultBranch', 'unavailable-fixture-default');
         await expect(service.plan({
             repositoryPath: repo
         })).rejects.toMatchObject({

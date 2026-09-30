@@ -15,6 +15,7 @@ import {
 } from "./providers/provider-adapter-registry.mjs";
 import { createProviderComposition } from "./providers/provider-composition.mjs";
 import { createProviderDiagnosticsLog } from "./providers/provider-diagnostics-log.mjs";
+import { createUpdaterDiagnosticsLog } from "./services/updater-diagnostics.mjs";
 import { removeLeftoverEphemeralCodexAuthFiles } from "./providers/ephemeral-codex-auth.mjs";
 import { createProviderRuntimeStateRemover } from "./providers/provider-runtime-state.mjs";
 import {
@@ -38,7 +39,7 @@ import { inspectCodexBrowserMcpRuntime } from "./services/codex-browser-mcp-runt
 import { RelayerAppServerService } from "./services/relayer-app-server.mjs";
 import { installElectronMainErrorAdapter } from "./services/electron-main-error-adapter.mjs";
 import { createCanaryEvidenceLog } from "./services/canary-evidence-log.mjs";
-import { settleShutdownWithin } from "./services/update-restart.mjs";
+import { recoverAfterUpdateInstallFailure, settleShutdownWithin } from "./services/update-restart.mjs";
 import { createDesktopGraphRuntime, productTemporalFeatures } from "./services/graphcomplete-runtime.mjs";
 import {
   inspectPrimeAgentRuntime,
@@ -318,6 +319,9 @@ if (primaryInstance) {
   const providerDiagnostics = createProviderDiagnosticsLog({
     path: join(userDataPath, "logs", "providers.jsonl"),
   });
+  const updaterDiagnostics = createUpdaterDiagnosticsLog({
+    path: join(userDataPath, "logs", "updater.jsonl"),
+  });
 
   const updater = createDesktopUpdater({
     // The platform auto-updater is only used by packaged release artifacts. Reading
@@ -330,6 +334,7 @@ if (primaryInstance) {
       getVersion: () => desktopVersion,
     },
     updateBaseUrl,
+    diagnostics: updaterDiagnostics,
     prefetchRuntimeUpdate: async (info) => {
       if (!providerSetup) return;
       const incoming = parseUpdateRuntimeRequirements(info);
@@ -425,6 +430,7 @@ if (primaryInstance) {
       void authenticatedErrorReporting?.close().catch(() => undefined);
       results.push(...await Promise.allSettled([
         settings.flush(),
+        updaterDiagnostics.flush().catch(() => undefined),
         providerComposition?.close(),
         graphRuntime.close(),
       ]));
@@ -660,10 +666,11 @@ if (primaryInstance) {
         shutdownComplete = true;
         return true;
       },
-      onUpdateInstallFailure: () => {
-        app.relaunch();
-        app.exit(1);
-      },
+      onUpdateInstallFailure: () => recoverAfterUpdateInstallFailure({
+        diagnostics: updaterDiagnostics,
+        relaunch: () => app.relaunch(),
+        exit: (code) => app.exit(code),
+      }),
     });
     mainWindow = await createWindow(productSession);
     primaryInstance.presentPendingWindow();

@@ -1,4 +1,5 @@
 import { release as systemRelease } from "node:os";
+import { updaterFailure } from "./updater-diagnostics.mjs";
 
 function numericVersion(value) {
   const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(String(value || ""));
@@ -39,6 +40,7 @@ export function createDesktopUpdater({
   app,
   emit,
   updateBaseUrl,
+  diagnostics,
   prefetchRuntimeUpdate = async () => {},
   onRuntimePrefetchFailure = () => {},
   platform = process.platform,
@@ -56,12 +58,42 @@ export function createDesktopUpdater({
   let launchTimer = null;
   let launchCheckScheduled = false;
   let displayedDownloadPercent = 0;
+  let stage = "check";
+  let failurePublished = false;
+  let checking = false;
+  let downloading = false;
+  let installing = false;
   let state = { phase: app.isPackaged ? "idle" : "development", channel, version: app.getVersion() };
+  const record = (event = "state") => {
+    // Diagnostic storage failure must never change the update result.
+    try { void Promise.resolve(diagnostics?.write(state, stage, event)).catch(() => undefined); } catch { /* best effort */ }
+  };
   const publish = (patch) => {
+    const previousPhase = state.phase;
+    const previousChannel = state.channel;
+    const previousAvailableVersion = state.availableVersion;
     state = { ...state, ...patch, channel, version: app.getVersion() };
+    if (patch.error === null) state = { ...state, errorCode: null, errorStage: null, errorStatus: null };
+    if (state.phase !== previousPhase || state.channel !== previousChannel || state.availableVersion !== previousAvailableVersion || patch.phase === "failed") record();
     emit(state);
     return state;
   };
+  const fail = (error, failedStage = installing ? "install" : checking && downloading ? "update" : downloading ? "download" : checking ? "check" : stage) => {
+    if (failurePublished && state.errorStage === failedStage) return state;
+    failurePublished = true;
+    // Native errors can arrive only as events, without a rejected method.
+    // Retrying after that terminal failure must not inherit the old owner.
+    if (failedStage === "install") installing = false;
+    if (failedStage === "download" || failedStage === "update") downloading = false;
+    if (failedStage === "check" || failedStage === "update") checking = false;
+    return publish({ phase: "failed", ...updaterFailure(error, failedStage) });
+  };
+  const begin = (nextStage) => {
+    stage = nextStage;
+    failurePublished = false;
+    record("attempt");
+  };
+  record();
   const resetDownloadProgress = () => {
     displayedDownloadPercent = 0;
   };
@@ -109,13 +141,14 @@ export function createDesktopUpdater({
     });
     autoUpdater.on("download-progress", (progress) => {
       if (state.phase === "ready") return;
-      publish({ phase: "downloading", percent: nextDownloadPercent(progress.percent) });
+      publish({ phase: "downloading", percent: nextDownloadPercent(progress.percent), error: null });
     });
     autoUpdater.on("update-downloaded", (info) => {
+      downloading = false;
       displayedDownloadPercent = 100;
-      publish({ phase: "ready", availableVersion: info.version, percent: 100 });
+      publish({ phase: "ready", availableVersion: info.version, percent: 100, error: null });
     });
-    autoUpdater.on("error", (error) => publish({ phase: "failed", error: error.message }));
+    autoUpdater.on("error", (error) => fail(error));
   }
 
   const configureFeed = () => {
@@ -132,12 +165,16 @@ export function createDesktopUpdater({
 
   async function check() {
     if (!app.isPackaged) return publish({ phase: "development", error: null });
-    configureFeed();
+    begin("check");
+    checking = true;
     try {
+      configureFeed();
       await autoUpdater.checkForUpdates();
       return state;
     } catch (error) {
-      return state.phase === "failed" ? state : publish({ phase: "failed", error: error.message });
+      return fail(error, "check");
+    } finally {
+      checking = false;
     }
   }
 
@@ -199,15 +236,29 @@ export function createDesktopUpdater({
     async download() {
       if (!app.isPackaged) throw new Error("Updates are available only in packaged builds.");
       resetDownloadProgress();
+      begin("download");
+      downloading = true;
       if (availableInfo !== null) {
         void Promise.resolve(prefetchRuntimeUpdate(availableInfo)).catch(onRuntimePrefetchFailure);
       }
-      await autoUpdater.downloadUpdate();
-      return state;
+      try {
+        await autoUpdater.downloadUpdate();
+        return state;
+      } catch (error) {
+        fail(error, "download");
+        downloading = false;
+        throw new Error(state.error);
+      }
     },
     install() {
       if (state.phase !== "ready") throw new Error("No verified update is ready to install.");
-      autoUpdater.quitAndInstall(false, true);
+      begin("install");
+      installing = true;
+      try { autoUpdater.quitAndInstall(false, true); } catch (error) {
+        fail(error, "install");
+        installing = false;
+        throw new Error(state.error);
+      }
     },
   };
 }

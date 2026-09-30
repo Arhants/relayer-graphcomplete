@@ -1,8 +1,20 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { settleShutdownWithin } from "../desktop/main/services/update-restart.mjs";
+import { recoverAfterUpdateInstallFailure, settleShutdownWithin } from "../desktop/main/services/update-restart.mjs";
 
 describe("update restart shutdown budget", () => {
+  it("flushes a late install failure before forced exit, without blocking on failed or hung storage", async () => {
+    for (const flush of [async () => {}, async () => { throw new Error("disk full"); }, () => new Promise(() => {})]) {
+      const order = [];
+      await recoverAfterUpdateInstallFailure({
+        diagnostics: { flush: () => { order.push("flush"); return flush(); } },
+        relaunch: () => order.push("relaunch"),
+        exit: (code) => order.push(code),
+        budgetMs: 20,
+      });
+      expect(order).toEqual(["flush", "relaunch", 1]);
+    }
+  });
   it("waits for a shutdown that settles inside the budget", async () => {
     const shutdown = vi.fn(async () => {});
     const onTimeout = vi.fn();
