@@ -7,7 +7,7 @@
     "sha256": "8e2acf9764df076c3e9ce1c02744138a58455ce51390a9bbcda870dba5703a9b"
   },
   "source": {
-    "commit": "133f6e9c2cbbad1ccd18dcded3a6877131181940",
+    "commit": "61f6311ca2a9e6410945ca059597e6ea9e856ee4",
     "dirty": true,
     "sourceFiles": {
       "desktop/renderer/design/design.css": "332eb1b0f3bd8b65b6207a2b4d080499b57ec548c7e3167b1f91c91893a90bf7",
@@ -25,7 +25,7 @@
       "desktop/renderer/src/node-input-controls.js": "5d7bc5fee66a9ace45a01ef9dcebb20b39f1f0b94d7f35f1d61f1ef1f8672584",
       "desktop/renderer/src/product-workspace/annotations.js": "a6d06bc7f20dcb7116533198cb12702b790b9d724d3a08d8ebbc959bcb971510",
       "desktop/renderer/src/product-workspace/composer-submission.js": "e480c7e854b010905c7ac8e9e3b31e9a6193035de7ed8cbadbf64645cc3a2b92",
-      "desktop/renderer/src/product-workspace/edge-shapes.js": "5e95938ac47990ec90574b410cebb9ac275556b65a09f2b472463ee48bc07e47",
+      "desktop/renderer/src/product-workspace/edge-shapes.js": "eb207d003e6b7c1c5d7f257946f90da9e5613a0c927507d658964b4c69556b45",
       "desktop/renderer/src/product-workspace/graph-layout.js": "f11407542b0f7301e1cc44c12b59cdf3a603277d623aabfe65eefb16834601af",
       "desktop/renderer/src/product-workspace/icons.js": "fb39405f2b9bd7878f019958514f8f156fb3e16f730a48ab3ccf5619240d6014",
       "desktop/renderer/src/product-workspace/index.js": "997f671fdfa819657a691dd9e8f6741a4d07ca96dcdb7b8230c5e039353c9f7b",
@@ -116,7 +116,7 @@
         "edges": 5,
         "directionMarkers": 0
       },
-      "sha256": "0c84e7547afe96e90b08ef3a02a2c41521faa122f5e3eaf0d02d1107c8aac2e4",
+      "sha256": "4d56eee1f2f39a5dac0a3f860a4a2166da360a23d240b131a680cf164e97ed10",
       "sourcePixelSize": {
         "width": 2560,
         "height": 1600
@@ -292,7 +292,7 @@
         "edges": 6,
         "directionMarkers": 0
       },
-      "sha256": "fd72d10982ebf6ae58fceeb9d7b85e3b3adf7ec3dd226f7a14307556af6d5d30",
+      "sha256": "72e205e382916a01de696d525f7a7f8da06a670cdfab8c0303dae13aa221c30b",
       "sourcePixelSize": {
         "width": 2560,
         "height": 1600
@@ -358,7 +358,7 @@
         "edges": 5,
         "directionMarkers": 0
       },
-      "sha256": "cd92c96605ed4635b3095bad93f988a1cad3cefd3128efb0669ffac1e723842e",
+      "sha256": "239d3f7eb6e31afe85bc493826ba78a2922206cee9231e50d6e0415f3590bfff",
       "sourcePixelSize": {
         "width": 2560,
         "height": 1600
@@ -534,7 +534,7 @@
         "edges": 6,
         "directionMarkers": 0
       },
-      "sha256": "c19ef2551cd284761f0ef50b1657059dbdbd7e34f810469373e390066a7d0264",
+      "sha256": "c6f270265dc99e86ed2ba572d51772c62fc5d8770144599a5616dc89a384b191",
       "sourcePixelSize": {
         "width": 2560,
         "height": 1600
