@@ -43,6 +43,10 @@ struct Arguments {
     ladybug_qualification_hold: bool,
     #[arg(long, default_value_t = false)]
     authenticated_error_capability_stdin: bool,
+    /// Draft-preview renders allowed per interaction before writes return
+    /// `limit_reached` (PRD §11.10).
+    #[arg(long, default_value_t = 100)]
+    draft_preview_limit: u32,
 }
 
 #[tokio::main]
@@ -111,7 +115,8 @@ async fn run(
     };
     let state = open_server_state(&arguments.database, control_token, temporal_features)
         .await
-        .context("open graph database")?;
+        .context("open graph database")?
+        .with_draft_preview_limit(arguments.draft_preview_limit);
     state
         .set_interaction_permissions_enabled(arguments.interaction_permissions)
         .await?;

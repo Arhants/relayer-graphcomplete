@@ -6,7 +6,7 @@ import json
 import os
 import socket
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Literal, Mapping, Sequence, TypedDict
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -15,6 +15,7 @@ from .exceptions import (APIError, AuthenticationError, ConfigurationError,
                          GraphQueryError, NotFound, TransportError,
                          ValidationError, ValidationIssue)
 from .detail import NodeDetailAuthoring, _create_owned_authoring
+from .preview import GraphPreview, materialize_preview
 from .visual_assets import GraphVisualAssets
 from .query import GraphSearchRequest, GraphSearchResult
 from .query_errors_generated import (GRAPH_QUERY_CONTRACT_VERSION,
@@ -31,6 +32,7 @@ class GraphNode:
     state: str
     leased_action_id: int | None = None
     authored_detail: Mapping[str, Any] | None = None
+    preview: GraphPreview | None = None
 
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> "GraphNode":
@@ -158,6 +160,7 @@ class GraphLayer:
     state: str
     layout: LayerLayout | None = None
     default_node_id: int | None = None
+    preview: GraphPreview | None = None
 
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> "GraphLayer":
@@ -240,13 +243,15 @@ class CompletionInputGraph:
 
 
 class RelayerGraphClient:
-    def __init__(self, url: str, token: str, node_id: int, *, timeout: float = 30.0) -> None:
+    def __init__(self, url: str, token: str, node_id: int, *, timeout: float = 30.0,
+                 preview_directory: str | None = None) -> None:
         if not url or not token or node_id < 1:
             raise ConfigurationError("url, token, and a positive node_id are required")
         self.url = url.rstrip("/")
         self.token = token
         self.node_id = node_id
         self.timeout = timeout
+        self.preview_directory = preview_directory
         self.visual_assets = GraphVisualAssets(self)
 
     async def __aenter__(self) -> "RelayerGraphClient":
@@ -259,7 +264,8 @@ class RelayerGraphClient:
     def from_env(cls, *, timeout: float = 30.0) -> "RelayerGraphClient":
         try:
             return cls(os.environ["RELAYER_GRAPH_URL"], os.environ["RELAYER_GRAPH_TOKEN"],
-                       int(os.environ["RELAYER_NODE_ID"]), timeout=timeout)
+                       int(os.environ["RELAYER_NODE_ID"]), timeout=timeout,
+                       preview_directory=os.environ.get("RELAYER_GRAPH_PREVIEW_DIR") or None)
         except (KeyError, ValueError) as error:
             raise ConfigurationError("RELAYER_GRAPH_URL, RELAYER_GRAPH_TOKEN, and RELAYER_NODE_ID are required") from error
 
@@ -292,7 +298,11 @@ class RelayerGraphClient:
             "title": node.title, "detail": node.detail,
         })
         node.ref = GraphNode.from_dict(value["node"])
-        return node.ref
+        return self._with_preview(node.ref, value.get("preview"), f"node-{node.ref.id}")
+
+    def _with_preview(self, record: Any, preview: Any, target: str) -> Any:
+        materialized = materialize_preview(preview, self.preview_directory, target)
+        return record if materialized is None else replace(record, preview=materialized)
 
     async def create_edge(self, left: NodeReference | EdgeObject, right: NodeReference | None = None,
                           *, client_key: str | None = None) -> GraphEdge:
@@ -320,7 +330,7 @@ class RelayerGraphClient:
             "sizeJustification": size_justification,
         })
         layer.ref = GraphLayer.from_dict(value["layer"])
-        return layer.ref
+        return self._with_preview(layer.ref, value.get("preview"), f"layer-{layer.ref.id}")
 
     async def add_navigate_action(self, source: NodeReference, label: str, target: LayerReference,
                                   *, relation: NavigateRelation, client_key: str,

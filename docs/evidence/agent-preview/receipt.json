@@ -1,0 +1,84 @@
+{
+  "sourceFiles": {
+    "crates/relayer-graph-server/src/draft_preview.rs": "cb7973e6fbbbc3b69b47adc2ed7849f701e0943a7af9ab8be880dd08ce44c977",
+    "crates/relayer-graph-server/src/lib.rs": "2ad5045d15daa879f24f492e6733bb385c1e83bf9a527108a707997e35f50db3",
+    "desktop/main/services/graphcomplete-runtime.mjs": "f0cd135c7d71c7ebd877e4193d5ae11531ffcaf9a100d01e4293d55f7d6f0876",
+    "packages/harness-host/src/host.ts": "0b3d17726d90ff9dde938895a2acbbaeb6db828d5ffc126967137a63964bc6bd",
+    "desktop/renderer/src/public-share-viewer/adapter.js": "da4135effa876c2d8a58f7b650d2ac6c536f9eb8b0d3056e6630505d0a039021",
+    "desktop/main/services/draft-preview-renderer.mjs": "901e590437d73b44b0b967dc84aacb15e56261c863caf06459617ab5c31250de",
+    "desktop/main/services/isolated-page-capture.mjs": "cf25441b41c1efe4f55672e315e769fe11393548ff7fa727648c86d526a894f6",
+    "desktop/renderer/src/draft-preview/main.js": "6268869e3829f152dab572dcc3c604bdf6eee06edea279cae10a225f3788e714",
+    "desktop/renderer/src/draft-preview/snapshot.js": "49ea7d513eb493579772edb27b6027476f74daf3cfe1e01b54647f0e07d6a5bf",
+    "desktop/renderer/src/draft-preview/template.js": "f3f759be12b7cf87ffe9b010c92ac16e44418535ea691f52b7bd5b74fe677541",
+    "packages/eval-runner/src/fixtures/graph-preview.ts": "3f797a7d04e854f21889db16963df98cb8005c959c3cb962c135f0f2f58fbf6d",
+    "scripts/capture-agent-preview-evidence.mjs": "84c128a0bc597f344eb927274ae560a9fd17630ba2bdb227d0eba56d3678c453"
+  },
+  "captures": [
+    {
+      "theme": "light",
+      "file": "light-node.png",
+      "width": 576,
+      "height": 844,
+      "bytes": 21549,
+      "sha256": "690bb9ebba0c0c19c1bc2c703503c7e69d930368f2c2728f2942203a32ba6aae"
+    },
+    {
+      "theme": "light",
+      "file": "light-layer.png",
+      "width": 1164,
+      "height": 703,
+      "bytes": 31320,
+      "sha256": "9b16566561b01656782e5c01404efd4e5eed241b4d4b665fcbd4a63f15f9415b"
+    },
+    {
+      "theme": "light",
+      "file": "light-moved-layer.png",
+      "width": 1164,
+      "height": 703,
+      "bytes": 30242,
+      "sha256": "2052ced0375f64c70afae311c3ddc603f37eccfc1ff578de429f9d7d268fd324"
+    },
+    {
+      "theme": "dark",
+      "file": "dark-node.png",
+      "width": 576,
+      "height": 844,
+      "bytes": 19564,
+      "sha256": "b3f568c801d4b59a06eadbeaa7718355f0f035288be6956016ce72ab1e9661c5"
+    },
+    {
+      "theme": "dark",
+      "file": "dark-layer.png",
+      "width": 1164,
+      "height": 703,
+      "bytes": 29189,
+      "sha256": "f1dfd6ad13a3c02b805dd9f45de13b49069f717703c0c9407b170d9110ad3037"
+    },
+    {
+      "theme": "dark",
+      "file": "dark-moved-layer.png",
+      "width": 1164,
+      "height": 703,
+      "bytes": 28153,
+      "sha256": "65b110016487ad0e436f0d2b93f90ee1c6d135ddaa8667a636fd03b67a577746"
+    }
+  ],
+  "inAppFrames": {
+    "contentSize": [
+      1420,
+      900
+    ],
+    "layer": {
+      "width": 1164,
+      "height": 703
+    },
+    "node": {
+      "width": 576,
+      "height": 844
+    }
+  },
+  "isolation": "passed",
+  "windowCleanup": "passed",
+  "platform": "macOS ARM64",
+  "electron": "43.0.0"
+}

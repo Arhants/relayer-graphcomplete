@@ -290,6 +290,27 @@ impl GraphWriter {
         Ok(asset)
     }
 
+    /// Reads an asset of any node this writer can see, draft included, for the
+    /// caller's own draft preview (PRD §11.10).
+    pub async fn visible_detail_asset(
+        &self,
+        node_id: NodeId,
+        asset_id: &str,
+    ) -> Result<crate::AcceptedDetailAsset, GraphError> {
+        let mut transaction = self.database.storage.begin_read().await?;
+        self.scope
+            .require_active_authority(&mut transaction)
+            .await?;
+        NodeTable::new(&mut transaction)
+            .visible(&self.scope, node_id)
+            .await?;
+        let asset = AuthoredDetailAssetTable::new(&mut transaction)
+            .read_any_state(node_id, asset_id)
+            .await?;
+        transaction.commit().await?;
+        Ok(asset)
+    }
+
     pub async fn create_edge(&self, draft: &EdgeDraft) -> Result<GraphEdge, GraphError> {
         let endpoints = draft.validate()?;
         let mut transaction = self.database.storage.begin_write().await?;

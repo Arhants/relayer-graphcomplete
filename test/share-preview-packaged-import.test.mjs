@@ -13,6 +13,7 @@ it("imports the packaged capture service and loads its external renderer templat
     await mkdir(join(resources, "app/main/services"), { recursive: true });
     await mkdir(join(rendererDirectory, "src/public-share-viewer"), { recursive: true });
     await copyFile(new URL("../desktop/main/services/share-preview-capture.mjs", import.meta.url), service);
+    await copyFile(new URL("../desktop/main/services/isolated-page-capture.mjs", import.meta.url), join(resources, "app/main/services/isolated-page-capture.mjs"));
     await copyFile(new URL("../desktop/renderer/src/public-share-viewer/template.js", import.meta.url), join(rendererDirectory, "src/public-share-viewer/template.js"));
     const { createSharePreviewCapture } = await import(pathToFileURL(service).href);
     let html;

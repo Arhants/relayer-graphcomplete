@@ -2,7 +2,7 @@ schemaVersion: 1
 name: codex-basic
 implementation: codex.basic
 implementationVersion: 1
-revision: 8
+revision: 9
 complete:
   agentAuthored: true
 permissionBindings:
@@ -39,6 +39,7 @@ modelDefaults:
     version: 3
 graphCapabilityProfile:
   search: query-v1
+  preview: enabled
 settings:
   personalPresentationVersion: personal-presentation-v4
   modelReasoningEffort: medium

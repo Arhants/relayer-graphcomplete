@@ -38,6 +38,8 @@ export interface HarnessCompleteConfiguration {
 
 export interface GraphCapabilityProfile {
   readonly search: "disabled" | "query-v1";
+  /** Draft previews (PRD §11.10). Omission means disabled. */
+  readonly preview?: "enabled";
 }
 
 export interface HarnessConfiguration {
@@ -54,7 +56,7 @@ export interface HarnessConfiguration {
   readonly modelDefaults?: HarnessModelDefaults;
   /** Explicit authority to expose agent-authored complete(inputGraph); root Complete is unaffected. */
   readonly complete?: HarnessCompleteConfiguration;
-  /** Product-owned graph authority. Omission is equivalent to search disabled. */
+  /** Product-owned graph authority. Omission is equivalent to search and preview disabled. */
   readonly graphCapabilityProfile?: GraphCapabilityProfile;
   readonly settings: JsonObject;
 }
@@ -106,7 +108,8 @@ export type CoreTraceEventType =
   | "warning"
   | "error"
   | "cancelled"
-  | "truncated";
+  | "truncated"
+  | "graph.preview";
 
 export interface HarnessTraceEventInput {
   readonly type: CoreTraceEventType | "provider.event";
@@ -203,6 +206,25 @@ export interface HarnessTraceDescriptor {
   readonly error?: string;
   readonly personalPresentationVersionId?: number;
   readonly personalPresentationVersionKey?: string;
+}
+
+/** One draft-preview render the graph server asked for (PRD §11.10). */
+export interface DraftPreviewRenderRequest {
+  readonly interactionNodeId: GraphId;
+  readonly fingerprint: string;
+  /** The graph server's draft snapshot: target, layer, nodes, edges and assets. */
+  readonly snapshot: JsonObject;
+}
+
+export interface DraftPreviewImage {
+  readonly png: Uint8Array;
+  readonly width: number;
+  readonly height: number;
+}
+
+/** A host renderer: Electron on desktop, headless Chromium in Eval. */
+export interface DraftPreviewRenderer {
+  render(request: DraftPreviewRenderRequest): Promise<DraftPreviewImage>;
 }
 
 export interface HarnessGraphScope {

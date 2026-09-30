@@ -31,6 +31,7 @@ export function evalHarnessConfigurationPaths({
     join(harnessDirectory, "fixture-task-system.yaml"),
     join(harnessDirectory, "fixture-human-task.yaml"),
     join(harnessDirectory, "fixture-node-detail.yaml"),
+    join(harnessDirectory, "fixture-graph-preview.yaml"),
     ...(graphSearchQualified ? [join(harnessDirectory, "fixture-graph-memory.yaml")] : []),
     join(harnessDirectory, "codex-basic.yaml"),
     join(harnessDirectory, "codex-basic-high.yaml"),

@@ -1,9 +1,10 @@
 import { NativeExecutionCancelled } from "./completion-execution.js";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { Socket } from "node:net";
-import { dirname, resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { GraphApiError, RelayerGraphClient, type GraphCapability, type GraphId } from "@relayer/graph-client";
 import {
   VisualAssetsError,
@@ -26,6 +27,7 @@ import {
   parseHarnessConfiguration,
   harnessAllowsAgentAuthoredComplete,
   harnessAllowsModel,
+  resolveGraphCapabilityProfile,
   sameHarnessExecutionConfiguration,
 } from "./configuration.js";
 import { resolveHarnessFactory } from "./registry.js";
@@ -37,6 +39,7 @@ import {
   type HarnessTraceStoreOptions,
 } from "./trace.js";
 import type {
+  DraftPreviewRenderer,
   Harness,
   HarnessCompleteResult,
   HarnessConfiguration,
@@ -237,6 +240,11 @@ export interface HarnessHostOptions {
     readonly generation: number;
     readonly library: FileVisualAssetsLibrary;
   };
+  /** The render bridge the graph server calls for draft previews (PRD §11.10). */
+  readonly draftPreviews?: {
+    readonly token: string;
+    readonly renderer: DraftPreviewRenderer;
+  };
 }
 
 export interface RunningHarnessHost {
@@ -263,9 +271,45 @@ export class HarnessHost {
   private closePromise: Promise<void> | undefined;
   private forceClosePromise: Promise<void> | undefined;
   private readonly traceStore: HarnessTraceStore | undefined;
+  /** Active completions with preview support, keyed by interaction node, for trace metadata. */
+  private readonly previewTraces = new Map<number, HarnessTraceSink>();
 
   constructor(private readonly options: HarnessHostOptions) {
     this.traceStore = options.trace === undefined ? undefined : new HarnessTraceStore(options.trace);
+  }
+
+  /**
+   * Renders one draft preview for the graph server. The trace records metadata
+   * only; the image goes back to the graph server and never into the trace.
+   */
+  async renderDraftPreview(input: unknown): Promise<{ pngBase64: string; width: number; height: number }> {
+    const renderer = this.options.draftPreviews?.renderer;
+    if (renderer === undefined) throw new Error("Draft previews are unavailable");
+    const request = readDraftPreviewRequest(input);
+    const trace = this.previewTraces.get(request.interactionNodeId);
+    const started = Date.now();
+    const target = request.snapshot.target as JsonObject;
+    try {
+      const image = await renderer.render(request);
+      if (!isPng(image.png) || !positiveInteger(image.width) || !positiveInteger(image.height)) {
+        throw new Error("Draft preview renderer returned an invalid image");
+      }
+      trace?.emit({
+        type: "graph.preview",
+        data: {
+          outcome: "rendered", target, fingerprint: request.fingerprint,
+          width: image.width, height: image.height, byteLength: image.png.byteLength,
+          durationMs: Date.now() - started,
+        },
+      });
+      return { pngBase64: Buffer.from(image.png).toString("base64"), width: image.width, height: image.height };
+    } catch (error) {
+      trace?.emit({
+        type: "graph.preview",
+        data: { outcome: "failed", target, fingerprint: request.fingerprint, durationMs: Date.now() - started },
+      });
+      throw error;
+    }
   }
 
   async visualAssetOperation(input: unknown): Promise<unknown> {
@@ -1191,7 +1235,6 @@ export class HarnessHost {
       && personalPresentation?.attachment.versionInteractionNodeId !== expectedPersonalPresentationVersionId) {
       throw new Error("Attached personal presentation does not match the pinned trace version");
     }
-    const scope = new ActiveHarnessGraphScope(capability);
     const support = session.harness.traceSupport?.() ?? NO_HARNESS_TRACE_SUPPORT;
     const trace = this.traceStore?.start({
       threadId,
@@ -1212,6 +1255,15 @@ export class HarnessHost {
       type: "execution.scope",
       data: { completionBrokerAvailable: completionBroker !== undefined },
     });
+    // Only runs whose configuration declares preview support, on a host with a
+    // renderer, get a preview folder. Its presence is what enables previews.
+    // Created last before the try, so the finally below always removes it.
+    const previewDirectory = this.options.draftPreviews !== undefined
+      && resolveGraphCapabilityProfile(session.descriptor.configuration).preview === "enabled"
+      ? await mkdtemp(join(tmpdir(), "relayer-graph-previews-"))
+      : undefined;
+    const scope = new ActiveHarnessGraphScope(previewDirectory === undefined ? capability : { ...capability, previewDirectory });
+    if (previewDirectory !== undefined) this.previewTraces.set(interactionNodeId, traceSink);
     const observedTrace = new EffectObservingTraceSink(traceSink);
     let completionError: HarnessExecutionFailure | undefined;
     let accessLease: HarnessExecutionAccessLease | undefined;
@@ -1311,6 +1363,11 @@ export class HarnessHost {
       }
     } finally {
       scope.close();
+      if (previewDirectory !== undefined) {
+        this.previewTraces.delete(interactionNodeId);
+        // Preview images are transient: they never outlive the turn.
+        await rm(previewDirectory, { recursive: true, force: true }).catch(() => undefined);
+      }
       // The native turn has ended, was force-stopped, or never started, so nothing uses the
       // claimed access. Only this completion's claim is settled.
       if (claimedExecutionLeaseId !== undefined) this.settleExecutionAccess(claimedExecutionLeaseId);
@@ -1861,6 +1918,17 @@ class HarnessCancellationSettled extends Error {
 async function route(host: HarnessHost, options: HarnessHostOptions, request: IncomingMessage, response: ServerResponse): Promise<void> {
   try {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
+    if (request.method === "POST" && url.pathname === "/draft-previews/render") {
+      if (options.draftPreviews === undefined
+        || request.headers.authorization !== `Bearer ${options.draftPreviews.token}`) {
+        return reply(response, 401, { error: { code: "unauthorized", message: "Draft preview bridge authorization failed" } });
+      }
+      try {
+        return reply(response, 200, { result: await host.renderDraftPreview(await body(request)) });
+      } catch (error) {
+        return reply(response, 500, { error: { code: "draft_preview_failed", message: errorMessage(error) } });
+      }
+    }
     if (request.method === "POST" && url.pathname === "/visual-assets/operations") {
       if (options.visualAssets === undefined
         || request.headers.authorization !== `Bearer ${options.visualAssets.token}`) {
@@ -2036,6 +2104,23 @@ function readExecutionLeaseId(input: unknown): string | undefined {
   const value = (input as { executionLeaseId?: unknown }).executionLeaseId;
   if (typeof value !== "string" || !/^[0-9a-f-]{36}$/iu.test(value)) throw new Error("invalid execution lease ID");
   return value;
+}
+
+function readDraftPreviewRequest(input: unknown): { interactionNodeId: number; fingerprint: string; snapshot: JsonObject } {
+  if (!isJsonObject(input) || input.version !== 1 || !positiveInteger(input.interactionNodeId)
+    || typeof input.fingerprint !== "string" || !isJsonObject(input.snapshot) || !isJsonObject(input.snapshot.target)) {
+    throw new Error("Draft preview request is invalid");
+  }
+  return { interactionNodeId: input.interactionNodeId, fingerprint: input.fingerprint, snapshot: input.snapshot };
+}
+
+function isPng(value: unknown): value is Uint8Array {
+  return value instanceof Uint8Array && value.byteLength > 8
+    && Buffer.from(value.subarray(0, 8)).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+}
+
+function positiveInteger(value: unknown): value is number {
+  return Number.isSafeInteger(value) && (value as number) > 0;
 }
 
 async function body(request: IncomingMessage): Promise<unknown> {

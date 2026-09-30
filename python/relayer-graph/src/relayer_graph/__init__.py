@@ -54,3 +54,6 @@ from .detail import NodeDetailAuthoring, DetailTemplate, html, asset_ref, extern
 from .visual_assets import GraphVisualAssets, VisualAssetFile
 
 __all__ += ["ActionObject", "NodeDetailAuthoring", "DetailTemplate", "html", "asset_ref", "external_link", "action_capability", "GraphVisualAssets", "VisualAssetFile"]
+
+from .preview import GraphPreview
+__all__ += ["GraphPreview"]
