@@ -279,6 +279,8 @@ async function run() {
     await writeFile(path, (await webContents.capturePage()).toPNG());
     return path;
   };
+  const scrollingWorktrees = Array.from({ length: 12 }, (_, index) => join(dataDirectory, `scroll-checkout-${String(index).padStart(2, "0")}`));
+  for (const path of scrollingWorktrees) git("worktree", "add", "--detach", path, "HEAD");
   await openWindow();
 
   const evidence = {};
@@ -287,6 +289,26 @@ async function run() {
   await waitFor("checkout discovery", () => evaluate(`!document.querySelector('#checkoutControl')?.classList.contains('hidden') && document.querySelector('[data-checkout-index]') && document.querySelector('#checkoutButton')?.disabled === false`));
   await setValue("#newThreadPrompt", "Build a deterministic worktree fixture response.");
   await click("#checkoutButton");
+  const scrollingList = await evaluate(`(() => {
+    const list = document.querySelector('.checkout-list');
+    const footer = document.querySelector('#newWorktree').closest('label');
+    const last = list.lastElementChild;
+    const before = footer.getBoundingClientRect().toJSON();
+    list.focus();
+    list.scrollTop = list.scrollHeight;
+    const bounds = list.getBoundingClientRect();
+    const row = last.getBoundingClientRect();
+    const after = footer.getBoundingClientRect().toJSON();
+    return { count: list.children.length, focusable: document.activeElement === list,
+      bounded: list.clientHeight <= 320 && list.clientHeight <= innerHeight - 260,
+      overflow: getComputedStyle(list).overflowY === 'auto' && list.scrollHeight > list.clientHeight,
+      reachedLast: list.scrollTop > 0 && row.top >= bounds.top && row.bottom <= bounds.bottom + 1,
+      footerVisible: !list.contains(footer) && after.top >= 0 && after.bottom <= innerHeight,
+      footerFixed: before.top === after.top && before.bottom === after.bottom };
+  })()`);
+  if (scrollingList.count !== 14 || Object.entries(scrollingList).some(([key, value]) => key !== 'count' && value !== true)) throw new Error('Registered checkout scrolling failed: ' + JSON.stringify(scrollingList));
+  evidence.scrollingCheckouts = await captureEvidence('07-many-registered-checkouts');
+  await evaluate(`void(document.querySelector('.checkout-list').scrollTop = 0)`);
   const linkedIndex = await evaluate(`Array.from(document.querySelectorAll('[data-checkout-index]')).find(button => button.textContent.includes('external-branch'))?.dataset.checkoutIndex`);
   if (linkedIndex === undefined) throw new Error("External registered worktree is missing from Checkout.");
   await click(`[data-checkout-index="${linkedIndex}"]`);
@@ -295,6 +317,7 @@ async function run() {
   if (selectedDraft.scope.path !== realpathSync(linkedDirectory)) throw new Error("Existing worktree selection did not bind exact path.");
   await click("#checkoutButton");
   const mainIndex = await evaluate(`Array.from(document.querySelectorAll('[data-checkout-index]')).find(button => button.querySelector('span')?.textContent === 'main')?.dataset.checkoutIndex`);
+  for (const path of scrollingWorktrees) git("worktree", "remove", path);
   await click(`[data-checkout-index="${mainIndex}"]`);
   await waitFor("returned main checkout", () => evaluate(`document.querySelector('#folderSummary')?.textContent.includes('relayer-graphcomplete') && document.querySelector('#checkoutButton')?.disabled === false`));
   await click("#checkoutButton");
@@ -457,6 +480,7 @@ async function run() {
   await waitFor("history readable despite absent cwd", () => evaluate(`document.querySelectorAll('.graph-node').length > 0`));
   evidence.missingHistory = await captureEvidence("05-missing-location-readable-history");
   const checkpoints = {
+    registeredCheckoutListScroll: true,
     externalCheckoutSelection: true, cachedRemoteDefaultBase: true,
     sendOnlyMutation: true, interruptedCreateDurableReopenReuse: true,
     exactThreadWorkingDirectory: true, selectedCommittedBase: true,
@@ -465,7 +489,7 @@ async function run() {
     rootConsolidationAcceptedLayerVisibility: true, harnessReceivesExactCwd: true,
     environmentSelectedCheckout: true, environmentRejectsForeignThread: true, environmentIgnoresStaleThreadResponse: true,
   };
-  const sources = ["scripts/test-desktop-worktrees.mjs", "scripts/run-worktree-test.mjs", "desktop/main/services/worktree-service.mjs", "desktop/main/ipc/register-ipc.mjs", "desktop/preload/index.cjs", "desktop/renderer/src/checkout.js", "desktop/renderer/src/worktree-controller.js", "desktop/renderer/src/threads.js", "desktop/renderer/src/composer-drafts.js", "desktop/renderer/src/environment-context.js", "desktop/renderer/src/product-workspace/workspace.js", "crates/relayer-app-server/src/api/environment.rs"];
+  const sources = ["scripts/test-desktop-worktrees.mjs", "scripts/run-worktree-test.mjs", "desktop/main/services/worktree-service.mjs", "desktop/main/ipc/register-ipc.mjs", "desktop/preload/index.cjs", "desktop/renderer/src/checkout.js", "desktop/renderer/styles.css", "desktop/renderer/src/worktree-controller.js", "desktop/renderer/src/threads.js", "desktop/renderer/src/composer-drafts.js", "desktop/renderer/src/environment-context.js", "desktop/renderer/src/product-workspace/workspace.js", "crates/relayer-app-server/src/api/environment.rs"];
   const sourceHashes = Object.fromEntries(sources.map(path => [path, createHash("sha256").update(readFileSync(join(repositoryRoot, path))).digest("hex")]));
   const binaryHashes = Object.fromEntries(["relayer-app-server", "relayer-graph-server"].map(name => [name, createHash("sha256").update(readFileSync(join(nativeTargetDirectory, "debug", name))).digest("hex")]));
   await writeFile(join(evidenceDirectory, "result.json"), JSON.stringify({ passed: true, restartPersistence: true, checkpoints, sourceHashes, binaryHashes, planId, workingDirectory: thread.workingDirectory, acceptedInteractions: accepted.interactions.length, evidence }, null, 2));

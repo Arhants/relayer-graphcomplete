@@ -23,7 +23,7 @@ describe("agent-facing graph objects", () => {
     const layer = new LayerObject(
       [node, 9],
       [edge],
-      new LayerLayoutObject([new NodePlacementObject(node, 0.25, 0.5), new NodePlacementObject(9, 0.75, 0.5)]),
+      new LayerLayoutObject([new NodePlacementObject(node, 0.25, 0.5), new NodePlacementObject(9, 0.75, 0.5)], "default"),
       "root",
     );
     expect(() => nodeId(node)).toThrow("must be submitted");
@@ -46,7 +46,7 @@ describe("agent-facing graph objects", () => {
     vi.stubGlobal("fetch", fetch);
     const layer = new LayerObject([10, 20], [5], new LayerLayoutObject([
       new NodePlacementObject(10, 0.25, 0.5), new NodePlacementObject(20, 0.75, 0.5),
-    ]), "choice", 20);
+    ], "default"), "choice", 20);
     const result = await new RelayerGraphClient({ url: "http://127.0.0.1:1", token: "token", nodeId: 1 }).submitLayer(layer);
     expect(JSON.parse(String(fetch.mock.calls[0]![1].body))).toMatchObject({ nodes: [10, 20], defaultNodeId: 20 });
     expect(result.defaultNodeId).toBe(20);
@@ -780,7 +780,9 @@ describe("agent-facing graph objects", () => {
     const layer = new LayerObject(
       [left, right],
       [],
-      new LayerLayoutObject([new NodePlacementObject(left, 0.2, 0.5), new NodePlacementObject(right, 0.8, 0.5)]),
+      new LayerLayoutObject([new NodePlacementObject(left, 0.2, 0.5), new NodePlacementObject(right, 0.8, 0.5)], "straight", [
+        { edge: 7, shape: "elbow-horizontal", ends: [{ node: right, side: "top" }, { node: left }], waypoints: [{ x: 0.5, y: 0.1 }] },
+      ]),
       "comparison",
     );
 
@@ -791,7 +793,12 @@ describe("agent-facing graph objects", () => {
 
     expect(request).toMatchObject({
       clientKey: "comparison",
-      layout: { version: 1, placements: [{ nodeId: 10, x: 0.2, y: 0.5 }, { nodeId: 11, x: 0.8, y: 0.5 }] },
+      layout: {
+        version: 1,
+        placements: [{ nodeId: 10, x: 0.2, y: 0.5 }, { nodeId: 11, x: 0.8, y: 0.5 }],
+        edgeShape: "straight",
+        edgeRoutes: [{ edgeId: 7, shape: "elbow-horizontal", ends: [{ nodeId: 11, side: "top" }, { nodeId: 10 }], waypoints: [{ x: 0.5, y: 0.1 }] }],
+      },
     });
     expect(layer.ref?.layout).toEqual(request?.layout);
   });
@@ -800,7 +807,7 @@ describe("agent-facing graph objects", () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
     const node = new NodeObject("box", "Pending", "Not submitted");
-    const layer = new LayerObject([1], [], new LayerLayoutObject([new NodePlacementObject(node, 0.5, 0.5)]));
+    const layer = new LayerObject([1], [], new LayerLayoutObject([new NodePlacementObject(node, 0.5, 0.5)], "default"));
 
     await expect(new RelayerGraphClient({ url: "http://127.0.0.1:1", token: "token", nodeId: 1 }).submitLayer(layer))
       .rejects.toThrow("must be submitted");
@@ -1018,7 +1025,7 @@ describe("agent-facing graph objects", () => {
     const layer = new LayerObject(
       [10],
       [],
-      new LayerLayoutObject([new NodePlacementObject(10, 0.5, 0.5)]),
+      new LayerLayoutObject([new NodePlacementObject(10, 0.5, 0.5)], "default"),
       "abandoned",
     );
     layer.ref = { id: 30, nodes: [10], edges: [], state: "draft" };
@@ -1093,7 +1100,7 @@ describe("agent-facing graph objects", () => {
     }), { status: 422, headers: { "content-type": "application/json" } })));
     const graph = new RelayerGraphClient({ url: "http://127.0.0.1:1", token: "token", nodeId: 1 });
 
-    await expect(graph.submitLayer(new LayerObject([1], [], new LayerLayoutObject([new NodePlacementObject(1, 0.5, 0.5)]))))
+    await expect(graph.submitLayer(new LayerObject([1], [], new LayerLayoutObject([new NodePlacementObject(1, 0.5, 0.5)], "default"))))
       .rejects.toMatchObject({
       code: "layer_node_count",
       issues: [

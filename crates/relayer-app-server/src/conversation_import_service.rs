@@ -552,6 +552,24 @@ fn import_turn(turn: ConversationExportTurn) -> ImportedTurn {
                                         y: placement.y,
                                     })
                                     .collect(),
+                                edge_shape: layout.edge_shape,
+                                edge_routes: layout
+                                    .edge_routes
+                                    .into_iter()
+                                    .map(|route| relayer_graph_core::ImportedEdgeRoute {
+                                        edge_id: route.edge_id,
+                                        shape: route.shape,
+                                        ends: route
+                                            .ends
+                                            .into_iter()
+                                            .map(|end| relayer_graph_core::ImportedEdgeEnd {
+                                                node_id: end.node_id,
+                                                side: end.side,
+                                            })
+                                            .collect(),
+                                        waypoints: route.waypoints,
+                                    })
+                                    .collect(),
                             }
                         }),
                     },

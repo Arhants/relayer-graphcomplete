@@ -67,11 +67,14 @@ async fn author(database: &GraphDatabase) -> NodeId {
             client_key: "child".into(),
             nodes: vec![worker.id],
             edges: vec![],
-            layout: Some(LayerLayout::v1(vec![NodePlacement {
-                node_id: worker.id,
-                x: 0.5,
-                y: 0.5,
-            }])),
+            layout: Some(LayerLayout::v1(
+                vec![NodePlacement {
+                    node_id: worker.id,
+                    x: 0.5,
+                    y: 0.5,
+                }],
+                "default",
+            )),
             size_justification: None,
         })
         .await
@@ -82,11 +85,14 @@ async fn author(database: &GraphDatabase) -> NodeId {
             client_key: "reference-child".into(),
             nodes: vec![queue.id],
             edges: vec![],
-            layout: Some(LayerLayout::v1(vec![NodePlacement {
-                node_id: queue.id,
-                x: 0.5,
-                y: 0.5,
-            }])),
+            layout: Some(LayerLayout::v1(
+                vec![NodePlacement {
+                    node_id: queue.id,
+                    x: 0.5,
+                    y: 0.5,
+                }],
+                "default",
+            )),
             size_justification: None,
         })
         .await
@@ -97,18 +103,21 @@ async fn author(database: &GraphDatabase) -> NodeId {
             client_key: "root".into(),
             nodes: vec![queue.id, worker.id],
             edges: vec![edge.id],
-            layout: Some(LayerLayout::v1(vec![
-                NodePlacement {
-                    node_id: queue.id,
-                    x: 0.2,
-                    y: 0.5,
-                },
-                NodePlacement {
-                    node_id: worker.id,
-                    x: 0.8,
-                    y: 0.5,
-                },
-            ])),
+            layout: Some(LayerLayout::v1(
+                vec![
+                    NodePlacement {
+                        node_id: queue.id,
+                        x: 0.2,
+                        y: 0.5,
+                    },
+                    NodePlacement {
+                        node_id: worker.id,
+                        x: 0.8,
+                        y: 0.5,
+                    },
+                ],
+                "default",
+            )),
             size_justification: None,
         })
         .await

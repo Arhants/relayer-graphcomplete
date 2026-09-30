@@ -34,6 +34,11 @@ it("renders ordinary folder, loading, failure and Git choices in the production 
   await Promise.resolve();
   expect(window.document.querySelector("#checkoutMenu").classList.contains("hidden")).toBe(false);
   const menu = window.document.querySelector("#checkoutMenu");
+  const list = menu.querySelector('.checkout-list[role="group"][aria-label="Registered checkouts"]');
+  expect(list.tabIndex).toBe(0);
+  expect(list.querySelector("[data-checkout-index]")).not.toBeNull();
+  expect(list.contains(menu.querySelector("#newWorktree"))).toBe(false);
+  expect(list.contains(menu.querySelector("#worktreeBase"))).toBe(false);
   expect(menu.querySelector("#newWorktree").checked).toBe(true);
   expect(menu.querySelector("#worktreeBase").value).toBe("refs/remotes/origin/main");
   expect(menu.querySelectorAll("input:not([type=checkbox])").length).toBe(0);

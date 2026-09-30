@@ -1512,11 +1512,14 @@ async fn acknowledged_completion_is_immediately_queryable_through_the_real_publi
             client_key: "root".into(),
             nodes: vec![node.id],
             edges: vec![],
-            layout: Some(LayerLayout::v1(vec![NodePlacement {
-                node_id: node.id,
-                x: 0.5,
-                y: 0.5,
-            }])),
+            layout: Some(LayerLayout::v1(
+                vec![NodePlacement {
+                    node_id: node.id,
+                    x: 0.5,
+                    y: 0.5,
+                }],
+                "default",
+            )),
             size_justification: None,
         })
         .await

@@ -86,13 +86,17 @@
     "desktop:release:publish-preview": "node desktop/release/publish-preview.mjs",
     "desktop:release:promote-stable": "node desktop/release/promote-stable.mjs",
     "test:eval-web": "node scripts/test-eval-web.mjs",
+    "test:eval-graph-preview": "node scripts/test-eval-graph-preview.mjs",
     "test:eval-compiled-runtime": "vitest run --config scripts/eval-compiled.vitest.config.mjs",
     "evidence:public-share-embed": "RELAYER_CAPTURE_PUBLIC_SHARE_EMBED_EVIDENCE=1 electron scripts/capture-public-share-embed-evidence.mjs",
     "review:public-share-embed": "node scripts/fixtures/public-share-embed.mjs",
     "test:desktop:sidebar-overflow": "electron scripts/test-sidebar-overflow.mjs",
     "test:desktop:narrow-sidebar": "npm run build && npm run test:desktop:sidebar-overflow && electron scripts/test-desktop-narrow-sidebar.mjs",
     "evidence:share-preview": "electron scripts/capture-share-preview-evidence.mjs",
-    "test:desktop:worktrees": "npm run build && node scripts/run-worktree-test.mjs"
+    "test:desktop:worktrees": "npm run build && node scripts/run-worktree-test.mjs",
+    "evidence:edge-shapes": "RELAYER_CAPTURE_EDGE_SHAPE_EVIDENCE=1 electron scripts/capture-edge-shape-evidence.mjs",
+    "evidence:agent-preview": "electron scripts/capture-agent-preview-evidence.mjs",
+    "evidence:agent-preview:live": "node scripts/run-agent-preview-live.mjs"
   },
   "devDependencies": {
     "@actions/cache": "6.2.0",

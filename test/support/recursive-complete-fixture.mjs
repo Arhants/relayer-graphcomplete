@@ -14,7 +14,7 @@ import { complete } from "../../src/index.js";
 export const RECURSIVE_FIXTURE_CHILD_TASK = "Handle the delegated half";
 
 function centered(node) {
-  return new LayerLayoutObject([new NodePlacementObject(node, 0.5, 0.5)]);
+  return new LayerLayoutObject([new NodePlacementObject(node, 0.5, 0.5)], "default");
 }
 
 function visualNodeDetailsRequested(context) {

@@ -12,7 +12,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.request import HTTPRedirectHandler, Request
 
 from relayer_graph import (APIError, CompletionCurrentSnapshot, CompletionInputGraph, CompletionTerminalError, CompletionWatch, ConfigurationError, EdgeObject, GraphNode, GraphSession,
-                           LayerLayoutObject, LayerObject, NodeObject,
+                           EdgeEndObject, EdgeRouteObject, LayerLayoutObject, LayerObject, NodeObject,
                            NodePlacementObject,
                            RELAYER_ICON_NAMES, RelayerGraphClient, TransportError, ValidationError,
                            complete, is_supported_relayer_icon, resolve_relayer_icon_name)
@@ -210,6 +210,14 @@ class AuthoringClientTests(unittest.IsolatedAsyncioTestCase):
         Handler.requests.clear()
         self.client = RelayerGraphClient(self.url, "secret", 7)
 
+    def test_routes_send_only_what_they_set(self):
+        from relayer_graph.authoring import _route_payload
+        self.assertEqual(_route_payload(EdgeRouteObject(4, shape="straight")), {"edgeId": 4, "shape": "straight"})
+        self.assertEqual(
+            _route_payload(EdgeRouteObject(4, ends=(EdgeEndObject(1, "top"), EdgeEndObject(2)), waypoints=({"x": 0.5, "y": 0.1}, (0.2, 0.3)))),
+            {"edgeId": 4, "ends": [{"nodeId": 1, "side": "top"}, {"nodeId": 2}], "waypoints": [{"x": 0.5, "y": 0.1}, {"x": 0.2, "y": 0.3}]},
+        )
+
     async def test_objects_receive_server_ids_and_compose_a_layer(self):
         queue = NodeObject("queue", "Queue", "Waiting work", client_key="queue")
         worker = NodeObject("worker", "Worker", "Claims work", client_key="worker")
@@ -219,6 +227,8 @@ class AuthoringClientTests(unittest.IsolatedAsyncioTestCase):
         layout = LayerLayoutObject((
             NodePlacementObject(queue, 0.25, 0.5),
             NodePlacementObject(worker, 0.75, 0.5),
+        ), "elbow-horizontal", (
+            EdgeRouteObject(edge, ends=(EdgeEndObject(worker, "top"), EdgeEndObject(queue)), waypoints=((0.5, 0.1),)),
         ))
         layer = LayerObject((queue, worker), (edge,), layout, client_key="root", default_node=worker)
         await self.client.submit_layer(layer)
@@ -230,8 +240,15 @@ class AuthoringClientTests(unittest.IsolatedAsyncioTestCase):
                 {"nodeId": queue.ref.id, "x": 0.25, "y": 0.5},
                 {"nodeId": worker.ref.id, "x": 0.75, "y": 0.5},
             ],
+            "edgeShape": "elbow-horizontal",
+            "edgeRoutes": [{
+                "edgeId": edge.ref.id,
+                "ends": [{"nodeId": worker.ref.id, "side": "top"}, {"nodeId": queue.ref.id}],
+                "waypoints": [{"x": 0.5, "y": 0.1}],
+            }],
         })
         self.assertEqual(layer.ref.layout.version, 1)
+        self.assertEqual(layer.ref.layout.edge_shape, "elbow-horizontal")
         self.assertEqual(Handler.requests[-1][2]["defaultNodeId"], worker.ref.id)
         self.assertEqual(layer.ref.default_node_id, worker.ref.id)
         self.assertEqual(Handler.requests[0][1]["Authorization"], "Bearer secret")
@@ -269,7 +286,7 @@ class AuthoringClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(Handler.requests[-1][0], "/api/graph/input")
 
     async def test_discard_layer_posts_to_recovery_endpoint_and_refreshes_reference(self):
-        layout = LayerLayoutObject((NodePlacementObject(1, 0.5, 0.5),))
+        layout = LayerLayoutObject((NodePlacementObject(1, 0.5, 0.5),), "default")
         layer = LayerObject((1,), (), layout, client_key="abandoned")
         await self.client.submit_layer(layer)
         draft_id = layer.ref.id
@@ -376,7 +393,7 @@ class AuthoringClientTests(unittest.IsolatedAsyncioTestCase):
             LayerLayoutObject(tuple(
                 NodePlacementObject(node_id, index / 5, 0.5)
                 for index, node_id in enumerate(range(1, 7))
-            )),
+            ), "default"),
             client_key="large",
         )
         await self.client.submit_layer(
@@ -392,7 +409,7 @@ class AuthoringClientTests(unittest.IsolatedAsyncioTestCase):
         pending = NodeObject("box", "Pending", "Not submitted")
         layer = LayerObject(
             (1,), (),
-            LayerLayoutObject((NodePlacementObject(pending, 0.5, 0.5),)),
+            LayerLayoutObject((NodePlacementObject(pending, 0.5, 0.5),), "default"),
         )
         with self.assertRaisesRegex(ValueError, "must be submitted"):
             await self.client.submit_layer(layer)

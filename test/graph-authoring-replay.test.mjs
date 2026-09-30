@@ -117,8 +117,8 @@ async function authorCompleteProgram(graph, interactionNodeId) {
   const oldLayout = new LayerLayoutObject([
     new NodePlacementObject(summary, 0.25, 0.5),
     new NodePlacementObject(detail, 0.75, 0.5),
-  ]);
-  const replacementLayout = new LayerLayoutObject([new NodePlacementObject(replacement, 0.5, 0.5)]);
+  ], "default");
+  const replacementLayout = new LayerLayoutObject([new NodePlacementObject(replacement, 0.5, 0.5)], "default");
   const oldLayer = new LayerObject([summary, detail], [summaryDetail], oldLayout, "old-response-layer");
   const replacementLayer = new LayerObject([replacement], [], replacementLayout, "replacement-response-layer");
 

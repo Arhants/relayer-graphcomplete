@@ -53,7 +53,7 @@ class TaskSystemFixtureHarness implements Harness {
         new NodePlacementObject(queue, 0.15, 0.5),
         new NodePlacementObject(workers, 0.5, 0.5),
         new NodePlacementObject(results, 0.85, 0.5),
-      ]),
+      ], "default"),
       "root-layer",
     );
     const nextImprovement = {
@@ -83,7 +83,7 @@ class TaskSystemFixtureHarness implements Harness {
         new NodePlacementObject(waiting, 0.25, 0.5),
         new NodePlacementObject(claim, 0.75, 0.5),
         ...(compiledInvoke ? [new NodePlacementObject(results, 0.5, 0.8)] : []),
-      ]),
+      ], "default"),
       "queue-detail-layer",
     );
     await graph.submitLayer(queueDetail);

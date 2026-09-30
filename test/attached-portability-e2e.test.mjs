@@ -20,7 +20,7 @@ const services = [];
 const directories = [];
 const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" fill="#2563eb"/></svg>';
 const privateKey = "sk-proj-attached-portability-private-key";
-const centered = (node) => new LayerLayoutObject([new NodePlacementObject(node, .5, .5)]);
+const centered = (node) => new LayerLayoutObject([new NodePlacementObject(node, .5, .5)], "default");
 
 afterEach(async () => {
   for (const service of services.splice(0).reverse()) await service.close();

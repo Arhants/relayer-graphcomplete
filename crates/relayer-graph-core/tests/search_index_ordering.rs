@@ -297,18 +297,21 @@ async fn author(
             client_key: format!("{key}-root"),
             nodes: vec![queue.id, worker.id],
             edges: vec![edge.id],
-            layout: Some(LayerLayout::v1(vec![
-                NodePlacement {
-                    node_id: queue.id,
-                    x: 0.2,
-                    y: 0.5,
-                },
-                NodePlacement {
-                    node_id: worker.id,
-                    x: 0.8,
-                    y: 0.5,
-                },
-            ])),
+            layout: Some(LayerLayout::v1(
+                vec![
+                    NodePlacement {
+                        node_id: queue.id,
+                        x: 0.2,
+                        y: 0.5,
+                    },
+                    NodePlacement {
+                        node_id: worker.id,
+                        x: 0.8,
+                        y: 0.5,
+                    },
+                ],
+                "default",
+            )),
             size_justification: None,
         })
         .await?;
@@ -359,11 +362,14 @@ async fn author_current(
             client_key: format!("{key}-current"),
             nodes: vec![progress.id],
             edges: vec![],
-            layout: Some(LayerLayout::v1(vec![NodePlacement {
-                node_id: progress.id,
-                x: 0.5,
-                y: 0.5,
-            }])),
+            layout: Some(LayerLayout::v1(
+                vec![NodePlacement {
+                    node_id: progress.id,
+                    x: 0.5,
+                    y: 0.5,
+                }],
+                "default",
+            )),
             size_justification: None,
         })
         .await?;
@@ -406,11 +412,14 @@ async fn author_leased_return(
             client_key: format!("{key}-source-layer"),
             nodes: vec![task.id],
             edges: vec![],
-            layout: Some(LayerLayout::v1(vec![NodePlacement {
-                node_id: task.id,
-                x: 0.5,
-                y: 0.5,
-            }])),
+            layout: Some(LayerLayout::v1(
+                vec![NodePlacement {
+                    node_id: task.id,
+                    x: 0.5,
+                    y: 0.5,
+                }],
+                "default",
+            )),
             size_justification: None,
         })
         .await
@@ -480,11 +489,14 @@ async fn author_leased_return(
             client_key: format!("{key}-child-layer"),
             nodes: vec![answer.id],
             edges: vec![],
-            layout: Some(LayerLayout::v1(vec![NodePlacement {
-                node_id: answer.id,
-                x: 0.5,
-                y: 0.5,
-            }])),
+            layout: Some(LayerLayout::v1(
+                vec![NodePlacement {
+                    node_id: answer.id,
+                    x: 0.5,
+                    y: 0.5,
+                }],
+                "default",
+            )),
             size_justification: None,
         })
         .await
@@ -1222,6 +1234,8 @@ fn imported_conversation() -> ImportedConversation {
                                 x: 0.25,
                                 y: 0.75,
                             }],
+                            edge_shape: None,
+                            edge_routes: Vec::new(),
                         }),
                     },
                     nodes: vec![ImportedNode {

@@ -31,3 +31,4 @@ export * from "./simulated-user/recursive-review.js";
 export * from "./simulated-user/recursive-evidence-validator.js";
 export * from "./simulated-user/rubric.js";
 export * from "./eval-catalog.js";
+export * from "./fixtures/graph-preview.js";

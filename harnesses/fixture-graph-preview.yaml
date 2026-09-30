@@ -1,0 +1,15 @@
+schemaVersion: 1
+name: fixture-graph-preview
+implementation: fixture.graph-preview
+implementationVersion: 1
+permissionBindings:
+  ask: {}
+  auto: {}
+  full: {}
+modelCompatibility:
+  - providerId: codex
+executionAccessContracts: [managed-runtime@1]
+graphCapabilityProfile:
+  search: disabled
+  preview: enabled
+settings: {}

@@ -24,8 +24,11 @@ use std::{
 };
 use uuid::Uuid;
 
+mod draft_preview;
 #[cfg(feature = "ladybug")]
 pub mod search_index;
+
+use draft_preview::{DraftPreviews, GraphPreviewCapability, PreviewTarget, RenderBridge};
 
 #[derive(Clone)]
 pub struct ServerState {
@@ -37,6 +40,7 @@ pub struct ServerState {
     visual_assets_admission: Arc<tokio::sync::Mutex<VisualAssetsHandoffPhase>>,
     visual_assets_gate: Arc<Mutex<HashMap<NodeId, Arc<tokio::sync::Mutex<u64>>>>>,
     http_client: reqwest::Client,
+    draft_previews: Arc<DraftPreviews>,
     #[cfg(feature = "ladybug")]
     search_index: Option<Arc<search_index::LadybugSearchIndex>>,
     #[cfg(all(feature = "ladybug", feature = "crash-test-support"))]
@@ -81,6 +85,8 @@ enum GraphSearchCapability {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct GraphCapabilityProfile {
     search: GraphSearchCapability,
+    #[serde(default, skip_serializing_if = "GraphPreviewCapability::is_disabled")]
+    preview: GraphPreviewCapability,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -106,6 +112,7 @@ impl ServerState {
                 .timeout(std::time::Duration::from_secs(10))
                 .build()
                 .expect("visual-assets HTTP client configuration is valid"),
+            draft_previews: Arc::new(DraftPreviews::new(draft_preview::DEFAULT_RENDER_LIMIT)),
             #[cfg(feature = "ladybug")]
             search_index: None,
             #[cfg(all(feature = "ladybug", feature = "crash-test-support"))]
@@ -120,6 +127,12 @@ impl ServerState {
         self.graph
             .set_interaction_permissions_enabled(enabled)
             .await
+    }
+
+    /// Sets the per-interaction draft-preview render ceiling (PRD §11.10).
+    pub fn with_draft_preview_limit(mut self, limit: u32) -> Self {
+        self.draft_previews = Arc::new(DraftPreviews::new(limit));
+        self
     }
 
     pub fn with_temporal_features(mut self, temporal_features: TemporalFeatureConfig) -> Self {
@@ -175,6 +188,10 @@ pub fn router(state: ServerState) -> Router {
         .route(
             "/api/control/visual-assets/bridge",
             axum::routing::put(register_visual_assets_bridge),
+        )
+        .route(
+            "/api/control/draft-previews/bridge",
+            axum::routing::put(register_draft_preview_bridge),
         )
         .route("/api/control/interactions", post(create_interaction))
         .route("/api/control/interactions/{id}", get(interaction_metadata))
@@ -331,6 +348,44 @@ pub fn router(state: ServerState) -> Router {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct DraftPreviewBridgeRegistration {
+    url: String,
+    token: String,
+}
+
+async fn register_draft_preview_bridge(
+    State(state): State<ServerState>,
+    headers: HeaderMap,
+    Json(input): Json<DraftPreviewBridgeRegistration>,
+) -> Result<Json<Value>, ApiError> {
+    require_bearer(&headers, &state.control_token)?;
+    let url = reqwest::Url::parse(&input.url)
+        .map_err(|_| ApiError::invalid("draft-preview bridge URL is invalid"))?;
+    if url.scheme() != "http"
+        || !matches!(url.host_str(), Some("127.0.0.1" | "[::1]"))
+        || input.token.len() < 32
+    {
+        return Err(ApiError::invalid(
+            "draft-preview bridge registration is invalid",
+        ));
+    }
+    state.draft_previews.register(RenderBridge {
+        url: input.url.trim_end_matches('/').to_owned(),
+        token: input.token,
+    });
+    Ok(Json(json!({"registered": true})))
+}
+
+/// Adds the advisory `preview` field to a committed write's response.
+fn with_preview(mut body: Value, preview: Option<Value>) -> Json<Value> {
+    if let Some(preview) = preview {
+        body["preview"] = preview;
+    }
+    Json(body)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct VisualAssetsBridgeRegistration {
     url: String,
     token: String,
@@ -434,6 +489,9 @@ async fn register_visual_assets_bridge(
             .lock()
             .map_err(|_| ApiError::internal("visual-assets gate lock poisoned"))?
             .retain(|node_id, _| !active_nodes.contains(node_id));
+        for node_id in &active_nodes {
+            state.draft_previews.forget(*node_id);
+        }
     }
     {
         let mut bridge = state
@@ -1946,6 +2004,7 @@ async fn revoke_capability(
             sessions.retain(|_, active| active.node_id != node_id);
             before - sessions.len()
         };
+        state.draft_previews.forget(node_id);
     }
     Ok(Json(
         json!({"revoked": revoked > 0, "revokedCount": revoked}),
@@ -2054,7 +2113,16 @@ async fn submit_node(
             prepared_assets.as_deref(),
         )
         .await?;
-    Ok(Json(json!({"node": node})))
+    drop(asset_generation_guard);
+    let preview = state
+        .draft_previews
+        .preview(
+            authority.profile.preview,
+            &writer,
+            PreviewTarget::Node { node_id: node.id },
+        )
+        .await;
+    Ok(with_preview(json!({"node": node}), preview))
 }
 
 async fn prepare_detail_assets(
@@ -2291,13 +2359,20 @@ async fn submit_layer(
 ) -> Result<Json<Value>, ApiError> {
     let authority = session(&state, &headers)?;
     let input = LayerDraft::from(input);
-    let layer = state
+    let writer = state
         .graph
         .writer_for_completion_authority(authority.node_id, authority.epoch)
-        .await?
-        .submit_layer(&input)
         .await?;
-    Ok(Json(json!({"layer":layer})))
+    let layer = writer.submit_layer(&input).await?;
+    let preview = state
+        .draft_previews
+        .preview(
+            authority.profile.preview,
+            &writer,
+            PreviewTarget::Layer { layer_id: layer.id },
+        )
+        .await;
+    Ok(with_preview(json!({"layer":layer}), preview))
 }
 
 #[derive(Debug, Deserialize)]
@@ -2321,6 +2396,38 @@ struct LayerLayoutRequest {
     version: Value,
     #[serde(default)]
     placements: Vec<NodePlacementRequest>,
+    #[serde(default)]
+    edge_shape: Value,
+    #[serde(default)]
+    edge_routes: Vec<EdgeRouteRequest>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EdgeRouteRequest {
+    edge_id: relayer_graph_core::EdgeId,
+    #[serde(default)]
+    shape: Value,
+    #[serde(default)]
+    ends: Option<Vec<EdgeEndRequest>>,
+    #[serde(default)]
+    waypoints: Vec<PointRequest>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EdgeEndRequest {
+    node_id: NodeId,
+    #[serde(default)]
+    side: Value,
+}
+
+#[derive(Debug, Deserialize)]
+struct PointRequest {
+    #[serde(default)]
+    x: Value,
+    #[serde(default)]
+    y: Value,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2351,9 +2458,44 @@ impl From<LayerDraftRequest> for LayerDraft {
                         y: repairable_coordinate(&placement.y),
                     })
                     .collect(),
+                edge_shape: repairable_edge_shape(layout.edge_shape),
+                edge_routes: layout
+                    .edge_routes
+                    .into_iter()
+                    .map(|route| relayer_graph_core::EdgeRoute {
+                        edge_id: route.edge_id,
+                        shape: repairable_edge_shape(route.shape),
+                        ends: route
+                            .ends
+                            .unwrap_or_default()
+                            .into_iter()
+                            .map(|end| relayer_graph_core::EdgeEnd {
+                                node_id: end.node_id,
+                                side: repairable_edge_shape(end.side),
+                            })
+                            .collect(),
+                        waypoints: route
+                            .waypoints
+                            .into_iter()
+                            .map(|point| relayer_graph_core::LayoutPoint {
+                                x: repairable_coordinate(&point.x),
+                                y: repairable_coordinate(&point.y),
+                            })
+                            .collect(),
+                    })
+                    .collect(),
             }),
             size_justification: input.size_justification,
         }
+    }
+}
+
+// A non-string shape or side is kept as its JSON text so validation names it as unsupported.
+fn repairable_edge_shape(value: Value) -> Option<String> {
+    match value {
+        Value::Null => None,
+        Value::String(shape) => Some(shape),
+        other => Some(other.to_string()),
     }
 }
 
@@ -4265,11 +4407,14 @@ mod tests {
     }
 
     fn authored_layout(node_id: NodeId) -> Option<LayerLayout> {
-        Some(LayerLayout::v1(vec![NodePlacement {
-            node_id,
-            x: 0.5,
-            y: 0.5,
-        }]))
+        Some(LayerLayout::v1(
+            vec![NodePlacement {
+                node_id,
+                x: 0.5,
+                y: 0.5,
+            }],
+            "default",
+        ))
     }
 
     #[tokio::test]
@@ -5217,6 +5362,8 @@ mod tests {
                         x: 0.5,
                         y: 0.5,
                     }],
+                    edge_shape: Some("default".into()),
+                    edge_routes: Vec::new(),
                 }),
                 size_justification: None,
             })
@@ -5351,6 +5498,8 @@ mod tests {
                         x: 0.5,
                         y: 0.5,
                     }],
+                    edge_shape: Some("default".into()),
+                    edge_routes: Vec::new(),
                 }),
                 size_justification: None,
             })
@@ -5694,6 +5843,10 @@ mod tests {
             malformed["error"]["issues"][1]["path"],
             "layout.placements[0].y"
         );
+        assert_eq!(
+            malformed["error"]["issues"][2]["code"],
+            "missing_edge_shape"
+        );
 
         let out_of_range = app
             .clone()
@@ -5704,7 +5857,7 @@ mod tests {
                     .header("content-type", "application/json")
                     .header("authorization", format!("Bearer {graph_token}"))
                     .body(Body::from(format!(
-                        r#"{{"clientKey":"root","nodes":[{}],"edges":[],"layout":{{"version":1,"placements":[{{"nodeId":{},"x":-0.01,"y":1.01}}]}}}}"#,
+                        r#"{{"clientKey":"root","nodes":[{}],"edges":[],"layout":{{"version":1,"placements":[{{"nodeId":{},"x":-0.01,"y":1.01}}],"edgeShape":3}}}}"#,
                         answer.id.value(), answer.id.value()
                     )))
                     .unwrap(),
@@ -5726,6 +5879,42 @@ mod tests {
             out_of_range["error"]["issues"][1]["path"],
             "layout.placements[0].y"
         );
+        assert_eq!(
+            out_of_range["error"]["issues"][2]["code"],
+            "unsupported_edge_shape"
+        );
+
+        // A route's nulls and non-string sides stay repairable rather than failing to parse.
+        let misrouted = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/graph/layers")
+                    .header("content-type", "application/json")
+                    .header("authorization", format!("Bearer {graph_token}"))
+                    .body(Body::from(format!(
+                        r#"{{"clientKey":"root","nodes":[{}],"edges":[],"layout":{{"version":1,"placements":[{{"nodeId":{},"x":0.5,"y":0.5}}],"edgeShape":"default","edgeRoutes":[{{"edgeId":999,"shape":null,"ends":null,"waypoints":[{{"x":0.5,"y":0.5}}]}}]}}}}"#,
+                        answer.id.value(), answer.id.value()
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(misrouted.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let misrouted: Value =
+            serde_json::from_slice(&to_bytes(misrouted.into_body(), usize::MAX).await.unwrap())
+                .unwrap();
+        let codes = misrouted["error"]["issues"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|issue| issue["code"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            codes,
+            ["edge_route_outside_layer", "edge_route_ends_required"]
+        );
 
         let valid = app
             .clone()
@@ -5736,7 +5925,7 @@ mod tests {
                     .header("content-type", "application/json")
                     .header("authorization", format!("Bearer {graph_token}"))
                     .body(Body::from(format!(
-                        r#"{{"clientKey":"root","nodes":[{}],"edges":[],"layout":{{"version":1,"placements":[{{"nodeId":{},"x":0.25,"y":0.75}}]}}}}"#,
+                        r#"{{"clientKey":"root","nodes":[{}],"edges":[],"layout":{{"version":1,"placements":[{{"nodeId":{},"x":0.25,"y":0.75}}],"edgeShape":"arc-circle"}}}}"#,
                         answer.id.value(), answer.id.value()
                     )))
                     .unwrap(),
@@ -5751,6 +5940,7 @@ mod tests {
         assert_eq!(valid["layer"]["clientKey"], "root");
         assert_eq!(valid["layer"]["layout"]["version"], 1);
         assert_eq!(valid["layer"]["layout"]["placements"][0]["x"], 0.25);
+        assert_eq!(valid["layer"]["layout"]["edgeShape"], "arc-circle");
 
         writer
             .add_action(&ActionDraft {
@@ -6749,11 +6939,14 @@ mod attached_navigation_route_tests {
                 client_key: "source".into(),
                 nodes: vec![node.id],
                 edges: vec![],
-                layout: Some(LayerLayout::v1(vec![NodePlacement {
-                    node_id: node.id,
-                    x: 0.5,
-                    y: 0.5,
-                }])),
+                layout: Some(LayerLayout::v1(
+                    vec![NodePlacement {
+                        node_id: node.id,
+                        x: 0.5,
+                        y: 0.5,
+                    }],
+                    "default",
+                )),
                 default_node_id: None,
                 size_justification: None,
             })
@@ -6798,11 +6991,14 @@ mod attached_navigation_route_tests {
                 client_key: "response".into(),
                 nodes: vec![node.id],
                 edges: vec![],
-                layout: Some(LayerLayout::v1(vec![NodePlacement {
-                    node_id: node.id,
-                    x: 0.5,
-                    y: 0.5,
-                }])),
+                layout: Some(LayerLayout::v1(
+                    vec![NodePlacement {
+                        node_id: node.id,
+                        x: 0.5,
+                        y: 0.5,
+                    }],
+                    "default",
+                )),
                 default_node_id: None,
                 size_justification: None,
             })
