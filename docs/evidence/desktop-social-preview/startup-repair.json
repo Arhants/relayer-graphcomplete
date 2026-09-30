@@ -1,0 +1,9 @@
+{
+  "passed": true,
+  "screenshotSha256": "2bcd67bcdb11c6aed7bd3a6408fb87381b127131e4628c8b70e699fc5ba2b46c",
+  "archiveSha256": "4ab98c60ae0cd4e426ae0e0901ca4cca7212fe657ee96f7234e9f40c924ccebf",
+  "nativeRuntime": "unchanged binaries reused from installed signed 0.2.33",
+  "scope": "Local unsigned electron-builder assembly with explicit release metadata; normal first-launch provider screen. Not a signed candidate or release certification.",
+  "sourceCommit": "b124542afda3222a0655a77acc6b41e843405066",
+  "captureModuleSha256": "9bf4a706b5816608c1538b65467fbd1dedcb5be55b34d79d9a0df8dd02e6890e"
+}

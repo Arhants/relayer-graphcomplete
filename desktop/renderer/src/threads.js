@@ -25,6 +25,7 @@ import {
   createLayerNavigationCoordinator,
   layerPathForVisibleLayer,
   reconcileCurrentProjection,
+  humanTurns,
   workspaceTurns,
 } from "./product-workspace/model.js";
 import {
@@ -921,9 +922,8 @@ export async function submitInteraction(
     inputIdentityRevision,
   );
   try {
-    const latestInteraction = appState.interactions
-      .filter((interaction) => String(interaction.threadId) === String(threadId))
-      .at(-1);
+    // A child an agent launched is not a human turn: a follow-up or retry never targets it.
+    const latestInteraction = humanTurns(appState, { id: threadId }).at(-1);
     const { path, body: retryBody } = interactionSubmissionTarget(
       threadId,
       latestInteraction,

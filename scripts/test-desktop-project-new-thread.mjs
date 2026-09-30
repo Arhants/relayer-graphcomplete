@@ -198,7 +198,9 @@ async function run() {
   });
 
   const createWindow = createWindowFactory({
-    BrowserWindow,
+    BrowserWindow: class extends BrowserWindow {
+      constructor(options) { super({ ...options, show: false }); }
+    },
     desktopDirectory: join(repositoryRoot, "desktop"),
     getAppearance: () => "dark",
     updater: { status: () => ({ phase: "development" }) },
@@ -207,8 +209,9 @@ async function run() {
   let webContents;
   const openWindow = async () => {
     window = await createWindow(productSession);
+    window.on("close", () => process.stderr.write("Project fixture window received a native close event.\n"));
     webContents = window.webContents;
-    window.show();
+    window.hide();
     await waitFor("the desktop workspace", () => webContents.executeJavaScript(`(
       !document.querySelector('#appShell')?.classList.contains('hidden')
       && !document.body.classList.contains('desktop-account-pending')
@@ -216,14 +219,21 @@ async function run() {
   };
   const evaluate = (source) => webContents.executeJavaScript(source);
   const click = (selector) => evaluate(`document.querySelector(${JSON.stringify(selector)})?.click()`);
+  // Chromium input preserves hit-testing and CSS hover without taking the user's
+  // native keyboard focus during the persistence/restart fixture.
+  const movePointer = async (point) => {
+    if (!webContents.debugger.isAttached()) webContents.debugger.attach("1.3");
+    await webContents.debugger.sendCommand("Input.dispatchMouseEvent", { type: "mouseMoved", ...point });
+  };
   const clickProjectAction = async (projectId) => {
     const selector = `[data-project-new-thread="${projectId}"]`;
     const point = await evaluate(`(() => {
-      const rect = document.querySelector(${JSON.stringify(selector)})?.getBoundingClientRect();
+      const rect = document.querySelector(${JSON.stringify(selector)})?.closest("[data-project-row]")?.getBoundingClientRect();
       return rect ? { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) } : null;
     })()`);
     if (!point) throw new Error(`Missing project action ${projectId}.`);
-    webContents.sendInputEvent({ type: "mouseMove", ...point });
+    await movePointer({ x: 800, y: 400 });
+    await movePointer(point);
     await waitFor(`project action ${projectId} to reveal`, () => evaluate(`(
       getComputedStyle(document.querySelector(${JSON.stringify(selector)})).opacity === '1'
     )`)).catch(async (error) => {
@@ -241,8 +251,13 @@ async function run() {
         throw error;
       }
     });
-    webContents.sendInputEvent({ type: "mouseDown", button: "left", clickCount: 1, ...point });
-    webContents.sendInputEvent({ type: "mouseUp", button: "left", clickCount: 1, ...point });
+    const actionPoint = await evaluate(`(() => {
+      const rect = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();
+      return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
+    })()`);
+    await movePointer(actionPoint);
+    await webContents.debugger.sendCommand("Input.dispatchMouseEvent", { type: "mousePressed", button: "left", clickCount: 1, ...actionPoint });
+    await webContents.debugger.sendCommand("Input.dispatchMouseEvent", { type: "mouseReleased", button: "left", clickCount: 1, ...actionPoint });
   };
   const setValue = (selector, value) => evaluate(`(() => {
     const input = document.querySelector(${JSON.stringify(selector)});
@@ -352,7 +367,8 @@ async function run() {
     const rect = document.querySelector('[data-project-row="${project.id}"]').getBoundingClientRect();
     return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
   })()`);
-  webContents.sendInputEvent({ type: "mouseMove", ...hoverPoint });
+  await movePointer({ x: 800, y: 400 });
+  await movePointer(hoverPoint);
   await waitFor("the hovered project action to be visible", () => evaluate(`(
     getComputedStyle(document.querySelector('[data-project-new-thread="${project.id}"]')).opacity === '1'
   )`));
@@ -380,7 +396,7 @@ async function run() {
     throw new Error(`The project action lost the light-mode row color: ${JSON.stringify(lightModeColors)}`);
   }
   evidence.hover = await captureEvidence("02-hover");
-  webContents.sendInputEvent({ type: "mouseMove", x: 800, y: 400 });
+  await movePointer({ x: 800, y: 400 });
   await waitFor("the project action to hide after pointer exit", () => evaluate(`(
     getComputedStyle(document.querySelector('[data-project-new-thread="${project.id}"]')).opacity === '0'
   )`));

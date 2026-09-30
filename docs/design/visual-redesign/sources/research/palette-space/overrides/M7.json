@@ -1,0 +1,11 @@
+{
+ "_readme": "Overrides for M7 (Perfume Greige). Run: node engine.mjs --overrides overrides/M7.json M7. Summary: tokens/M7.md",
+ "M7": {
+  "neutralSeed": "#554E47",
+  "interaction": { "light": "#837166", "dark": "#A58E7D" },
+  "danger": { "swatch": "#D5305C" },
+  "warning": { "h": 85 },
+  "tokens": { "light": { "selection-ring": "#955322" } },
+  "_why": "neutrals seeded from the source's charcoal greige #554E47 (h67) instead of the near-black ground's mauve h346; light primary = exact source greige #837166 instead of a caramel C0.12 lift that sat dE 4.1 from warning; light selection ring = --accent-text (brief C-dark precedent) because the greige ring was only dE 7.6 from the node stroke; failure = saturated crimson (dark danger was 5.7 from the blush signal); warning h85 moves approval text away from the greige-caramel link (light 5.0->6.5, dark 3.2->4.9)"
+ }
+}

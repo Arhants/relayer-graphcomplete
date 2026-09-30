@@ -1,5 +1,5 @@
 import { runEvidenceCleanup } from "./evidence-service-cleanup.mjs";
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, ipcMain, nativeTheme } from "electron";
 import { createHash, randomBytes } from "node:crypto";
 import { mkdtempSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
@@ -97,16 +97,14 @@ async function waitForRenderedAsset(window, timeoutMs = 10_000) {
   throw new Error("Accepted visual asset did not load through the production Node Detail runtime.");
 }
 
-async function inspectTheme(window, theme, editable = false) {
-  const result = await window.webContents.executeJavaScript(`(async () => {
-    const { applyAppearance } = await import('./src/ui.js');
-    const host = document.querySelector('.node-detail-runtime-host');
-    const root = host.shadowRoot;
+const applyThemeInPage = (window, theme) => window.webContents.executeJavaScript(
+  `import('./src/ui.js').then(({ applyAppearance }) => applyAppearance(${JSON.stringify(theme)}))`);
+
+// The switch runs between two page scripts so main can drive it (System legs flip nativeTheme).
+async function inspectTheme(window, theme, editable = false, switchTheme = () => applyThemeInPage(window, theme)) {
+  await window.webContents.executeJavaScript(`(() => {
+    const root = document.querySelector('.node-detail-runtime-host').shadowRoot;
     const input = root.querySelector('input');
-    const themeScope = root.querySelector('gc-detail-theme');
-    const originalInput = input;
-    const originalPage = root.querySelector('.summary');
-    const beforeCss = root.adoptedStyleSheets.map(sheet => [...sheet.cssRules].map(rule => rule.cssText).join('')).join('');
     if (${editable}) {
       if (input.disabled) throw new Error('Product input is disabled');
       input.value = 'Keep energy for dinner and lights';
@@ -114,10 +112,20 @@ async function inspectTheme(window, theme, editable = false) {
       input.focus();
       input.setSelectionRange(5, 11);
     }
-    const beforeValue = input.value;
+    window.themeProbe = { originalInput: input, originalPage: root.querySelector('.summary'), beforeValue: input.value,
+      beforeTheme: root.querySelector('gc-detail-theme').dataset.relayerTheme,
+      beforeCss: root.adoptedStyleSheets.map(sheet => [...sheet.cssRules].map(rule => rule.cssText).join('')).join(''),
+      beforeScroll: document.querySelector("#detailContent").scrollTop };
+  })()`);
+  await switchTheme();
+  const result = await window.webContents.executeJavaScript(`(async () => {
+    const { originalInput, originalPage, beforeValue, beforeCss, beforeScroll, beforeTheme } = window.themeProbe;
+    const root = document.querySelector('.node-detail-runtime-host').shadowRoot;
+    const input = root.querySelector('input');
+    const themeScope = root.querySelector('gc-detail-theme');
     const scroll = document.querySelector("#detailContent");
-    const beforeScroll = scroll.scrollTop;
-    applyAppearance(${JSON.stringify(theme)});
+    const deadline = Date.now() + 5000;
+    while (themeScope.dataset.relayerTheme !== ${JSON.stringify(theme)} && Date.now() < deadline) await new Promise(requestAnimationFrame);
     await new Promise(requestAnimationFrame);
     await new Promise(requestAnimationFrame);
     const color = element => getComputedStyle(element).color;
@@ -135,7 +143,7 @@ async function inspectTheme(window, theme, editable = false) {
     const bar = root.querySelector('.midday');
     const afterCss = root.adoptedStyleSheets.map(sheet => [...sheet.cssRules].map(rule => rule.cssText).join('')).join('');
     return {
-      theme: themeScope.dataset.relayerTheme, value: input.value,
+      beforeTheme, theme: themeScope.dataset.relayerTheme, value: input.value,
       sameInput: input === root.querySelector('input'), samePage: originalPage === root.querySelector('.summary'),
       scrollPreserved: scroll.scrollTop === beforeScroll,
       valuePreserved: beforeValue === input.value, cssPreserved: beforeCss === afterCss,
@@ -169,6 +177,7 @@ async function captureReviewThemes(window, session, label) {
 }
 
 async function captureProductThemes(threadId, turnId, nodeId) {
+  const previousThemeSource = nativeTheme.themeSource;
   const window = new BrowserWindow({ width: 1400, height: 1200, show: true,
     webPreferences: { partition: `theme-product-${randomBytes(8).toString('hex')}`, contextIsolation: true, nodeIntegration: false, sandbox: true } });
   try {
@@ -188,11 +197,9 @@ async function captureProductThemes(threadId, turnId, nodeId) {
       if (!ready) await new Promise(resolveWait => setTimeout(resolveWait, 25));
     }
     invariant(ready, 'Mutable Product detail did not become ready');
-    const results = [];
-    for (const theme of ['light', 'dark', 'light']) {
-      const inspection = await inspectTheme(window, theme, true);
-      // Use the same paint-fenced tiled capture implementation as Eval, without
-      // creating a read-only session or changing this Product window's authority.
+    // Use the same paint-fenced tiled capture implementation as Eval, without
+    // creating a read-only session or changing this Product window's authority.
+    const captureTiles = async (name) => {
       const plan = await window.webContents.executeJavaScript(`(async () => {
         const { createReviewPresentationAdapter } = await import('./src/review-tools.js');
         window.themeEvidenceCapture = createReviewPresentationAdapter({ executionId: 'theme-product',
@@ -203,16 +210,44 @@ async function captureProductThemes(threadId, turnId, nodeId) {
       try {
         for (const tile of plan.tiles) {
           const prepared = await window.webContents.executeJavaScript(`window.themeEvidenceCapture.prepareCaptureTile(${JSON.stringify(tile)})`);
-          const path = join(artifactDirectory, `product-${results.length}-${theme}-${tile.index}.png`);
+          const path = join(artifactDirectory, `${name}-${tile.index}.png`);
           await writeFile(path, (await window.webContents.capturePage(prepared.clip)).toPNG());
           screenshotPaths.push(path);
         }
       } finally { await window.webContents.executeJavaScript('window.themeEvidenceCapture.restoreCapture()'); }
       invariant(screenshotPaths.length > 0, 'Product screenshot tiles missing');
-      results.push({ ...inspection, screenshotPaths });
+      return screenshotPaths;
+    };
+    const explicit = [];
+    for (const theme of ['light', 'dark', 'light']) {
+      const inspection = await inspectTheme(window, theme, true);
+      const windowPath = join(artifactDirectory, `product-window-${explicit.length}-${theme}.png`);
+      await writeFile(windowPath, (await window.webContents.capturePage()).toPNG());
+      explicit.push({ ...inspection, windowPath, screenshotPaths: await captureTiles(`product-${explicit.length}-${theme}`) });
     }
-    return results;
-  } finally { window.destroy(); }
+    // Under System the page follows prefers-color-scheme, which Electron derives
+    // from nativeTheme.themeSource; setting it stands in for the OS changing.
+    nativeTheme.themeSource = 'light';
+    await applyThemeInPage(window, 'system');
+    const settled = await window.webContents.executeJavaScript(`(async () => {
+      const deadline = Date.now() + 5000;
+      while (document.documentElement.dataset.theme !== 'light' && Date.now() < deadline) await new Promise(requestAnimationFrame);
+      return document.documentElement.dataset.theme;
+    })()`);
+    invariant(settled === 'light', `System did not settle on the operating-system theme: ${settled}`);
+    const system = [];
+    for (const theme of ['dark', 'light']) {
+      const inspection = await inspectTheme(window, theme, true, async () => { nativeTheme.themeSource = theme; });
+      invariant(inspection.beforeTheme !== theme, `System leg did not change theme: ${JSON.stringify(inspection)}`);
+      const preference = await window.webContents.executeJavaScript(`document.querySelector('#appearanceSelect').value`);
+      invariant(preference === 'system', `System leg left System: ${preference}`);
+      system.push({ ...inspection, preference, screenshotPaths: await captureTiles(`product-system-${theme}`) });
+    }
+    return { explicit, system };
+  } finally {
+    nativeTheme.themeSource = previousThemeSource;
+    window.destroy();
+  }
 }
 
 function controlByName(state, name, kind) {
@@ -368,7 +403,7 @@ async function run() {
   const renderedAsset = await waitForRenderedAsset(reviewWindow);
   invariant(renderedAsset.alt === "Accepted detail status illustration", "Rendered visual asset lost its accessible label.");
   const themeEvidence = { eval: await captureReviewThemes(reviewWindow, session, "Accepted Eval detail") };
-  themeEvidence.product = await captureProductThemes(threadId, turn.id, authoredNode.id);
+  ({ explicit: themeEvidence.product, system: themeEvidence.productSystem } = await captureProductThemes(threadId, turn.id, authoredNode.id));
   const expectedControls = [
     ["Open implementation notes", "navigate-action", false],
     ["Open referenced evidence", "navigate-action", false],

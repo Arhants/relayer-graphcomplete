@@ -2,6 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createProviderAdapterRegistry } from "../desktop/main/providers/provider-adapter-contract.mjs";
 import { createProviderComposition } from "../desktop/main/providers/provider-composition.mjs";
+import { readFile } from "node:fs/promises";
+
+import {
+  createHarnessReadinessCoordinator,
+  startPostUpgradeReadiness,
+} from "../desktop/main/services/harness-readiness.mjs";
 
 describe("injectable production provider composition", () => {
   it("publishes missing persisted credentials as unavailable and keeps explicit refresh deterministic", async () => {
@@ -279,5 +285,391 @@ describe("injectable production provider composition", () => {
     expect(credentials.has("provider:staying")).toBe(true);
     expect(credentials.has("provider:orphan")).toBe(expected.orphan);
     await composition.close();
+  });
+
+  // #556: ChatGPT and OpenRouter both run through codex-basic, and readiness is per harness.
+  // An upgrade that changed codex-basic's digest leaves both pending. Startup then runs one
+  // background evaluation through the recipe-update trigger, as desktop/main/index.mjs does,
+  // so both providers are ready again without a Repair.
+  it("evaluates an upgraded shared route once after startup so both providers are ready without Repair", async () => {
+    const model = (id) => ({
+      id, executionModel: id, label: id, description: "", visible: true, availability: "available",
+      unavailableReason: null, availabilityNotice: null, isDefault: true, replacementModelId: null,
+      upgradeInfo: null, supportedEfforts: [], defaultEffort: null, inputModalities: ["text"],
+      supportsPersonality: false, serviceTiers: [], defaultServiceTier: null,
+    });
+    const runtime = (definition) => ({
+      providerId: definition.id,
+      discover: async () => ({
+        provider: { id: definition.id, label: definition.label, status: "available" },
+        models: [model(`work-${definition.id}`)],
+        systemFamily: { id: definition.id, label: definition.label, modelIds: [`work-${definition.id}`] },
+      }),
+      close: vi.fn(async () => {}),
+    });
+    const harness = (name, implementation, adapterIds) => ({
+      schemaVersion: 1, name, implementation, implementationVersion: 1, permissionBindings: { auto: {} },
+      modelRules: { allow: adapterIds.map((adapterId) => ({ adapterId, modelIdRegex: "^work-" })), deny: [] },
+      executionAccessContracts: ["managed-runtime@1", "secret@1"], settings: {},
+    });
+    const configurations = new Map([
+      ["codex-basic", harness("codex-basic", "codex.basic", ["codex-subscription", "openrouter"])],
+      // Also routes OpenRouter, but its runtime was never installed on this machine.
+      ["claude-basic", harness("claude-basic", "claude.basic", ["openrouter"])],
+    ]);
+    const record = new Map();
+    const publishAvailability = vi.fn(async (updates) => {
+      for (const update of updates) record.set(update.harnessId, update.available);
+    });
+    const prepareRecipe = vi.fn(async (recipeId) => ({ recipeId }));
+    const readiness = createHarnessReadinessCoordinator({
+      configurations,
+      digestConfiguration: ({ name }) => `sha256:${name}-upgraded`,
+      runtimeRequirements: {
+        "codex.basic": { runtimeId: "codex", recipeId: "codex@0.147.0" },
+        "claude.basic": { runtimeId: "claude", recipeId: "claude@0.3.250" },
+      },
+      prepareRecipe,
+      checkers: {
+        "codex.basic": async ({ runtime: prepared }) => ({ available: prepared?.recipeId === "codex@0.147.0" }),
+        "claude.basic": async () => ({ available: true }),
+      },
+      publishAvailability,
+      recipeInstalled: async (recipeId) => recipeId === "codex@0.147.0",
+    });
+    const composition = createProviderComposition({
+      registry: createProviderAdapterRegistry([
+        {
+          adapterId: "codex-subscription", implementationVersion: "1", label: "ChatGPT",
+          accessContract: "managed-runtime@1", defaultEndpoint: null,
+          connection: { mode: "managed-login", fields: [] }, create: ({ definition }) => runtime(definition),
+        },
+        {
+          adapterId: "openrouter", implementationVersion: "1", label: "OpenRouter",
+          accessContract: "secret@1", defaultEndpoint: "https://openrouter.example/v1",
+          connection: { mode: "secret-fields", fields: [{ id: "key", label: "Key", kind: "secret" }] },
+          create: ({ definition }) => runtime(definition),
+        },
+      ]),
+      definitionStore: { async load() { return [
+        {
+          id: "chatgpt", adapterId: "codex-subscription", label: "ChatGPT", endpoint: null,
+          accessContract: "managed-runtime@1", credentialReference: null, lifecycleState: "active",
+        },
+        {
+          id: "openrouter", adapterId: "openrouter", label: "OpenRouter", endpoint: "https://openrouter.example/v1",
+          accessContract: "secret@1", credentialReference: "provider:openrouter", lifecycleState: "active",
+        },
+      ]; } },
+      credentialStore: { async get() { return { key: "opaque" }; }, async listReferences() { return ["provider:openrouter"]; } },
+      evaluateReadiness: (request) => readiness.evaluate(request),
+      publishCatalog: async () => {},
+      modelCatalogOptions: { backgroundIntervalMs: 60_000 },
+    });
+
+    await composition.start();
+    expect(prepareRecipe).not.toHaveBeenCalled();
+
+    // The app server marked codex-basic due: its digest changed with the upgrade. The step
+    // returns before it has even read the marks, so startup never waits for it.
+    let releaseMarks;
+    const marks = new Promise((resolve) => { releaseMarks = resolve; });
+    const onError = vi.fn();
+    const { evaluation } = startPostUpgradeReadiness({
+      readiness,
+      updatesDue: () => marks,
+      recipeUpdates: [],
+      routes: () => composition.readinessRoutes(),
+      onError,
+    });
+    expect(prepareRecipe).not.toHaveBeenCalled();
+    releaseMarks(["codex-basic", "claude-basic"]);
+    const result = await evaluation;
+    expect(onError).not.toHaveBeenCalled();
+    // One evaluation for the shared harness, not one per provider. The due harness whose
+    // runtime was never installed waits for Connect: the upgrade never installs it first.
+    expect(prepareRecipe).toHaveBeenCalledOnce();
+    expect(prepareRecipe).toHaveBeenCalledWith("codex@0.147.0");
+    expect(publishAvailability).toHaveBeenCalledOnce();
+    expect(publishAvailability).toHaveBeenCalledWith([{
+      harnessId: "codex-basic", configurationDigest: "sha256:codex-basic-upgraded",
+      generation: 1, available: true, unavailableReason: null,
+    }]);
+    expect(result.readyHarnessIds).toEqual(["codex-basic"]);
+    // Both providers are its routes; the app-server test
+    // one_post_upgrade_evaluation_restores_both_providers_sharing_a_route shows this one
+    // result makes both ready.
+    expect((await composition.readinessRoutes()).map(({ providerDefinition }) => providerDefinition.id))
+      .toEqual(["chatgpt", "openrouter"]);
+
+    // The next start has nothing due, so it evaluates nothing.
+    await startPostUpgradeReadiness({
+      readiness, updatesDue: async () => [], routes: () => composition.readinessRoutes(),
+    }).evaluation;
+    expect(prepareRecipe).toHaveBeenCalledOnce();
+    // A newly activated recipe is due too, and only for the harnesses that run it.
+    await startPostUpgradeReadiness({
+      readiness, updatesDue: async () => [], recipeUpdates: ["codex@0.147.0"],
+      routes: () => composition.readinessRoutes(),
+    }).evaluation;
+    expect(prepareRecipe).toHaveBeenCalledTimes(2);
+    expect(publishAvailability).toHaveBeenLastCalledWith([expect.objectContaining({
+      harnessId: "codex-basic", generation: 2, available: true,
+    })]);
+    // A failed read only reports; it never rejects into startup.
+    const failure = new Error("app server unavailable");
+    const reported = vi.fn();
+    await expect(startPostUpgradeReadiness({
+      readiness, updatesDue: async () => { throw failure; }, routes: () => composition.readinessRoutes(), onError: reported,
+    }).evaluation).resolves.toBeNull();
+    expect(reported).toHaveBeenCalledWith(failure);
+    // Without the installed-recipe check it refuses, rather than skipping every harness.
+    const unchecked = createHarnessReadinessCoordinator({
+      configurations, digestConfiguration: ({ name }) => name, runtimeRequirements: {},
+      prepareRecipe, checkers: { "codex.basic": async () => ({ available: true }), "claude.basic": async () => ({ available: true }) },
+      publishAvailability,
+    });
+    const refused = vi.fn();
+    await startPostUpgradeReadiness({
+      readiness: unchecked, updatesDue: async () => ["codex-basic"], routes: () => composition.readinessRoutes(), onError: refused,
+    }).evaluation;
+    expect(refused).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringMatching(/installed-recipe check/) }));
+    await composition.close();
+  });
+
+  // PR #576 review: an upgrade can leave the managed runtime present but broken. Then a
+  // managed provider's activation fails, its recovery adapter publishes no models, and it has
+  // no route, so the evaluation alone would never run. The post-upgrade step repairs that
+  // provider as Repair does, but only when its runtime was installed before.
+  it.each([
+    ["repairs a managed provider whose activation failed on its broken runtime", true, "digest"],
+    ["repairs a failed managed provider once for a newly activated recipe", true, "recipe"],
+    ["never installs a missing runtime to recover a managed provider", false, "digest"],
+    // PR #576 review: recovery discovers once and that catalog is what publishes. A second
+    // discovery that fails must not leave the provider without a route.
+    ["publishes the catalog its recovery discovered, without discovering again", true, "digest", true],
+  ])("%s", async (_, installedBefore, trigger, discoverOnce = false) => {
+    let runtimeHealthy = false;
+    let discoveries = 0;
+    const prepareRuntime = vi.fn(async () => { runtimeHealthy = true; });
+    const create = vi.fn(({ definition }) => {
+      if (!runtimeHealthy) throw new Error("managed runtime installation is invalid");
+      return {
+        providerId: definition.id,
+        discover: async () => {
+          discoveries += 1;
+          if (discoverOnce && discoveries > 1) throw new Error("provider catalog unavailable");
+          return discoveredCatalog(definition);
+        },
+        close: vi.fn(async () => {}),
+      };
+    });
+    const discoveredCatalog = (definition) => ({
+          provider: { id: definition.id, label: definition.label, status: "available" },
+          models: [{
+            id: "work-chatgpt", executionModel: "work-chatgpt", label: "Work", description: "",
+            visible: true, availability: "available", unavailableReason: null, availabilityNotice: null,
+            isDefault: true, replacementModelId: null, upgradeInfo: null, supportedEfforts: [],
+            defaultEffort: null, inputModalities: ["text"], supportsPersonality: false,
+            serviceTiers: [], defaultServiceTier: null,
+          }],
+          systemFamily: { id: definition.id, label: definition.label, modelIds: ["work-chatgpt"] },
+    });
+    const configurations = new Map([["codex-basic", {
+      schemaVersion: 1, name: "codex-basic", implementation: "codex.basic", implementationVersion: 1,
+      permissionBindings: { auto: {} },
+      modelRules: { allow: [{ adapterId: "codex-subscription", modelIdRegex: "^work-" }], deny: [] },
+      executionAccessContracts: ["managed-runtime@1"], settings: {},
+    }]]);
+    const due = new Set(trigger === "digest" ? ["codex-basic"] : []);
+    const recipeUpdates = trigger === "recipe" ? ["codex@0.147.0"] : [];
+    const prepareRecipe = vi.fn(async (recipeId) => ({ recipeId }));
+    const publishAvailability = vi.fn(async (updates) => {
+      for (const { harnessId } of updates) due.delete(harnessId);
+    });
+    const readiness = createHarnessReadinessCoordinator({
+      configurations,
+      digestConfiguration: ({ name }) => `sha256:${name}-upgraded`,
+      runtimeRequirements: { "codex.basic": { runtimeId: "codex", recipeId: "codex@0.147.0" } },
+      prepareRecipe,
+      checkers: { "codex.basic": async () => ({ available: runtimeHealthy }) },
+      publishAvailability,
+      recipeInstalled: async () => installedBefore,
+    });
+    const published = [];
+    const composition = createProviderComposition({
+      registry: createProviderAdapterRegistry([{
+        adapterId: "codex-subscription", implementationVersion: "1", label: "ChatGPT",
+        accessContract: "managed-runtime@1", defaultEndpoint: null,
+        connection: { mode: "managed-login", fields: [] }, create,
+      }]),
+      definitionStore: { async load() { return [{
+        id: "chatgpt", adapterId: "codex-subscription", label: "ChatGPT", endpoint: null,
+        accessContract: "managed-runtime@1", credentialReference: null, lifecycleState: "active",
+      }]; } },
+      credentialStore: { async listReferences() { return []; } },
+      prepareRuntime,
+      evaluateReadiness: (request) => readiness.evaluate(request),
+      publishCatalog: async (snapshot) => { published.push(snapshot); },
+      modelCatalogOptions: { backgroundIntervalMs: 60_000 },
+    });
+
+    await composition.start();
+    expect(published.at(-1)).toMatchObject({ providerId: "chatgpt", connected: false, models: [] });
+    expect(await composition.readinessRoutes()).toEqual([]);
+
+    const onError = vi.fn();
+    await startPostUpgradeReadiness({
+      readiness,
+      updatesDue: async () => [...due],
+      recipeUpdates,
+      routes: () => composition.readinessRoutes(),
+      repairProviders: (recipeIds) => composition.repairFailedActivations(recipeIds, {
+        recipeForAdapter: () => "codex@0.147.0",
+      }),
+      onError,
+    }).evaluation;
+    expect(onError).not.toHaveBeenCalled();
+
+    if (installedBefore) {
+      // The repair's own evaluation is the one evaluation: nothing prepares or publishes again.
+      expect(prepareRuntime).toHaveBeenCalledOnce();
+      expect(prepareRecipe).toHaveBeenCalledOnce();
+      expect(publishAvailability).toHaveBeenCalledOnce();
+      expect(publishAvailability).toHaveBeenCalledWith([expect.objectContaining({
+        harnessId: "codex-basic", available: true,
+      })]);
+      expect(due.size).toBe(0);
+      expect(published.at(-1)).toMatchObject({ providerId: "chatgpt", connected: true, models: [{ id: "work-chatgpt" }] });
+      const lease = await composition.providerDefinitions.acquireExecution("chatgpt");
+      await lease.release();
+    } else {
+      expect(prepareRuntime).not.toHaveBeenCalled();
+      expect(publishAvailability).not.toHaveBeenCalled();
+      expect(due).toEqual(new Set(["codex-basic"]));
+      expect(prepareRecipe).not.toHaveBeenCalled();
+    }
+    await composition.close();
+  });
+
+  // PR #576 review: two managed providers on one harness whose activation failed on the same
+  // broken runtime are both recovered, but the harness still gets one evaluation.
+  it("recovers every failed managed provider of a due harness with one evaluation", async () => {
+    let runtimeHealthy = false;
+    const prepareRuntime = vi.fn(async () => { runtimeHealthy = true; });
+    const model = (id) => ({
+      id, executionModel: id, label: id, description: "", visible: true, availability: "available",
+      unavailableReason: null, availabilityNotice: null, isDefault: true, replacementModelId: null,
+      upgradeInfo: null, supportedEfforts: [], defaultEffort: null, inputModalities: ["text"],
+      supportsPersonality: false, serviceTiers: [], defaultServiceTier: null,
+    });
+    const create = vi.fn(({ definition }) => {
+      if (!runtimeHealthy) throw new Error("managed runtime installation is invalid");
+      return {
+        providerId: definition.id,
+        discover: async () => ({
+          provider: { id: definition.id, label: definition.label, status: "available" },
+          models: [model(`work-${definition.id}`)],
+          systemFamily: { id: definition.id, label: definition.label, modelIds: [`work-${definition.id}`] },
+        }),
+        close: vi.fn(async () => {}),
+      };
+    });
+    const configurations = new Map([["codex-basic", {
+      schemaVersion: 1, name: "codex-basic", implementation: "codex.basic", implementationVersion: 1,
+      permissionBindings: { auto: {} },
+      modelRules: { allow: [{ adapterId: "codex-subscription", modelIdRegex: "^work-" }], deny: [] },
+      executionAccessContracts: ["managed-runtime@1"], settings: {},
+    }]]);
+    const due = new Set(["codex-basic"]);
+    const publishAvailability = vi.fn(async (updates) => {
+      for (const { harnessId } of updates) due.delete(harnessId);
+    });
+    const prepareRecipe = vi.fn(async (recipeId) => ({ recipeId }));
+    const readiness = createHarnessReadinessCoordinator({
+      configurations,
+      digestConfiguration: ({ name }) => `sha256:${name}-upgraded`,
+      runtimeRequirements: { "codex.basic": { runtimeId: "codex", recipeId: "codex@0.147.0" } },
+      prepareRecipe,
+      checkers: { "codex.basic": async () => ({ available: runtimeHealthy }) },
+      publishAvailability,
+      recipeInstalled: async () => true,
+    });
+    const published = [];
+    const definition = (id) => ({
+      id, adapterId: "codex-subscription", label: id, endpoint: null,
+      accessContract: "managed-runtime@1", credentialReference: null, lifecycleState: "active",
+    });
+    const composition = createProviderComposition({
+      registry: createProviderAdapterRegistry([{
+        adapterId: "codex-subscription", implementationVersion: "1", label: "ChatGPT",
+        accessContract: "managed-runtime@1", defaultEndpoint: null,
+        connection: { mode: "managed-login", fields: [] }, create,
+      }]),
+      definitionStore: { async load() { return [definition("work"), definition("personal")]; } },
+      credentialStore: { async listReferences() { return []; } },
+      prepareRuntime,
+      evaluateReadiness: (request) => readiness.evaluate(request),
+      publishCatalog: async (snapshot) => { published.push(snapshot); },
+      modelCatalogOptions: { backgroundIntervalMs: 60_000 },
+    });
+
+    await composition.start();
+    const onError = vi.fn();
+    await startPostUpgradeReadiness({
+      readiness,
+      updatesDue: async () => [...due],
+      routes: () => composition.readinessRoutes(),
+      repairProviders: (recipeIds) => composition.repairFailedActivations(recipeIds, {
+        recipeForAdapter: () => "codex@0.147.0",
+      }),
+      onError,
+    }).evaluation;
+    expect(onError).not.toHaveBeenCalled();
+    expect(publishAvailability).toHaveBeenCalledOnce();
+    expect(prepareRecipe).toHaveBeenCalledOnce();
+    expect(due.size).toBe(0);
+    for (const id of ["work", "personal"]) {
+      expect(published.filter((snapshot) => snapshot.providerId === id).at(-1))
+        .toMatchObject({ connected: true, models: [{ id: `work-${id}` }] });
+    }
+    await composition.close();
+  });
+
+  it("starts the post-upgrade evaluation from desktop startup without awaiting it", async () => {
+    const source = await readFile(new URL("../desktop/main/index.mjs", import.meta.url), "utf8");
+    const start = source.indexOf("await providerComposition.start();");
+    const call = source.indexOf("postUpgradeReadiness = createPostUpgradeReadiness({", start);
+    const window = source.indexOf("mainWindow = await createWindow(", start);
+    expect(start).toBeGreaterThan(0);
+    expect(call).toBeGreaterThan(start);
+    expect(call).toBeLessThan(window);
+    const step = source.slice(call, source.indexOf("});", call));
+    expect(step).toContain("updatesDue: () => productServer.harnessReadinessUpdatesDue()");
+    expect(step).toContain("recipeUpdates: activation.recipeUpdates");
+    // The runner recovers through the composition itself, forwarding the stop signal.
+    expect(step).toContain("composition: providerComposition");
+    expect(step).toContain("recipeForAdapter: (adapterId) => managedRuntimeRequirementForAdapter(adapterId).recipeId");
+    expect(source.slice(call, window)).toContain("postUpgradeReadiness.start();");
+    expect(source).toContain("recipeInstalled: (recipeId) => managedRecipeInstalled(managedRuntimeResolver, recipeId)");
+    expect(source).not.toMatch(/await\s+postUpgradeReadiness\.start\(\)/);
+    // PR #576/#607 review: the quit guard runs through the runner, which stops the evaluation
+    // first and restarts it if the quit is declined; shutdown stops, cancels and awaits it
+    // before the services it uses close.
+    const confirm = source.slice(source.indexOf("const confirmQuit = "), source.indexOf("\n", source.indexOf("const confirmQuit = ") + 80));
+    expect(source).toContain("postUpgradeReadiness.confirmQuit(() => confirmManagedQuit(options))");
+    expect(confirm).toContain("postUpgradeReadiness");
+    const shutdown = source.slice(source.indexOf("async function shutdownServices()"), source.indexOf("if (productServer) await productServer.close();"));
+    expect(shutdown).toContain("await postUpgradeReadiness?.stopForShutdown(");
+    expect(shutdown).toContain("managedRuntimeInstaller.cancelAll(");
+    // Readiness checkers receive the stop, including the Prime kernel probe.
+    expect(source).toContain('"prime.agent": ({ runtime, signal }) => checkPrimeManagedRuntime({ runtime, signal })');
+    // Startup names each coordinated harness's required recipe for the app server.
+    expect(source).toContain("harnessRuntimeRecipe: (configuration) => managedRuntimeInstaller.recipeIdentity(");
+    expect(source).toContain("harnessRuntimeUpdated: (configuration) => updatedRuntimeIds.has(");
+    expect(source).toContain("for (const runtimeId of runtimesChangedByActivation(activation)) updatedRuntimeIds.add(runtimeId);");
+    expect(source.indexOf("runtimesChangedByActivation(activation)")).toBeLessThan(source.indexOf("await graphRuntime.start()"));
+    const evalSource = await readFile(new URL("../desktop/eval-main/index.mjs", import.meta.url), "utf8");
+    expect(evalSource).toContain("harnessRuntimeRecipe: ({ implementation }) => runtimeFileValidator.recipeIdentity(");
   });
 });

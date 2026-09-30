@@ -1,3 +1,4 @@
+import { APPEARANCE_PREFERENCES, resolvedAppearance, windowBackgroundColor } from "../appearance.mjs";
 import { inspectFolder } from "../services/folder-service.mjs";
 import { isTerminalConnectionFailure } from "../providers/provider-definition-service.mjs";
 
@@ -146,6 +147,17 @@ export function registerWorkspaceLayoutIpc({ ipcMain, settings }) {
   });
 }
 
+export function registerAppearanceIpc({ ipcMain, nativeTheme, settings, getWindow }) {
+  ipcMain.handle("relayer:appearance-read", () => ({ appearance: nativeTheme.themeSource }));
+  ipcMain.handle("relayer:appearance-set", async (_event, appearance) => {
+    if (!APPEARANCE_PREFERENCES.includes(appearance)) throw new TypeError("Invalid appearance.");
+    nativeTheme.themeSource = appearance;
+    getWindow()?.setBackgroundColor(windowBackgroundColor(resolvedAppearance(nativeTheme)));
+    await settings.update((current) => ({ ...current, appearance }));
+    return { appearance };
+  });
+}
+
 export function registerLayerSelectionIpc({ ipcMain, settings }) {
   ipcMain.handle("relayer:layer-selections-read", async () => (
     layerSelectionEntries((await settings.read()).layerSelections)
@@ -201,12 +213,9 @@ export function registerDesktopIpc({
   updater,
   getWindow,
   presentWindow = () => {},
-  getAppearance,
-  setAppearance,
   beforeUpdateInstall = async () => {},
   onUpdateInstallFailure = async () => {},
 }) {
-  const normalizeAppearance = (value) => value === "light" ? "light" : "dark";
   // A change notification is an announcement, never a step of the operation it
   // reports. Sending into contents that were destroyed mid-flight must not turn
   // a settled connection into a rejection, nor pre-empt the browser return.
@@ -367,15 +376,7 @@ export function registerDesktopIpc({
     if (selection.canceled || !selection.filePaths[0]) return null;
     return inspectFolder(selection.filePaths[0]);
   });
-  ipcMain.handle("relayer:appearance-read", () => ({ appearance: getAppearance() }));
-  ipcMain.handle("relayer:appearance-set", async (_event, value) => {
-    const appearance = normalizeAppearance(value);
-    setAppearance(appearance);
-    nativeTheme.themeSource = appearance;
-    getWindow()?.setBackgroundColor(appearance === "light" ? "#fafafa" : "#0b0c0d");
-    await settings.update((current) => ({ ...current, appearance }));
-    return { appearance };
-  });
+  registerAppearanceIpc({ ipcMain, nativeTheme, settings, getWindow });
   if (worktrees) registerWorktreeIpc({ ipcMain, worktrees });
   registerComposerDraftIpc({ ipcMain, settings });
   registerLayerSelectionIpc({ ipcMain, settings });

@@ -195,6 +195,13 @@ impl ProductService {
             .map_err(Into::into)
     }
 
+    pub(crate) async fn harness_readiness_updates_due(&self) -> Result<Vec<String>, ProductError> {
+        self.storage
+            .harness_readiness_updates_due()
+            .await
+            .map_err(Into::into)
+    }
+
     pub(crate) async fn provider_definitions(
         &self,
     ) -> Result<Vec<super::ProviderDefinition>, ProductError> {
@@ -1988,6 +1995,47 @@ impl ProductService {
             .await?)
     }
 
+    /// See `SqliteProductStore::fail_unlaunched_recursive_child`.
+    pub(crate) async fn fail_unlaunched_recursive_child(
+        &self,
+        interaction_id: InteractionId,
+        graph_completion_id: i64,
+        harness_configuration_name: &str,
+        safe_reason: &str,
+        graph_pending: bool,
+        timestamp: &str,
+    ) -> Result<bool, ProductError> {
+        Ok(self
+            .storage
+            .fail_unlaunched_recursive_child(
+                interaction_id,
+                graph_completion_id,
+                harness_configuration_name,
+                safe_reason,
+                false,
+                graph_pending,
+                timestamp,
+            )
+            .await?)
+    }
+
+    pub(crate) async fn confirm_refused_child_graph_failure(
+        &self,
+        interaction_id: InteractionId,
+    ) -> Result<(), ProductError> {
+        Ok(self
+            .storage
+            .confirm_refused_child_graph_failure(interaction_id)
+            .await?)
+    }
+
+    pub(crate) async fn is_agent_invoked_child(
+        &self,
+        interaction_id: InteractionId,
+    ) -> Result<bool, ProductError> {
+        Ok(self.storage.is_agent_invoked_child(interaction_id).await?)
+    }
+
     pub(crate) async fn reserve_completion_execution(
         &self,
         binding: crate::storage::CompletionExecutionBinding<'_>,
@@ -3592,6 +3640,8 @@ mod tests {
             family_policy: None,
             runtime_available: true,
             restore_prior_readiness: false,
+            runtime_recipe: None,
+            runtime_updated: false,
             unavailable_reason: None,
         });
         storage
@@ -4913,6 +4963,8 @@ mod tests {
                 }),
                 runtime_available: true,
                 restore_prior_readiness: false,
+                runtime_recipe: None,
+                runtime_updated: false,
                 unavailable_reason: None,
             },
             RuntimeProductHarness {
@@ -4935,6 +4987,8 @@ mod tests {
                 }),
                 runtime_available: true,
                 restore_prior_readiness: false,
+                runtime_recipe: None,
+                runtime_updated: false,
                 unavailable_reason: None,
             },
             RuntimeProductHarness {
@@ -4957,6 +5011,8 @@ mod tests {
                 }),
                 runtime_available: true,
                 restore_prior_readiness: false,
+                runtime_recipe: None,
+                runtime_updated: false,
                 unavailable_reason: None,
             },
         ]
@@ -4974,6 +5030,8 @@ mod tests {
                 family_policy: None,
                 runtime_available: true,
                 restore_prior_readiness: false,
+                runtime_recipe: None,
+                runtime_updated: false,
                 unavailable_reason: None,
             },
             RuntimeProductHarness {
@@ -4990,6 +5048,8 @@ mod tests {
                 family_policy: None,
                 runtime_available: true,
                 restore_prior_readiness: false,
+                runtime_recipe: None,
+                runtime_updated: false,
                 unavailable_reason: None,
             },
         ]

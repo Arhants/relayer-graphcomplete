@@ -1,0 +1,8 @@
+{
+ "_readme": "Overrides for M4 (Oat Terracotta). Run: node engine.mjs --overrides overrides/M4.json M4. Summary: tokens/M4.md",
+ "M4": {
+  "danger": { "swatch": "#D5305C" },
+  "warning": { "h": 85 },
+  "_why": "failure = one saturated crimson oklch(0.58 0.20 11), used exactly in both themes: the engine's derived dusty red (C 0.11, h15) sat dE 5.4 from the terracotta signal in light and 4.1 from the rust selection ring in dark; warning h75->h85 moves approval away from terracotta (5.8->7.4) and the rust link (dark 6.9->8.5)"
+ }
+}

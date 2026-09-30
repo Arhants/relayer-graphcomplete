@@ -110,7 +110,7 @@ export function renderPublicViewerTemplate({
   const snapshotLiteral = safeJsonScriptText(snapshot);
   const csp = escapeHtml(publicViewerCsp());
   const logo = escapeHtml(viewerAsset(assetManifest, "logo", "assets/relayer-logo.svg", base));
-  const ogImage = escapeHtml(viewerAsset(assetManifest, "ogImage", "assets/relayer-share-og.svg", base));
+  const ogImage = escapeHtml(viewerAsset(assetManifest, "ogImage", "design/share-og.svg", base));
   const viewerScript = escapeHtml(viewerAsset(assetManifest, "viewerScript", "src/public-share-viewer/main.js", base));
   const viewerStyles = escapeHtml(viewerAsset(assetManifest, "viewerStyles", "src/public-share-viewer/viewer.css", base));
   const workspaceStyles = escapeHtml(viewerAsset(assetManifest, "workspaceStyles", "styles.css", base));
@@ -138,17 +138,8 @@ export function renderPublicViewerTemplate({
     ${presentation === "embed" ? `<nav class="public-share-embed-branding" aria-label="Shared graph links">
       <span class="public-share-attribution"><img src="${logo}" alt="" width="18" height="18">Relayer</span>
       <a href="${escapeHtml(sharePath)}" target="_blank" rel="noopener noreferrer" aria-label="Open full graph (opens in a new tab)">Open full graph <span aria-hidden="true">↗</span></a>
-    </nav>` : `<aside class="public-share-download-card" aria-labelledby="publicShareDownloadTitle">
-      <div class="public-share-download-copy">
-        <img src="${logo}" alt="" width="28" height="28">
-        <div>
-          <strong id="publicShareDownloadTitle">Relayer for Mac</strong>
-          <small>Explore this thread, then build your own.</small>
-        </div>
-      </div>
-      <div class="public-share-download-actions">
-        <a class="public-share-primary-action" href="${install}" target="_blank" rel="noopener noreferrer">Download</a>
-      </div>
+    </nav>` : `<aside class="public-share-download-card" aria-label="Get Relayer">
+      <a class="public-share-primary-action" href="${install}" target="_blank" rel="noopener noreferrer">Get Relayer</a>
     </aside>`}
     <section id="publicViewerHost" class="public-share-workspace-host" aria-label="Shared conversation workspace">
       <section class="thread-view" id="threadView"></section>

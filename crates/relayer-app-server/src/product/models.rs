@@ -64,6 +64,9 @@ pub(crate) struct Thread {
     pub(crate) created_at: String,
     pub(crate) updated_at: String,
     pub(crate) imported: bool,
+    /// The latest interaction's live state for thread lists: running, stopping,
+    /// needs_approval or failed. None when idle, accepted, stopped or cancelled.
+    pub(crate) activity: Option<String>,
 }
 
 /// A recursive child that settled while its provider still ran, found after a restart.
@@ -255,6 +258,9 @@ pub(crate) struct ActionInvocation {
     pub(crate) result_interaction_id: InteractionId,
     pub(crate) result_completion_status: String,
     pub(crate) created_at: String,
+    /// An agent launched this result through its completion broker: a semantic child, not a
+    /// human turn.
+    pub(crate) agent_invoked: bool,
 }
 
 #[derive(Debug, Clone, Copy)]

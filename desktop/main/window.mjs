@@ -1,5 +1,7 @@
 import { join } from "node:path";
 
+import { windowBackgroundColor } from "./appearance.mjs";
+
 const UNEXPECTED_RENDERER_TERMINATIONS = new Set([
   "abnormal-exit",
   "crashed",
@@ -43,7 +45,7 @@ export function createWindowFactory({
       minWidth: 375,
       minHeight: 640,
       titleBarStyle: "hiddenInset",
-      backgroundColor: getAppearance() === "light" ? "#fafafa" : "#0b0c0d",
+      backgroundColor: windowBackgroundColor(getAppearance()),
       webPreferences: {
         preload: join(desktopDirectory, "preload", "index.cjs"),
         contextIsolation: true,

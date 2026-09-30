@@ -1,0 +1,868 @@
+{
+  "format": 1,
+  "name": "sticker",
+  "fonts": {
+    "ui": "figtree",
+    "display": "bricolage-grotesque",
+    "mono": "dm-mono"
+  },
+  "roles": [
+    "bg",
+    "sidebar",
+    "surface",
+    "field",
+    "overlay",
+    "hover",
+    "selected",
+    "border",
+    "border-strong",
+    "text",
+    "text-muted",
+    "text-faint",
+    "accent-solid",
+    "accent-solid-text",
+    "accent-solid-hover",
+    "accent-solid-alt",
+    "accent-solid-alt-text",
+    "accent-soft-bg",
+    "accent-text",
+    "selection-ring",
+    "running",
+    "running-text",
+    "running-soft-bg",
+    "running-ink",
+    "accepted-fill",
+    "accepted-fill-text",
+    "accepted-mark",
+    "canvas-bg",
+    "edge",
+    "edge-strong",
+    "node-fill",
+    "node-stroke",
+    "draft-outline",
+    "danger-solid",
+    "danger-strong",
+    "danger-text",
+    "danger-soft-bg",
+    "warning-solid",
+    "warning-text",
+    "warning-soft-bg",
+    "success-text",
+    "draft-solid",
+    "draft-text",
+    "draft-soft-bg",
+    "diff-add",
+    "diff-del",
+    "ink",
+    "white",
+    "cream",
+    "deck",
+    "sticker-bg",
+    "scrim"
+  ],
+  "families": [
+    "f1",
+    "f2",
+    "f3",
+    "f4",
+    "f5",
+    "f6"
+  ],
+  "translucent": [
+    "scrim"
+  ],
+  "groups": {
+    "interaction": [
+      "accent-solid",
+      "accent-solid-text",
+      "accent-solid-hover",
+      "accent-solid-alt",
+      "accent-solid-alt-text",
+      "accent-soft-bg",
+      "accent-text",
+      "selection-ring"
+    ],
+    "running": [
+      "running",
+      "running-text",
+      "running-soft-bg",
+      "running-ink"
+    ],
+    "accepted": [
+      "accepted-fill",
+      "accepted-fill-text",
+      "accepted-mark"
+    ],
+    "draft": [
+      "draft-outline",
+      "draft-solid",
+      "draft-text",
+      "draft-soft-bg"
+    ],
+    "danger": [
+      "danger-solid",
+      "danger-strong",
+      "danger-text",
+      "danger-soft-bg"
+    ],
+    "warning": [
+      "warning-solid",
+      "warning-text",
+      "warning-soft-bg"
+    ]
+  },
+  "allowedAliases": [
+    [
+      "running",
+      "interaction"
+    ]
+  ],
+  "floors": {
+    "text": 4.5,
+    "large": 3,
+    "stroke": 3.2,
+    "mark": 3,
+    "info": 0
+  },
+  "tokens": [],
+  "pairs": [
+    {
+      "fg": "text",
+      "bg": "bg",
+      "kind": "text",
+      "what": "primary text"
+    },
+    {
+      "fg": "text",
+      "bg": "sidebar",
+      "kind": "text",
+      "what": "primary text"
+    },
+    {
+      "fg": "text",
+      "bg": "surface",
+      "kind": "text",
+      "what": "primary text"
+    },
+    {
+      "fg": "text",
+      "bg": "field",
+      "kind": "text",
+      "what": "primary text"
+    },
+    {
+      "fg": "text",
+      "bg": "overlay",
+      "kind": "text",
+      "what": "primary text"
+    },
+    {
+      "fg": "text",
+      "bg": "hover",
+      "kind": "text",
+      "what": "primary text"
+    },
+    {
+      "fg": "text",
+      "bg": "selected",
+      "kind": "text",
+      "what": "primary text"
+    },
+    {
+      "fg": "text",
+      "bg": "accent-soft-bg",
+      "kind": "text",
+      "what": "primary text"
+    },
+    {
+      "fg": "text",
+      "bg": "node-fill",
+      "kind": "text",
+      "what": "primary text"
+    },
+    {
+      "fg": "text",
+      "bg": "canvas-bg",
+      "kind": "text",
+      "what": "primary text"
+    },
+    {
+      "fg": "text",
+      "bg": "draft-soft-bg",
+      "kind": "text",
+      "what": "primary text"
+    },
+    {
+      "fg": "text-muted",
+      "bg": "bg",
+      "kind": "text",
+      "what": "secondary text, captions, placeholders, kbd"
+    },
+    {
+      "fg": "text-muted",
+      "bg": "sidebar",
+      "kind": "text",
+      "what": "secondary text, captions, placeholders, kbd"
+    },
+    {
+      "fg": "text-muted",
+      "bg": "surface",
+      "kind": "text",
+      "what": "secondary text, captions, placeholders, kbd"
+    },
+    {
+      "fg": "text-muted",
+      "bg": "field",
+      "kind": "text",
+      "what": "secondary text, captions, placeholders, kbd"
+    },
+    {
+      "fg": "text-muted",
+      "bg": "overlay",
+      "kind": "text",
+      "what": "secondary text, captions, placeholders, kbd"
+    },
+    {
+      "fg": "text-muted",
+      "bg": "hover",
+      "kind": "text",
+      "what": "secondary text, captions, placeholders, kbd"
+    },
+    {
+      "fg": "text-muted",
+      "bg": "selected",
+      "kind": "text",
+      "what": "secondary text, captions, placeholders, kbd"
+    },
+    {
+      "fg": "text-muted",
+      "bg": "node-fill",
+      "kind": "text",
+      "what": "secondary text, captions, placeholders, kbd"
+    },
+    {
+      "fg": "text-muted",
+      "bg": "canvas-bg",
+      "kind": "text",
+      "what": "secondary text, captions, placeholders, kbd"
+    },
+    {
+      "fg": "text-muted",
+      "bg": "sticker-bg",
+      "kind": "text",
+      "what": "download-card pitch"
+    },
+    {
+      "fg": "text",
+      "bg": "sticker-bg",
+      "kind": "text",
+      "what": "download-card title"
+    },
+    {
+      "fg": "text-faint",
+      "bg": "surface",
+      "kind": "info",
+      "what": "disabled only"
+    },
+    {
+      "fg": "text-faint",
+      "bg": "field",
+      "kind": "info",
+      "what": "disabled only"
+    },
+    {
+      "fg": "accent-text",
+      "bg": "sidebar",
+      "kind": "text",
+      "what": "link in sidebar"
+    },
+    {
+      "fg": "accent-text",
+      "bg": "surface",
+      "kind": "text",
+      "what": "link in inspector"
+    },
+    {
+      "fg": "accent-text",
+      "bg": "accent-soft-bg",
+      "kind": "text",
+      "what": "[PD] tag text, Jump to live"
+    },
+    {
+      "fg": "running-text",
+      "bg": "running-soft-bg",
+      "kind": "text",
+      "what": "Running pill"
+    },
+    {
+      "fg": "running-text",
+      "bg": "canvas-bg",
+      "kind": "text",
+      "what": "\"Running\" node caption (on the canvas halo)"
+    },
+    {
+      "fg": "running-text",
+      "bg": "surface",
+      "kind": "text",
+      "what": "running copy on cards (turn popover glyph row)"
+    },
+    {
+      "fg": "draft-text",
+      "bg": "canvas-bg",
+      "kind": "text",
+      "what": "\"Draft\" node caption"
+    },
+    {
+      "fg": "draft-text",
+      "bg": "draft-soft-bg",
+      "kind": "text",
+      "what": "working-layer tag"
+    },
+    {
+      "fg": "text-muted",
+      "bg": "canvas-bg",
+      "kind": "text",
+      "what": "\"Stopped\" node caption"
+    },
+    {
+      "fg": "danger-text",
+      "bg": "canvas-bg",
+      "kind": "text",
+      "what": "\"Failed\" node caption"
+    },
+    {
+      "fg": "danger-text",
+      "bg": "danger-soft-bg",
+      "kind": "text",
+      "what": "Failed pill, failure message"
+    },
+    {
+      "fg": "danger-text",
+      "bg": "surface",
+      "kind": "text",
+      "what": "failure copy on cards"
+    },
+    {
+      "fg": "warning-text",
+      "bg": "warning-soft-bg",
+      "kind": "text",
+      "what": "Needs approval pill"
+    },
+    {
+      "fg": "warning-text",
+      "bg": "surface",
+      "kind": "text",
+      "what": "approval dock eyebrow"
+    },
+    {
+      "fg": "accepted-fill-text",
+      "bg": "accepted-fill",
+      "kind": "text",
+      "what": "Accepted pill + stamp text"
+    },
+    {
+      "fg": "accent-solid-alt-text",
+      "bg": "accent-solid-alt",
+      "kind": "text",
+      "what": "primary button, Download label"
+    },
+    {
+      "fg": "accent-solid-text",
+      "bg": "accent-solid",
+      "kind": "text",
+      "what": "milk-cocoa fill label (update dot)"
+    },
+    {
+      "fg": "running-ink",
+      "bg": "running",
+      "kind": "text",
+      "what": "Send arrow, running badge glyph"
+    },
+    {
+      "fg": "diff-add",
+      "bg": "surface",
+      "kind": "text",
+      "what": "env +adds"
+    },
+    {
+      "fg": "diff-del",
+      "bg": "surface",
+      "kind": "text",
+      "what": "env −dels"
+    },
+    {
+      "fg": "diff-add",
+      "bg": "field",
+      "kind": "text",
+      "what": "env +adds on field"
+    },
+    {
+      "fg": "diff-del",
+      "bg": "field",
+      "kind": "text",
+      "what": "env −dels on field"
+    },
+    {
+      "fg": "ink",
+      "bg": "cream",
+      "kind": "text",
+      "what": "logo ink on the cream tile"
+    },
+    {
+      "fg": "family:icon",
+      "bg": "family:fill",
+      "kind": "text",
+      "what": "{family} icon on disc"
+    },
+    {
+      "fg": "family:fill",
+      "bg": "node-fill",
+      "kind": "mark",
+      "what": "{family} disc on pill fill"
+    },
+    {
+      "fg": "family:fill",
+      "bg": "canvas-bg",
+      "kind": "mark",
+      "what": "{family} disc on canvas (draft hollow, overview)"
+    },
+    {
+      "fg": "family:fill",
+      "bg": "surface",
+      "kind": "mark",
+      "what": "{family} disc on inspector / legend"
+    },
+    {
+      "fg": "text-muted",
+      "bg": "field",
+      "kind": "text",
+      "what": "Neutral icon on --field disc"
+    },
+    {
+      "fg": "edge",
+      "bg": "canvas-bg",
+      "kind": "stroke",
+      "what": "edge 1.5px"
+    },
+    {
+      "fg": "edge-strong",
+      "bg": "canvas-bg",
+      "kind": "stroke",
+      "what": "selected-incident edge 2px"
+    },
+    {
+      "fg": "node-stroke",
+      "bg": "canvas-bg",
+      "kind": "stroke",
+      "what": "pill outline 1.5px"
+    },
+    {
+      "fg": "draft-outline",
+      "bg": "canvas-bg",
+      "kind": "stroke",
+      "what": "draft dashed outline (hollow body = canvas)"
+    },
+    {
+      "fg": "edge-strong",
+      "bg": "canvas-bg",
+      "kind": "stroke",
+      "what": "hover outline"
+    },
+    {
+      "fg": "danger-solid",
+      "bg": "canvas-bg",
+      "kind": "stroke",
+      "what": "failed 2px outline vs canvas"
+    },
+    {
+      "fg": "danger-solid",
+      "bg": "node-fill",
+      "kind": "stroke",
+      "what": "failed 2px outline vs pill fill"
+    },
+    {
+      "fg": "selection-ring",
+      "bg": "canvas-bg",
+      "kind": "stroke",
+      "what": "selection ring 2px"
+    },
+    {
+      "fg": "selection-ring",
+      "bg": "node-fill",
+      "kind": "stroke",
+      "what": "selection ring vs the pill it hugs"
+    },
+    {
+      "fg": "text",
+      "bg": "canvas-bg",
+      "kind": "stroke",
+      "what": "focus ring 2px on canvas"
+    },
+    {
+      "fg": "text",
+      "bg": "surface",
+      "kind": "stroke",
+      "what": "focus ring on cards"
+    },
+    {
+      "fg": "text",
+      "bg": "sidebar",
+      "kind": "stroke",
+      "what": "focus ring in sidebar"
+    },
+    {
+      "fg": "text",
+      "bg": "accent-soft-bg",
+      "kind": "stroke",
+      "what": "focus ring on selected row"
+    },
+    {
+      "fg": "running",
+      "bg": "canvas-bg",
+      "kind": "stroke",
+      "what": "running orbit arc (over the canvas)"
+    },
+    {
+      "fg": "running",
+      "bg": "node-fill",
+      "kind": "stroke",
+      "what": "running orbit arc over the pill"
+    },
+    {
+      "fg": "border-strong",
+      "bg": "canvas-bg",
+      "kind": "stroke",
+      "what": "layer frame (working dashed / retained solid)"
+    },
+    {
+      "fg": "border-strong",
+      "bg": "surface",
+      "kind": "stroke",
+      "what": "input, Stop, secondary button boundary"
+    },
+    {
+      "fg": "border-strong",
+      "bg": "bg",
+      "kind": "stroke",
+      "what": "boundary on page"
+    },
+    {
+      "fg": "border-strong",
+      "bg": "field",
+      "kind": "stroke",
+      "what": "badge disc rim on --field"
+    },
+    {
+      "fg": "accepted-mark",
+      "bg": "canvas-bg",
+      "kind": "stroke",
+      "what": "Accepted stamp rim on the canvas"
+    },
+    {
+      "fg": "accepted-mark",
+      "bg": "bg",
+      "kind": "stroke",
+      "what": "Accepted pill rim on the page"
+    },
+    {
+      "fg": "accepted-mark",
+      "bg": "surface",
+      "kind": "stroke",
+      "what": "Accepted pill rim on cards"
+    },
+    {
+      "fg": "accepted-fill",
+      "bg": "canvas-bg",
+      "kind": "info",
+      "what": "mint stamp body vs canvas (the rim carries the edge in light)"
+    },
+    {
+      "fg": "running",
+      "bg": "canvas-bg",
+      "kind": "mark",
+      "what": "running badge disc"
+    },
+    {
+      "fg": "danger-strong",
+      "bg": "canvas-bg",
+      "kind": "mark",
+      "what": "failed badge disc"
+    },
+    {
+      "fg": "white",
+      "bg": "danger-strong",
+      "kind": "text",
+      "what": "failed badge glyph"
+    },
+    {
+      "fg": "text-muted",
+      "bg": "field",
+      "kind": "text",
+      "what": "stopped ■ glyph on --field disc"
+    },
+    {
+      "fg": "text",
+      "bg": "field",
+      "kind": "text",
+      "what": "invoke / input / attached glyph"
+    },
+    {
+      "fg": "accent-solid-alt",
+      "bg": "canvas-bg",
+      "kind": "mark",
+      "what": "comment badge disc"
+    },
+    {
+      "fg": "white",
+      "bg": "accent-solid-alt",
+      "kind": "text",
+      "what": "comment count"
+    },
+    {
+      "fg": "field",
+      "bg": "text",
+      "kind": "text",
+      "what": "answered-input badge glyph (inverted disc)"
+    },
+    {
+      "fg": "running-text",
+      "bg": "sidebar",
+      "kind": "text",
+      "what": "sidebar Running mark"
+    },
+    {
+      "fg": "running-text",
+      "bg": "hover",
+      "kind": "mark",
+      "what": "sidebar Running mark on a hovered row"
+    },
+    {
+      "fg": "running-text",
+      "bg": "accent-soft-bg",
+      "kind": "mark",
+      "what": "sidebar Running mark on the active row"
+    },
+    {
+      "fg": "warning-text",
+      "bg": "hover",
+      "kind": "mark",
+      "what": "Needs-approval 12px glyph on a hovered row (graphic: 3:1)"
+    },
+    {
+      "fg": "warning-text",
+      "bg": "accent-soft-bg",
+      "kind": "mark",
+      "what": "Needs-approval 12px glyph on the active row (graphic: 3:1)"
+    },
+    {
+      "fg": "danger-text",
+      "bg": "hover",
+      "kind": "mark",
+      "what": "Failed 12px glyph on a hovered row (graphic: 3:1)"
+    },
+    {
+      "fg": "danger-text",
+      "bg": "accent-soft-bg",
+      "kind": "mark",
+      "what": "Failed 12px glyph on the active row (graphic: 3:1)"
+    },
+    {
+      "fg": "warning-text",
+      "bg": "sidebar",
+      "kind": "text",
+      "what": "sidebar Needs-approval mark"
+    },
+    {
+      "fg": "danger-text",
+      "bg": "sidebar",
+      "kind": "text",
+      "what": "sidebar Failed mark"
+    },
+    {
+      "fg": "accent-text",
+      "bg": "accent-soft-bg",
+      "kind": "stroke",
+      "what": "selected-row leading bar (3px)"
+    },
+    {
+      "fg": "accent-text",
+      "bg": "surface",
+      "kind": "stroke",
+      "what": "current turn / selected option bar (3px)"
+    },
+    {
+      "fg": "accent-solid",
+      "bg": "sidebar",
+      "kind": "mark",
+      "what": "update dot"
+    },
+    {
+      "fg": "accent-solid",
+      "bg": "surface",
+      "kind": "mark",
+      "what": "update progress fill on a card"
+    },
+    {
+      "fg": "running",
+      "bg": "bg",
+      "kind": "mark",
+      "what": "header Running symbol (loader-circle)"
+    },
+    {
+      "fg": "running-text",
+      "bg": "bg",
+      "kind": "mark",
+      "what": "header Running symbol, if drawn in running-text"
+    },
+    {
+      "fg": "warning-text",
+      "bg": "bg",
+      "kind": "mark",
+      "what": "header Needs-approval symbol (hand)"
+    },
+    {
+      "fg": "danger-text",
+      "bg": "bg",
+      "kind": "mark",
+      "what": "header Failed symbol (octagon-x)"
+    },
+    {
+      "fg": "text",
+      "bg": "bg",
+      "kind": "stroke",
+      "what": "header Stopping… 2px quarter arc + square (round 2; the --border track is decoration)"
+    },
+    {
+      "fg": "accent-solid-alt",
+      "bg": "surface",
+      "kind": "mark",
+      "what": "primary button fill vs card"
+    },
+    {
+      "fg": "accent-solid-alt",
+      "bg": "sticker-bg",
+      "kind": "mark",
+      "what": "Download fill vs the download card"
+    },
+    {
+      "fg": "running",
+      "bg": "surface",
+      "kind": "mark",
+      "what": "Send fill vs the composer card"
+    },
+    {
+      "fg": "text",
+      "bg": "field",
+      "kind": "text",
+      "what": "Stop 10px square glyph"
+    },
+    {
+      "fg": "warning-solid",
+      "bg": "surface",
+      "kind": "mark",
+      "what": "approval dock icon disc"
+    }
+  ],
+  "distinct": [
+    {
+      "a": "running",
+      "b": "danger-solid",
+      "floor": 10,
+      "what": "running pink vs failed outline (brief K8 risk: >= 10)"
+    },
+    {
+      "a": "running",
+      "b": "danger-strong",
+      "floor": 10,
+      "what": "running badge vs failed badge (both 16px discs)"
+    },
+    {
+      "a": "running-text",
+      "b": "danger-text",
+      "floor": 10,
+      "what": "\"Running\" vs \"Failed\" caption",
+      "carried": "the word"
+    },
+    {
+      "a": "running",
+      "b": "selection-ring",
+      "floor": 0,
+      "what": "running arc vs selection ring",
+      "carried": "90° 3px arc vs full 2px ring at a gap; badge + caption"
+    },
+    {
+      "a": "danger-solid",
+      "b": "selection-ring",
+      "floor": 10,
+      "what": "failed outline vs selection ring",
+      "carried": "octagon-x badge + \"Failed\" caption"
+    },
+    {
+      "a": "selection-ring",
+      "b": "edge-strong",
+      "floor": 0,
+      "what": "selection ring vs hover stroke",
+      "carried": "ring sits at a 2px gap outside the pill; hover recolours the outline itself"
+    },
+    {
+      "a": "selection-ring",
+      "b": "text",
+      "floor": 8,
+      "what": "selection ring vs focus ring",
+      "carried": "focus sits outside the selection ring"
+    },
+    {
+      "a": "accent-text",
+      "b": "danger-text",
+      "floor": 8,
+      "what": "link vs error text"
+    },
+    {
+      "a": "accent-text",
+      "b": "running-text",
+      "floor": 0,
+      "what": "link / row bar vs running text",
+      "carried": "the word; the spinner"
+    },
+    {
+      "a": "accent-soft-bg",
+      "b": "running-soft-bg",
+      "floor": 0,
+      "what": "selected-row tint vs Running pill tint",
+      "carried": "bar + weight 600 vs pill + pink text"
+    },
+    {
+      "a": "danger-strong",
+      "b": "accent-solid-alt",
+      "floor": 10,
+      "what": "failed badge vs comment badge",
+      "carried": "glyph vs count"
+    },
+    {
+      "a": "accepted-fill",
+      "b": "warning-solid",
+      "floor": 10,
+      "what": "accepted mint vs approval amber",
+      "carried": "check vs hand glyph"
+    },
+    {
+      "a": "accepted-fill",
+      "b": "running",
+      "floor": 10,
+      "what": "accepted mint vs running pink"
+    },
+    {
+      "a": "danger-solid",
+      "b": "warning-solid",
+      "floor": 10,
+      "what": "failed vs approval solid"
+    },
+    {
+      "a": "danger-text",
+      "b": "warning-text",
+      "floor": 8,
+      "what": "failed vs approval text",
+      "carried": "the word + glyph"
+    }
+  ]
+}

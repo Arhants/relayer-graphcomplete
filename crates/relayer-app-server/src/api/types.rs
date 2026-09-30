@@ -169,6 +169,8 @@ pub(crate) struct ThreadResponse {
     created_at: String,
     updated_at: String,
     imported: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    activity: Option<String>,
 }
 
 impl From<Thread> for ThreadResponse {
@@ -187,6 +189,7 @@ impl From<Thread> for ThreadResponse {
             created_at: thread.created_at,
             updated_at: thread.updated_at,
             imported: thread.imported,
+            activity: thread.activity,
         }
     }
 }
@@ -390,6 +393,8 @@ pub(crate) struct ActionInvocationResponse {
     pub(super) result_interaction_id: i64,
     pub(super) result_completion_status: String,
     pub(super) created_at: String,
+    /// An agent's child: it never holds the thread's one active human turn.
+    pub(super) agent_invoked: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     execution: Option<CompletionExecutionEvidenceResponse>,
 }
@@ -402,6 +407,7 @@ impl From<ActionInvocation> for ActionInvocationResponse {
             result_interaction_id: invocation.result_interaction_id.value(),
             result_completion_status: invocation.result_completion_status,
             created_at: invocation.created_at,
+            agent_invoked: invocation.agent_invoked,
             execution: None,
         }
     }

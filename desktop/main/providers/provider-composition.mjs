@@ -15,9 +15,13 @@ export function createProviderComposition({
   prepareRuntime = async () => null,
   evaluateReadiness = async () => null,
   removeRuntimeState = async () => false,
+  accountCheckTimeoutMs,
   diagnostics = null,
   modelCatalogOptions = {},
 }) {
+  // The models each provider's catalog last published in this process. A post-upgrade
+  // readiness evaluation evaluates the routes they give (#556).
+  const publishedModels = new Map();
   const modelCatalog = new ModelCatalogService({
     adapters: [],
     diagnostics,
@@ -40,7 +44,10 @@ export function createProviderComposition({
           throw Object.assign(new Error("provider_connection_superseded"), { code: "provider_connection_superseded" });
         }
       }
-      return publishCatalog(snapshot, options);
+      const published = await publishCatalog(snapshot, options);
+      publishedModels.set(snapshot.providerId, snapshot.models ?? []);
+      providerDefinitions.catalogPublished(snapshot.providerId, { connected: snapshot.connected });
+      return published;
     },
     ...modelCatalogOptions,
   });
@@ -55,6 +62,7 @@ export function createProviderComposition({
     prepareRuntime,
     evaluateReadiness,
     removeRuntimeState,
+    accountCheckTimeoutMs,
     publishCatalog: (snapshot, options) => publishCatalog(toProductCatalogSnapshot(snapshot), options),
     onRuntimeReady: (definition, runtime) => {
       modelCatalog.unregister(definition.id);
@@ -67,7 +75,7 @@ export function createProviderComposition({
       modelCatalog.register({
         providerId: definition.id,
         discover: async ({ signal, reason } = {}) => {
-          if (reason !== "explicit") {
+          if (reason !== "explicit" && reason !== "recovery") {
             return unavailableModelCatalogSnapshot({
               providerId: definition.id,
               providerLabel: definition.label,
@@ -98,6 +106,40 @@ export function createProviderComposition({
       await providerDefinitions.reconcileStartup();
       await providerDefinitions.activate();
       await modelCatalog.startup();
+    },
+    // After an upgrade: recovers, as Repair does, each managed provider whose activation
+    // failed and whose runtime recipe is one of recipeIds (installed, and due for an
+    // evaluation). Its "recovery" refresh reinstalls the exact recipe when needed, activates
+    // the provider and publishes the catalog that recovery discovered, once. It evaluates no
+    // readiness: the post-upgrade step then evaluates each due harness once for all its
+    // providers. One failure spares the rest; a stopped step recovers no further provider.
+    async repairFailedActivations(recipeIds, { recipeForAdapter, signal } = {}) {
+      const recipes = new Set(recipeIds);
+      const failed = (await providerDefinitions.activeDefinitions()).filter((definition) => {
+        if (definition.accessContract !== "managed-runtime@1") return false;
+        if (!providerDefinitions.activationFailed(definition.id)) return false;
+        try { return recipes.has(recipeForAdapter(definition.adapterId)); } catch { return false; }
+      });
+      const results = [];
+      for (const { id } of failed) {
+        if (signal?.aborted) break;
+        try {
+          results.push({ status: "fulfilled", value: await modelCatalog.refresh(id, "recovery", { signal }) });
+        } catch (reason) {
+          results.push({ status: "rejected", reason });
+        }
+      }
+      return results;
+    },
+    // Every active provider with its last published models, for an evaluation that is not
+    // tied to one provider (the recipe-update trigger).
+    async readinessRoutes() {
+      return (await providerDefinitions.activeDefinitions())
+        .filter(({ id }) => publishedModels.get(id)?.length)
+        .map((providerDefinition) => Object.freeze({
+          providerDefinition,
+          models: publishedModels.get(providerDefinition.id),
+        }));
     },
     async close() {
       const results = await Promise.allSettled([providerDefinitions.close(), modelCatalog.close()]);

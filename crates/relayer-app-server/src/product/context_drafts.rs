@@ -56,7 +56,9 @@ impl NodeContextDraftConfirmationService {
             .get_interaction_by_graph_node_id(draft.target.source_interaction_node_id)
             .await
             .map_err(|_| NodeContextDraftConfirmationError::TargetUnavailable)?;
-        if source.thread_id != thread_id || source.completion_status != "accepted" {
+        // Graph control validates the exact accepted publication below. A source
+        // may have published useful current content before its turn settles.
+        if source.thread_id != thread_id {
             return Err(NodeContextDraftConfirmationError::TargetUnavailable);
         }
         let current_target = runtime

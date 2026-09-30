@@ -553,6 +553,20 @@ function managedAssemblyContext(staging, installationRoot, recipe, signal) {
   });
 }
 
+// The runtimes a post-update activation changed: a new exact recipe activated, or its
+// activation failed and left the previous runtime. Startup tells the app server, which
+// withholds their old ready and marks them due for one evaluation (PROV-009).
+export function runtimesChangedByActivation({
+  activated = [], recipeUpdates = [], changedRuntimeIds = [], failures = [],
+} = {}) {
+  const changed = new Set(changedRuntimeIds.filter((runtimeId) => RUNTIME_IDS.has(runtimeId)));
+  for (const { runtimeId, recipeId } of activated) {
+    if (recipeId && recipeUpdates.includes(recipeId)) changed.add(runtimeId);
+  }
+  for (const { runtimeId } of failures) if (RUNTIME_IDS.has(runtimeId)) changed.add(runtimeId);
+  return Object.freeze([...changed]);
+}
+
 export function createManagedRuntimeInstaller({
   root,
   platform = process.platform,
@@ -745,10 +759,42 @@ export function createManagedRuntimeInstaller({
     }
   }
 
-  async function probeReceipt(base, receipt, minimumVersion, signal) {
+  // Startup's cheap validation of an installation's layout. A schema-v2 receipt must
+  // match its owned paths, keep its ownership marker and an owned real private-state
+  // directory. Every receipt's entrypoints must resolve inside the exact installation.
+  async function validateOwnedLayout(base, receipt) {
     const result = installedResult(base, receipt);
-    await regularFile(result.executable, "Managed runtime executable");
-    if (result.modulePath) await regularFile(result.modulePath, "Managed runtime module");
+    const requiresOwnedLayout = receipt.schemaVersion === 2;
+    if (requiresOwnedLayout) {
+      const expectedOwnedPaths = [
+        posix.join(receipt.runtimeId, target.key, "installations", receipt.installation),
+        posix.join(receipt.runtimeId, target.key, "private-state", receipt.installation),
+      ];
+      if (JSON.stringify(receipt.ownedPaths) !== JSON.stringify(expectedOwnedPaths)) {
+        throw new Error(`${receipt.runtimeId} managed runtime ownership receipt is invalid.`);
+      }
+    }
+    const installationRoot = await ownedRealDirectory(root, result.installationRoot, "Managed runtime installation");
+    if (requiresOwnedLayout) {
+      if (!await hasInstallationOwnershipReceipt(result.installationRoot, {
+        runtimeId: receipt.runtimeId,
+        target: target.key,
+        installation: receipt.installation,
+      })) {
+        throw new Error(`${receipt.runtimeId} managed runtime installation ownership marker is invalid.`);
+      }
+      await ownedRealDirectory(root, result.privateStateRoot, "Managed runtime private state");
+    }
+    await confinedRealFile(installationRoot, result.executable, "Managed runtime executable");
+    if (result.modulePath) await confinedRealFile(installationRoot, result.modulePath, "Managed runtime module");
+    return result;
+  }
+
+  // Every reuse path (Repair, app-update staging, post-update activation) requires the
+  // same layout startup validates, then probes the version. An installation that startup
+  // would reject is reinstalled, never reused.
+  async function probeReceipt(base, receipt, minimumVersion, signal) {
+    const result = await validateOwnedLayout(base, receipt);
     const probe = await effectiveProbes[receipt.runtimeId]({ ...result, signal });
     const version = validateVersion(probe?.version, `${receipt.runtimeId} probe version`);
     if (!compatibleProbeVersion({
@@ -1065,11 +1111,19 @@ export function createManagedRuntimeInstaller({
       entries = await readPendingUpdateDirectory(directory);
     } catch (error) {
       if (error?.code === "ENOENT") {
-        return Object.freeze({ appVersion, activated: Object.freeze([]), failures: Object.freeze([]) });
+        return Object.freeze({
+          appVersion,
+          activated: Object.freeze([]),
+          recipeUpdates: Object.freeze([]),
+          changedRuntimeIds: Object.freeze([]),
+          failures: Object.freeze([]),
+        });
       }
       return Object.freeze({
         appVersion,
         activated: Object.freeze([]),
+        recipeUpdates: Object.freeze([]),
+        changedRuntimeIds: Object.freeze([]),
         failures: Object.freeze([Object.freeze({ runtimeId: null, error })]),
       });
     }
@@ -1078,14 +1132,28 @@ export function createManagedRuntimeInstaller({
     )));
     operation.runtimeIds = runtimeIds;
     const activated = [];
+    const recipeUpdates = [];
+    const changedRuntimeIds = [];
     const failures = [];
     for (const runtimeId of runtimeIds) {
       try {
         operation.controller.signal.throwIfAborted();
+        const previous = await readActive(join(root, runtimeId, target.key));
         const activatedRuntime = await activatePendingRuntime(appVersion, runtimeId, operation.controller.signal);
-        activated.push(activatedRuntime.receipt.schemaVersion === 2
+        const { receipt } = activatedRuntime;
+        activated.push(receipt.schemaVersion === 2
           ? publicInstallationDescriptor(activatedRuntime)
           : activatedRuntime);
+        // A recipe this runtime was not already running is due one readiness evaluation.
+        if (receipt.schemaVersion === 2
+          && (previous?.recipeId !== receipt.recipeId || previous?.recipeDigest !== receipt.recipeDigest)) {
+          recipeUpdates.push(receipt.recipeId);
+        }
+        // Any activation that replaced the installation the runtime ran changes it: a new
+        // recipe, a frozen schema-v1 receipt an older Desktop staged, or the same recipe
+        // rebuilt because the active installation was unusable. Activating the installation
+        // it already ran keeps its installation id and changes nothing.
+        if (previous?.installation !== receipt.installation) changedRuntimeIds.push(runtimeId);
       } catch (error) {
         failures.push(Object.freeze({ runtimeId, error }));
         await discardFailedPending(appVersion, runtimeId).catch(() => undefined);
@@ -1095,6 +1163,8 @@ export function createManagedRuntimeInstaller({
     return Object.freeze({
       appVersion,
       activated: Object.freeze(activated),
+      recipeUpdates: Object.freeze(recipeUpdates),
+      changedRuntimeIds: Object.freeze(changedRuntimeIds),
       failures: Object.freeze(failures),
     });
   }
@@ -1264,31 +1334,8 @@ export function createManagedRuntimeInstaller({
     if (!exactLegacy && !exactCurrent) {
       throw new Error(`${recipe.runtimeId} managed runtime does not match requested recipe ${recipe.recipeId}.`);
     }
-    const requiresOwnedLayout = receipt.schemaVersion === 2 && exactCurrent;
-    if (requiresOwnedLayout) {
-      const expectedOwnedPaths = [
-        posix.join(recipe.runtimeId, target.key, "installations", receipt.installation),
-        posix.join(recipe.runtimeId, target.key, "private-state", receipt.installation),
-      ];
-      if (JSON.stringify(receipt.ownedPaths) !== JSON.stringify(expectedOwnedPaths)) {
-        throw new Error(`${recipe.runtimeId} managed runtime ownership receipt is invalid.`);
-      }
-    }
     validateReceiptArtifacts(receipt, recipe.runtimeId, { allowCodeOwnedHttps: exactCurrent });
-    const result = installedResult(base, receipt);
-    const installationRoot = await ownedRealDirectory(root, result.installationRoot, "Managed runtime installation");
-    if (requiresOwnedLayout) {
-      if (!await hasInstallationOwnershipReceipt(result.installationRoot, {
-        runtimeId: recipe.runtimeId,
-        target: target.key,
-        installation: receipt.installation,
-      })) {
-        throw new Error(`${recipe.runtimeId} managed runtime installation ownership marker is invalid.`);
-      }
-      await ownedRealDirectory(root, result.privateStateRoot, "Managed runtime private state");
-    }
-    await confinedRealFile(installationRoot, result.executable, "Managed runtime executable");
-    if (result.modulePath) await confinedRealFile(installationRoot, result.modulePath, "Managed runtime module");
+    const result = await validateOwnedLayout(base, receipt);
     return publicInstallationDescriptor(Object.freeze({
       ...result,
       recipeId: recipe.recipeId,
@@ -1322,8 +1369,16 @@ export function createManagedRuntimeInstaller({
     return operation.promise.then((result) => publicInstallationDescriptor(result));
   }
 
+  // The exact identity of a recipe on this target: its id and the digest of its lock. It
+  // throws for a recipe this target has none of.
+  function recipeIdentity(recipeId) {
+    const recipe = validateResolvedRecipe(resolveRecipe(recipeId, target.key), recipeId, target.key);
+    return `${recipe.recipeId}#${recipe.recipeDigest}`;
+  }
+
   return Object.freeze({
     prepare,
+    recipeIdentity,
     validate: (recipeId) => validateInstalledRecipe(recipeId),
     installed: (runtimeOrRecipeId, minimumVersion) => minimumVersion === undefined
       ? installedRecipe(runtimeOrRecipeId)

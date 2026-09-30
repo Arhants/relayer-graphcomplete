@@ -73,8 +73,6 @@ describe("desktop tutorial lifecycle", () => {
         setChannel() {},
       },
       getWindow: () => null,
-      getAppearance: () => "dark",
-      setAppearance() {},
     });
 
     const context = productContext();

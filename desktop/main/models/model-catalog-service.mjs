@@ -5,7 +5,9 @@ import {
 import { withProviderRetry } from "../providers/provider-retry.mjs";
 import { providerDiagnosticDetails } from "../providers/provider-diagnostics-log.mjs";
 
-const REFRESH_REASONS = new Set(["startup", "background", "provider-change", "settings-open", "explicit", "pre-inference"]);
+// "recovery" is the post-upgrade recovery of a provider whose activation failed: like
+// "explicit" it recovers through the recovery adapter, but it evaluates no readiness.
+const REFRESH_REASONS = new Set(["startup", "background", "provider-change", "settings-open", "explicit", "pre-inference", "recovery"]);
 // The app server's refusal of a result whose connection generation was superseded (PROV-002).
 export const CONNECTION_SUPERSEDED = "provider_connection_superseded";
 

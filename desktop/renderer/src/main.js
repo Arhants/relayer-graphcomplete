@@ -35,6 +35,7 @@ import {
   updateCreateThreadAvailability,
 } from "./threads.js";
 import { bindComposerKeydown } from "./product-workspace/workspace.js";
+import { loadDesignFonts } from "./product-workspace/workspace.js";
 import { prepareCurrentWorkspaceTransition } from "./graph.js";
 import {
   initializeModelFamilySettings,
@@ -399,6 +400,7 @@ function bindEvents() {
 
 async function boot() {
   assertRelayerIconRendererReady();
+  await loadDesignFonts();
   initializeSidebar({
     body: document.body,
     toggle: $("#collapseSidebar"),

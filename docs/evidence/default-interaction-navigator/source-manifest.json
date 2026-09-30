@@ -1,0 +1,17 @@
+{
+  "crates/relayer-app-server/tests/product_persistence_flow.rs": "bc3ddc0c36f2901b6ae18207e622fa2470b734e8b753e331fff9eae0b5e8d4c1",
+  "crates/relayer-graph-server/src/lib.rs": "60a15e91a6279988f48b9174fb645668511e3c95b033de245fbb0e572a9e56ab",
+  "crates/relayer-graph-server/tests/interaction_features.rs": "c1153f9d859afd232c5be5ef0919fbc1107ada3cbfa991b9a79de020fc997902",
+  "desktop/renderer/src/product-workspace/interaction-graph.js": "2db93cdd4c3c790c2b9b87a4d13c89f17561c60a8a337b28ea68369f3e1f9424",
+  "desktop/renderer/src/product-workspace/workspace.js": "af3409091562afa8caf9483b3ea9945ed7ea490a37d4359c67aee823eab8a444",
+  "docs/decisions/0011-attached-navigation.md": "4cceea03a8e4835d1d887389ce7ad07f25addf9ad86fe8c7165728a287feee95",
+  "docs/prd/index.html": "b719fbe40d30ef66ab83a82f0c1ee7a3ea17523d9e093106b0150314c6616ffb",
+  "scripts/capture-ask-profile-evidence.mjs": "6ada58ce7dc6b3e3af97875680f190c3553c29aa51d27671b71f32c032a8f1b5",
+  "scripts/capture-interaction-context-evidence.mjs": "851e3f888c0c7dd725dc51d4aeee8a74da4880febfdcbdb540c3d94d3c0972a4",
+  "scripts/interaction-navigator-driver.mjs": "430ed192b0694c1a8da2f8578e46f71832af668c974023f4a18a9dc8e18472a5",
+  "scripts/test-desktop-approval.mjs": "be15493041738b8c21575c5e6fc956c906360b0b3d6d85658e2dea15c8c3d2dd",
+  "scripts/test-desktop-first-message.mjs": "9a3acab1b576ae18e59def8b0d57abacce3ac4f17c5f32f2411aa54435609a16",
+  "scripts/test-interaction-context-lifecycle.mjs": "7f3e54f64898a25a76d871488055913a27ec0eed8eb764f912459780a42951a5",
+  "test/interaction-graph-workspace.test.mjs": "830a7c6d7291fc0c04fa2e3d05bbdeca9bf4b95c74de5cb66b2a6f69de7f8d59",
+  "test/workspace-navigation-integration.test.mjs": "21323d9ef20443b9e8dc5228c392cb3c4c4805f35095010c566cc79eea7bcd87"
+}

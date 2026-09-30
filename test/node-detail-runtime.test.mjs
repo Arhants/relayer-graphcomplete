@@ -3,7 +3,7 @@ import { Window } from "happy-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NodeObject, html, css } from "../packages/graph-client/src/index.ts";
 
-import { compiledNodeDetailReviewControls, mountCompiledNodeDetail } from "../desktop/renderer/src/product-workspace/node-detail-runtime.js";
+import { compiledNodeDetailReviewControls, isResolvedInvokeAction, mountCompiledNodeDetail } from "../desktop/renderer/src/product-workspace/node-detail-runtime.js";
 import { createReviewPresentationAdapter } from "../desktop/renderer/src/review-tools.js";
 import { interactionForThread, workspaceTurns } from "../desktop/renderer/src/product-workspace/model.js";
 import { createProductWorkspace, renderProductNodeDetail } from "../desktop/renderer/src/product-workspace/workspace.js";
@@ -859,6 +859,21 @@ describe("compiled Node Detail product runtime", () => {
       await window.happyDOM.waitUntilComplete();
       expect(window.document.querySelector("#detailTitle").textContent).toBe("Detail 2");
       expect(window.document.querySelector("#inspector").classList.contains("hidden")).toBe(false);
+      // The Sticker disc takes the node's presentation family from its icon ("box" is Data).
+      expect(window.document.querySelector('[data-node="1"]').dataset.family).toBe("f3");
+      expect(window.document.querySelector("#detailIcon").dataset.family).toBe("f3");
+      expect(window.document.querySelector("#threadStatusSymbol").classList.contains("hidden")).toBe(true);
+      // A draft node is marked hollow and dashed with a caption, and says so to assistive technology.
+      nodes[0].state = "draft";
+      workspace.render();
+      await window.happyDOM.waitUntilComplete();
+      const draft = window.document.querySelector('[data-node="1"]');
+      expect([draft.dataset.runState, draft.querySelector(".graph-node-caption")?.textContent]).toEqual(["draft", "Draft"]);
+      expect(draft.getAttribute("aria-label")).toContain("Detail 1. Draft");
+      delete nodes[0].state;
+      workspace.render();
+      await window.happyDOM.waitUntilComplete();
+      expect(window.document.querySelector('[data-node="1"]').dataset.runState).toBeUndefined();
       expectNodesInPane();
       // The pending turn's status stays visible while the accepted detail is retained.
       state.interactions.push({ id: 6, threadId: 801, sequence: 2, text: "Follow-up", completionStatus: "running" });
@@ -870,6 +885,9 @@ describe("compiled Node Detail product runtime", () => {
         expect(window.document.querySelector("#pendingTurnText").textContent.toLowerCase()).toContain(status);
         expect(window.document.querySelector("#detailTitle").textContent).toBe("Detail 2");
       }
+      // PRD §8.1: the running follow-up puts the Running symbol after the thread title.
+      const symbol = window.document.querySelector("#threadStatusSymbol");
+      expect([symbol.classList.contains("hidden"), symbol.dataset.activity, symbol.getAttribute("aria-label")]).toEqual([false, "running", "Running"]);
       state.pendingTurn.readyLayer = child;
       workspace.render();
       expect(window.document.querySelector("#openReadyResult").classList.contains("hidden")).toBe(false);
@@ -1107,6 +1125,21 @@ describe("compiled Node Detail product runtime", () => {
     await window.happyDOM.waitUntilComplete();
     expect(onInvokeAction).toHaveBeenCalledTimes(1);
     mounted.dispose();
+    // Imported conversion history preserves the same compiled invoke control but
+    // never needs (or manufactures) a native interaction-resolution receipt.
+    delete actions[1].resolvedInvokeInteractionId;
+    actions[1].convertedFromInvoke = true;
+    const importedHost = window.document.createElement("div");
+    window.document.body.append(importedHost);
+    const importedMount = await mountCompiledNodeDetail({ host: importedHost, detail,
+      resolveAction: (reference) => actions.find((action) => action.clientKey === reference.clientKey),
+      onNavigate: onNavigateLayer, onInvoke: onInvokeAction });
+    expect(importedMount.status).toBe("mounted");
+    importedHost.shadowRoot.querySelector("[data-gc-mount='invoke']").click();
+    await window.happyDOM.waitUntilComplete();
+    expect(onNavigateLayer).toHaveBeenLastCalledWith(actions[1], expect.anything());
+    expect(onInvokeAction).toHaveBeenCalledTimes(1);
+    importedMount.dispose();
     const input = runtimeHost.shadowRoot.querySelector("[data-gc-mount='input']");
     expect(input.disabled).toBe(false);
     input.dispatchEvent(new window.Event("change", { bubbles: true }));
@@ -1302,4 +1335,15 @@ describe("compiled Node Detail product runtime", () => {
     expect(() => noThreadWorkspace.dispose()).not.toThrow();
     expect(noThreadInputDraftApi.get).not.toHaveBeenCalled();
   });
+});
+
+it("requires exact converted navigation shape for inert imported invoke bindings", () => {
+  const action = { kind: "navigate", relation: "expand", state: "accepted", targetLayerId: 92,
+    interactionText: null, convertedFromInvoke: true };
+  expect(isResolvedInvokeAction(action)).toBe(true);
+  for (const invalid of [{ kind: "input" }, { relation: "reference" }, { state: "draft" },
+    { targetLayerId: null }, { interactionText: "Run" }, { convertedFromInvoke: "true" },
+    { convertedFromInvoke: false }]) {
+    expect(isResolvedInvokeAction({ ...action, ...invalid })).toBe(false);
+  }
 });

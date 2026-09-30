@@ -106,6 +106,12 @@ impl<'connection> ContextTable<'connection> {
                   AND root.state='accepted'
                   AND root.target_layer_id IS NOT NULL
                 UNION
+                SELECT publication.current_layer_id
+                FROM current_revisions publication
+                WHERE publication.interaction_node_id=?1
+                  AND publication.transition IN ('advance','return')
+                  AND publication.current_layer_id IS NOT NULL
+                UNION
                 SELECT child.target_layer_id
                 FROM reachable_layers reachable
                 JOIN layer_actions membership ON membership.layer_id=reachable.id

@@ -1,5 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 
+import { captureShareErrorDiagnostics } from "./share-error-diagnostics.mjs";
+
 const MAX_ATTEMPTS = 32;
 const MAXIMUM_PREFLIGHT_TITLE = "😀".repeat(120);
 const NON_REPORTED_CODES = new Set([
@@ -125,8 +127,10 @@ function closedFailure(error, reference) {
 function telemetryRecord(error, reference) {
   const code = failureCode(error);
   if (NON_REPORTED_CODES.has(code)) return null;
+  const diagnostics = captureShareErrorDiagnostics(error);
   if (code === "share_snapshot_too_large") {
     return {
+      ...diagnostics,
       code: "share.snapshot_too_large",
       failureStage: "export",
       attemptReferenceId: reference,
@@ -135,6 +139,7 @@ function telemetryRecord(error, reference) {
   }
   const stage = error?.failureStage === "upload" ? "upload" : error?.failureStage === "export" ? "export" : "service";
   return {
+    ...diagnostics,
     code: stage === "upload" ? "share.upload_failed" : stage === "export" ? "share.export_failed" : "share.service_failed",
     failureStage: stage,
     attemptReferenceId: reference,
@@ -149,6 +154,8 @@ function telemetryRecord(error, reference) {
  */
 export function createSharePublishCoordinator({
   exportSnapshot,
+  capturePreview,
+  getTheme = () => "dark",
   accountSession,
   sourceThreadIdentity,
   publish,
@@ -184,6 +191,7 @@ export function createSharePublishCoordinator({
       sourceThreadId: record.sourceThreadId,
       title: record.completed ? "" : record.title,
       snapshotBytes: record.completed ? [] : new Uint8Array(record.snapshotBytes),
+      ...(record.preview ? {preview:record.preview,previewBytes:record.completed ? [] : new Uint8Array(record.previewBytes)} : {}),
       createdAt: record.createdAt,
       lastFailure: record.lastFailure ? { ...record.lastFailure } : null,
       reportedFailures: [...record.reportedFailures],
@@ -239,6 +247,7 @@ export function createSharePublishCoordinator({
         sourceThreadId: value.sourceThreadId,
         title: value.title,
         snapshotBytes,
+        ...(value.preview ? {preview:value.preview,previewBytes:new Uint8Array(value.previewBytes)} : {}),
         metadata,
         createdAt: value.createdAt,
         lastFailure,
@@ -262,6 +271,7 @@ export function createSharePublishCoordinator({
         if (record) {
           if (lazy && !record.completed) {
             record.snapshotBytes = null;
+            if(record.preview) record.previewBytes=null;
             record.lazy = true;
           }
           staged.set(record.reference, record);
@@ -333,7 +343,12 @@ export function createSharePublishCoordinator({
           attempts.delete(record.reference);
           return Object.freeze({ status: "failed", attemptReferenceId: record.reference, code: "share_attempt_unavailable", retryable: false });
         }
+        if (JSON.stringify(saved.preview) !== JSON.stringify(record.preview)
+          || (record.preview && createHash("sha256").update(new Uint8Array(saved.previewBytes)).digest("hex") !== record.preview.sha256)) {
+          throw Object.assign(new Error("Frozen preview changed"), {code:"share_attempt_unavailable"});
+        }
         record.snapshotBytes = new Uint8Array(saved.snapshotBytes);
+        if(record.preview)record.previewBytes=new Uint8Array(saved.previewBytes);
       }
       const assertAuthority = async () => {
         const current = exactAccount(await accountSession());
@@ -356,8 +371,10 @@ export function createSharePublishCoordinator({
           byteLength: record.metadata.byteLength,
           lineCount: record.metadata.lineCount,
           snapshotSha256: record.metadata.snapshotSha256,
+          ...(record.preview ? {preview:record.preview} : {}),
         }),
         snapshotBytes: new Uint8Array(record.snapshotBytes),
+        ...(record.preview ? {previewBytes:new Uint8Array(record.previewBytes)} : {}),
       });
       if (!result || !validPublishedUrl(result.url)) throw new Error("share_service_failed");
       await assertAuthority();
@@ -381,7 +398,7 @@ export function createSharePublishCoordinator({
       return result;
     } finally {
       record.running = false;
-      if (record.lazy || record.completed) record.snapshotBytes = null;
+      if (record.lazy || record.completed) {record.snapshotBytes = null;record.previewBytes=null;}
       if (activeDurablePublication === record.reference) activeDurablePublication = null;
     }
   }
@@ -476,7 +493,10 @@ export function createSharePublishCoordinator({
           throw new TypeError("Share source-thread identity is invalid.");
         }
         signal?.throwIfAborted();
+        const theme=getTheme();
         const snapshotBytes = new Uint8Array(await exportSnapshot(threadId, title, { signal }));
+        const previewBytes=capturePreview ? new Uint8Array(await capturePreview({snapshotBytes:new Uint8Array(snapshotBytes),title,theme,signal})) : null;
+        const preview=previewBytes ? {byteLength:previewBytes.length,sha256:createHash("sha256").update(previewBytes).digest("hex"),theme} : null;
         const currentAccount = exactAccount(await accountSession());
         if (currentAccount.ownerKey !== account.ownerKey || currentAccount.generation !== account.generation) {
           const error = new Error("share_sign_in_required");
@@ -491,6 +511,7 @@ export function createSharePublishCoordinator({
           sourceThreadId,
           title,
           snapshotBytes,
+          ...(preview ? {preview,previewBytes} : {}),
           metadata: snapshotMetadata(snapshotBytes),
           createdAt: now(),
           lastFailure: null,

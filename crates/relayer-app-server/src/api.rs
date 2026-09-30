@@ -186,7 +186,8 @@ pub(crate) fn router(
         )
         .route(
             "/api/internal/harness-readiness",
-            axum::routing::put(model_settings::publish_harness_readiness),
+            get(model_settings::harness_readiness_state)
+                .put(model_settings::publish_harness_readiness),
         )
         .route(
             "/api/internal/provider-definitions",

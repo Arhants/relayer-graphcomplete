@@ -1,0 +1,10 @@
+{
+ "_readme": "Overrides for M5 (Tungsten Kitchen). Run: node engine.mjs --overrides overrides/M5.json M5. Summary: tokens/M5.md",
+ "M5": {
+  "neutralSeed": "#60524A",
+  "interaction": { "light": "#877364", "dark": "#A8907C" },
+  "danger": { "swatch": "#D5305C" },
+  "tokens": { "light": { "selection-ring": "#93551B" } },
+  "_why": "neutrals seeded from the source's warm-brown ramp (#60524A, h52) instead of the plum-black ground's h333; light primary = exact source taupe #877364 (white label 4.50) instead of a caramel C0.12 lift that sat dE 2.9 from the tungsten approval colour; light selection ring = --accent-text (brief C-dark precedent) because the quiet taupe ring was only dE 6.9 from the neutral node stroke; failure = saturated crimson (dark danger was 7.7 from the tungsten glow)"
+ }
+}

@@ -1058,6 +1058,15 @@ describe("desktop skeleton", () => {
       return true;
     });
     const onHarnessRuntimeValidationFailure = vi.fn(async () => {});
+    // The recipe the release requires; the app server compares it with the one it last
+    // loaded, so an update that changed only the recipe starts pending (PR #576 review).
+    const harnessRuntimeRecipe = vi.fn((configuration) => {
+      if (configuration.name === "codex-basic") return "codex@0.147.0#digest";
+      // A harness with no recipe on this target (Prime on Windows) must not stop startup.
+      throw Object.assign(new Error("no recipe here"), { code: "managed_runtime_unsupported_target" });
+    });
+    // This start's update activated a new codex recipe.
+    const harnessRuntimeUpdated = vi.fn((configuration) => configuration.name === "codex-basic");
     const services = [];
     const start = (coordinateHarnessReadiness) => {
       const child = Object.assign(new EventEmitter(), {
@@ -1073,6 +1082,8 @@ describe("desktop skeleton", () => {
         coordinateHarnessReadiness,
         validateHarnessRuntime,
         onHarnessRuntimeValidationFailure,
+        harnessRuntimeRecipe,
+        harnessRuntimeUpdated,
         spawnProcess: () => {
           queueMicrotask(() => child.stdout.write(`${JSON.stringify({ ready: true, url: "http://127.0.0.1:43128" })}\n`));
           return child;
@@ -1088,7 +1099,10 @@ describe("desktop skeleton", () => {
       // The previous file said codex-basic was unavailable; its files validate, so the
       // app server's own record decides. claude-basic is simply not installed.
       expect(entries.map(({ configuration, digest, ...readiness }) => [configuration.name, readiness])).toEqual([
-        ["codex-basic", { runtimeAvailable: false, unavailableReason: pending, appServerReadiness: { runtimeFilesValid: true } }],
+        ["codex-basic", {
+          runtimeAvailable: false, unavailableReason: pending,
+          appServerReadiness: { runtimeFilesValid: true, runtimeRecipe: "codex@0.147.0#digest", runtimeUpdated: true },
+        }],
         ["claude-basic", { runtimeAvailable: false, unavailableReason: pending, appServerReadiness: { runtimeFilesValid: false } }],
       ]);
       expect(validateHarnessRuntime).toHaveBeenCalledTimes(2);
@@ -4083,13 +4097,15 @@ describe("desktop skeleton", () => {
     expect(() => workspaceModeCapabilities("comparison")).toThrow("Unknown product workspace mode");
   });
 
-  it("anchors graph edges at icon boundaries and preserves dragged node positions", async () => {
-    expect(graphEdgeSegment({ x: 10, y: 20 }, { x: 110, y: 20 }, 24)).toEqual({
-      x1: 34,
-      y1: 20,
-      x2: 86,
-      y2: 20,
-    });
+  it("anchors graph edges at pill outlines and preserves dragged node positions", async () => {
+    const pill = { halfWidth: 60, halfHeight: 18 };
+    expect(graphEdgeSegment({ x: 0, y: 0 }, { x: 300, y: 0 }, pill)).toEqual({ x1: 60, y1: 0, x2: 240, y2: 0 });
+    expect(graphEdgeSegment({ x: 0, y: 0 }, { x: 0, y: 200 }, pill)).toEqual({ x1: 0, y1: 18, x2: 0, y2: 182 });
+    // A shallow edge leaves through the round end (on the end-cap circle); a steep one through the flat side.
+    const shallow = graphEdgeSegment({ x: 0, y: 0 }, { x: 300, y: 60 }, pill);
+    expect(Math.hypot(shallow.x1 - 42, shallow.y1)).toBeCloseTo(18, 9);
+    const steep = graphEdgeSegment({ x: 0, y: 0 }, { x: 300, y: 300 }, pill);
+    expect([steep.x1, steep.y1].map((value) => Number(value.toFixed(9)))).toEqual([18, 18]);
 
     const workspace = await readFile(new URL("../desktop/renderer/src/product-workspace/workspace.js", import.meta.url), "utf8");
     const styles = await readFile(new URL("../desktop/renderer/styles.css", import.meta.url), "utf8");

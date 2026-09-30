@@ -1,0 +1,6 @@
+{
+ "M3": {
+  "interaction": { "light": "#464A32", "dark": "#62664D" },
+  "_why": "interaction.dark: olive drab #464A32 is 2.08:1 on the dark page, so the engine moved it to L 0.49 and also raised chroma 0.039 -> 0.113 (report 08's C >= 0.12 floor), giving an olive-oil #5E6800 (dE 11.9 from the source). #62664D is the source olive drab moved in lightness only (L 0.40 -> 0.50, chroma 0.039 kept): 3.21 / 3.06:1 on page and surface with a 5.95:1 white label. Links and the selection ring keep the engine's lifted chroma so they stay distinct from muted text."
+ }
+}
