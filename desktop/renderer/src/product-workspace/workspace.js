@@ -2943,6 +2943,11 @@ export function createProductWorkspace({
         restoredDraftActive,
       );
   };
+  // An accepted node can be annotated while its completion continues. Only
+  // the Send request itself freezes annotations into an immutable input.
+  const annotationStagingDisabled = () => !capabilities.canCompose
+    || sendAttemptBlocksThread(sendAttempt?.threadId, getThread()?.id)
+    || threadHasInFlightSend(inFlightSendThreads, getThread()?.id);
   const closeDurableEditor = (ownerThreadId, draftId) => {
     if (contextEditor?.durable
       && contextEditor.ownerThreadId === String(ownerThreadId)
@@ -2958,17 +2963,14 @@ export function createProductWorkspace({
       composerContextState.value,
       contextNodeOverrides,
     );
-    const status = composerStatusForThread(getState(), getThread());
     const available = capabilities.canCompose
-      && !composerDisabledForState(status, true, restoredDraftActive)
-      && !prompt.disabled
       && Boolean(contextDraftController)
       && Boolean(node);
     button.classList.toggle("hidden", !available);
-    button.disabled = !available;
+    button.disabled = !available || annotationStagingDisabled();
   };
   const openContextEditor = (node, contextTarget = null) => {
-    if (!node || !contextDraftController || contextStagingDisabled() || contextEditor) return;
+    if (!node || !contextDraftController || annotationStagingDisabled() || contextEditor) return;
     const context = contextTarget ? contextForTarget(contextTarget) : null;
     const interaction = currentInteraction();
     const sourceTarget = interactionContextTargetForEditor({
@@ -3064,13 +3066,13 @@ export function createProductWorkspace({
       contextEditor.value = draft.text;
       textarea.value = draft.text;
       const confirm = textarea.parentElement?.querySelector('[aria-label="Confirm annotation"]');
-      if (confirm) confirm.disabled = !String(draft.text).trim() || contextStagingDisabled();
+      if (confirm) confirm.disabled = !String(draft.text).trim() || annotationStagingDisabled();
     }
     const resolving = Boolean(contextEditor.resolving)
       || ["confirming", "discarding", "reconciling"].includes(draft?.operation?.kind);
     const basePresentation = contextEditorPresentation(
       contextEditor,
-      contextStagingDisabled(),
+      annotationStagingDisabled(),
       resolving,
     );
     const canContinueLocalEditing = capabilities.canCompose
@@ -3149,7 +3151,7 @@ export function createProductWorkspace({
         );
       const presentation = contextEditorPresentation(
         contextEditor,
-        contextStagingDisabled(),
+        annotationStagingDisabled(),
         resolving,
       );
       const canContinueLocalEditing = capabilities.canCompose && !resolving;
@@ -3180,7 +3182,7 @@ export function createProductWorkspace({
       || ["confirming", "discarding"].includes(selectedDraft.operation?.kind);
     const presentation = contextEditorPresentation(
       contextEditor,
-      contextStagingDisabled(),
+      annotationStagingDisabled(),
       resolving,
     );
     const textarea = graphDocument.createElement("textarea");
@@ -3209,7 +3211,7 @@ export function createProductWorkspace({
     discard.setAttribute("aria-label", `Discard annotation draft for ${selectedNode.title}`);
     discard.disabled = presentation.controlsDisabled;
     discard.onclick = async () => {
-      if (contextStagingDisabled()) return;
+      if (annotationStagingDisabled()) return;
       const discardingEditor = contextEditor;
       const endResolution = beginEditorResolution(discardingEditor);
       try {
@@ -3234,7 +3236,7 @@ export function createProductWorkspace({
     confirm.setAttribute("aria-label", "Confirm annotation");
     confirm.disabled = presentation.confirmDisabled || !String(contextEditor.value).trim();
     confirm.onclick = async () => {
-      if (contextStagingDisabled()) return;
+      if (annotationStagingDisabled()) return;
       const confirmingEditor = contextEditor;
       const endResolution = beginEditorResolution(confirmingEditor);
       try {
@@ -3273,7 +3275,7 @@ export function createProductWorkspace({
       })) return;
       confirm.disabled = contextEditorPresentation(
         contextEditor,
-        contextStagingDisabled(),
+        annotationStagingDisabled(),
       ).confirmDisabled || !textarea.value.trim();
     };
 
