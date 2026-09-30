@@ -46,6 +46,8 @@ const child = spawn(process.execPath, ["--import", pathToFileURL(shutdownShim).h
   env: {
     ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("RELAYER_EVAL_AUTORUN"))),
     RELAYER_EVAL_USER_DATA_DIR: userData,
+    // The authored layout-heavy answer can take longer than Eval's 10-minute default.
+    RELAYER_EVAL_TURN_TIMEOUT_MS: process.env.RELAYER_EVAL_TURN_TIMEOUT_MS || String(30 * 60_000),
   },
   stdio: ["ignore", "pipe", "pipe", "ipc"],
 });
@@ -68,12 +70,20 @@ try {
     assert.equal(response.status, 200, JSON.stringify(value));
     return value;
   };
-  const created = await rpc("createRun", [selection]);
-  console.log(`Started live run ${created.id}`);
-  const run = await until(async () => {
-    const value = await rpc("getRun", [created.id]);
-    return ["passed", "failed", "error", "interrupted"].includes(value.status) ? value : null;
-  }, "live run", 45 * 60_000);
+  // A fresh host publishes provider readiness asynchronously. A run created
+  // before that fails at once with no model and spends no inference; retry it.
+  let run;
+  for (let attempt = 1; ; attempt += 1) {
+    const created = await rpc("createRun", [selection]);
+    console.log(`Started live run ${created.id}`);
+    run = await until(async () => {
+      const value = await rpc("getRun", [created.id]);
+      return ["passed", "failed", "error", "interrupted"].includes(value.status) ? value : null;
+    }, "live run", 60 * 60_000);
+    const noModel = /No available model/.test(run.executions[0]?.error ?? "");
+    if (!noModel || attempt === 12) break;
+    await new Promise((resolveWait) => setTimeout(resolveWait, 10_000));
+  }
   const execution = run.executions[0];
   const turn = execution.turns[0];
   if (turn === undefined) {

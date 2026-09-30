@@ -22,3 +22,7 @@ It then opens a real 1420×900 product window on the accepted turn and re-measur
 ## Live model proof (PREV-005)
 
 `RELAYER_AGENT_PREVIEW_LIVE=1 npm run evidence:agent-preview:live` spends paid inference through the Eval profile's connected Codex provider. It runs `codex-basic` on `empty-project.hierarchical-overview.single-turn`. It passes only when Codex's trace shows an `imageView` of a `submitLayer` preview and the turn was accepted. It makes no claim that previews improve quality.
+
+Result on 2026-09-30: run `run-2026-09-30T06-13-12-053Z-74edf54b` passed. The turn was accepted, and the Eval turn limit was raised to 30 minutes with `RELAYER_EVAL_TURN_TIMEOUT_MS`. The host rendered 18 node and 5 layer previews. Codex opened two layer previews with `view_image` before its successful `graph.submit` at 06:27:21Z. `live/` holds the receipt and the two images the model viewed.
+
+Two earlier attempts did not produce a result. One hit Eval's default 10-minute turn limit before any `submitLayer`; the 13 node renders in it took about 3 s in total. The other could not start because Codex had written a project trust entry into the Eval profile's `config.toml`. That is a separate, pre-existing Eval problem.
