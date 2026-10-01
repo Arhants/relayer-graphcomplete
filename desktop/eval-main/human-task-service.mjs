@@ -369,6 +369,45 @@ export class HumanTaskService {
       return this.get(id);
     });
   }
+  completionJudgeEvidence(id, { signal } = {}) {
+    return this.serial(async () => {
+      signal?.throwIfAborted();
+      const session = this.find(id);
+      if (session.mode !== "simulated" || session.status !== "active" || !session.actorSetup?.behaviorContract?.completionJudge) throw failure("Completion judge session is not active.", 409);
+      await abortable(signal, () => this.settled(session, { signal }));
+      const artifactEvidence = await abortable(signal, () => this.evalService.completionJudgeArtifactEvidence(session.prepared, { signal }));
+      signal?.throwIfAborted();
+      await abortable(signal, () => this.settled(session, { signal }));
+      signal?.throwIfAborted();
+      if (session.status !== "active") throw failure("Completion judge session is not active.", 409);
+      const text = (value, limit = 2000) => {
+        if (typeof value !== "string") return "";
+        if (Buffer.byteLength(JSON.stringify(value)) <= limit) return value;
+        let prefix = value.slice(0, limit);
+        const marker = "\n[truncated: additional text omitted]";
+        while (Buffer.byteLength(JSON.stringify(prefix + marker)) > limit) prefix = prefix.slice(0, Math.floor(prefix.length * 0.8));
+        return prefix + marker;
+      };
+      const candidates = session.events.filter(event => ["submission", "actor_action"].includes(event.kind));
+      const projected = candidates.slice(-80).map(event => {
+        const item = { id: event.id, kind: event.kind, at: event.at };
+        if (event.kind === "submission") return { ...item, text: text(event.text ?? event.request?.text), outcome: text(event.outcome, 100) };
+        const action = event.action ?? {};
+        return { ...item, action: { kind: text(action.kind, 100), value: text(action.value), comment: text(action.comment), reason: text(action.reason, 100), endpointStatus: text(action.endpointStatus, 100), remainingWork: text(action.remainingWork), satisfaction: [1, 2, 3, 4].includes(action.satisfaction) ? action.satisfaction : null } };
+      });
+      const trajectory = [];
+      let bytes = 0;
+      for (const item of projected.toReversed()) {
+        const size = Buffer.byteLength(JSON.stringify(item)) + 1;
+        if (bytes + size > 20000) break;
+        trajectory.unshift(item); bytes += size;
+      }
+      const omitted = candidates.length - trajectory.length;
+      if (omitted) trajectory.push({ kind: "evidence_omitted", count: omitted, reason: "Earlier trajectory exceeds the evidence budget." });
+      trajectory.unshift({ kind: "task_progress", currentStep: session.step + 1, totalSteps: session.prepared.plan.length, remainingSteps: session.prepared.plan.length - session.step - 1, completions: session.completions, maxCompletions: session.maxCompletions });
+      return { request: text(session.prepared.plan[0]?.prompts[0], 8000), endpoint: text(session.endpoint, 8000), privateBrief: text(session.prepared.humanBrief, 8000), trajectory, artifactEvidence: clone(artifactEvidence) };
+    });
+  }
   finish(id, input, { signal } = {}) {
     return this.serial(async () => {
       signal?.throwIfAborted();
@@ -376,7 +415,27 @@ export class HumanTaskService {
       if (session.status !== "active") throw failure("Task session is not active.", 409);
       if (!["endpoint_reached", "satisfied", "abandoned", "budget_exhausted"].includes(input?.reason)) throw failure("Choose a termination reason.");
       if (input.satisfaction !== undefined && ![1, 2, 3, 4].includes(input.satisfaction)) throw failure("Choose a satisfaction rating from 1 to 4.");
-      if (input.reason === "budget_exhausted" && session.completions < session.maxCompletions) throw failure("The completion budget is not exhausted.");
+      const judgeSpec = session.mode === "simulated" && session.actorSetup?.behaviorContract?.completionJudge;
+      const actionBudgetExhausted = judgeSpec && Number.isSafeInteger(session.actor?.maxActions)
+        && session.events.filter(event => ["actor_action", "actor_action_rejected"].includes(event.kind)).length >= session.actor.maxActions;
+      if (input.reason === "budget_exhausted" && session.completions < session.maxCompletions && !actionBudgetExhausted) throw failure("The completion budget is not exhausted.");
+      let judgedIntent;
+      if (judgeSpec && input.reason !== "budget_exhausted") {
+        const judgment = session.events.find(event => event.id === input.completionJudgeEventId && event.kind === "actor_completion_judgment");
+        const intent = session.events.find(event => event.id === input.actorActionEventId && event.kind === "actor_action" && event.action?.kind === "finish");
+        const latestJudgment = session.events.findLast(event => event.kind === "actor_completion_judgment");
+        const evidence = session.events.find(event => event.id === judgment?.evidenceEventId && event.kind === "actor_completion_evidence");
+        if (input.reason !== "endpoint_reached" || !judgment || !intent || judgment !== latestJudgment
+          || !evidence || evidence.actorActionEventId !== intent.id || evidence.observationEventId !== intent.observationEventId
+          || !isDeepStrictEqual(evidence.judge, judgeSpec) || evidence.sequence <= intent.sequence || evidence.sequence >= judgment.sequence
+          || judgment.verdict !== "complete" || judgment.actorActionEventId !== intent.id
+          || judgment.observationEventId !== intent.observationEventId || judgment.sequence <= intent.sequence
+          || !isDeepStrictEqual(judgment.judge, judgeSpec)
+          || session.events.some(event => event.sequence > intent.sequence && ["actor_action", "submission", "actor_action_rejected"].includes(event.kind))) {
+          throw failure("A current approved completion judgment is required to finish this session.", 409);
+        }
+        judgedIntent = intent;
+      }
       if (input.reason === "endpoint_reached" && session.step + 1 < session.prepared.plan.length) throw failure("Complete the remaining case steps first.");
       await this.settled(session, { signal });
       const previousSatisfaction = session.satisfaction;
@@ -404,7 +463,7 @@ export class HumanTaskService {
           session.satisfaction = { scale: "human-1-4", value: input.satisfaction, comment: String(input.comment || "").slice(0, 8000), at: new Date().toISOString(), author: clone(this.annotator) };
           (session.grades ??= []).push(session.satisfaction);
         }
-        session.termination = { reason: input.reason, at: new Date().toISOString(), success: null, endpointAttainment: input.reason === "endpoint_reached" ? (session.mode === "simulated" ? "actor_reported" : "human_reported") : "not_claimed" };
+        session.termination = { reason: input.reason, at: new Date().toISOString(), success: null, endpointAttainment: input.reason === "endpoint_reached" ? (judgedIntent ? "judge_reported" : session.mode === "simulated" ? "actor_reported" : "human_reported") : "not_claimed", ...(judgedIntent ? { completionJudgeEventId: input.completionJudgeEventId, actorClaim: clone(judgedIntent.action) } : {}) };
         if (input.actorActionEventId) this.event(session, "actor_action_completed", { actionEventId: input.actorActionEventId });
         this.event(session, "finished", { termination: session.termination, satisfaction: session.satisfaction });
         session.status = "completed";

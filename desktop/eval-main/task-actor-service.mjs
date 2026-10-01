@@ -1,3 +1,4 @@
+import { createCompletionJudge as createNativeCompletionJudge, validateCompletionAssessment } from "./task-completion-judge.mjs";
 import { randomUUID } from "node:crypto";
 import { abortable } from "./abortable.mjs";
 import { setTimeout as delay } from "node:timers/promises";
@@ -36,8 +37,8 @@ function actorFailure(error, { cancelled = false, timedOut = false } = {}) {
 }
 
 export class TaskActorService {
-  constructor({ tasks, resolveRuntime, openBrowser, createActor = createCodexTaskActor, pollMs = 250, deadlineMs = null, setupRegistry = null }) {
-    Object.assign(this, { tasks, resolveRuntime, openBrowser, createActor, pollMs, deadlineMs, setupRegistry });
+  constructor({ tasks, resolveRuntime, openBrowser, createActor = createCodexTaskActor, resolveCompletionJudgeRuntime = null, createCompletionJudge = createNativeCompletionJudge, pollMs = 250, deadlineMs = null, setupRegistry = null }) {
+    Object.assign(this, { tasks, resolveRuntime, openBrowser, createActor, resolveCompletionJudgeRuntime, createCompletionJudge, pollMs, deadlineMs, setupRegistry });
     this.running = new Map();
   }
   async create(selection) {
@@ -47,7 +48,7 @@ export class TaskActorService {
     if (typeof startupId !== "string" || !/^[a-zA-Z0-9-]{1,80}$/.test(startupId) || this.running.has(startupId)) throw new Error("Invalid actor startup identity.");
     const controller = new AbortController();
     const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(this.deadlineMs ?? config.timeoutMs)]);
-    let resolveStarted, rejectStarted, task;
+    let resolveStarted, rejectStarted, task, completionJudge;
     const started = new Promise((resolve, reject) => { resolveStarted = resolve; rejectStarted = reject; });
     const run = { controller, done: null };
     this.running.set(startupId, run);
@@ -55,16 +56,23 @@ export class TaskActorService {
       try {
         // The same deadline covers discovery, preparation and all user actions.
         const runtime = await abortable(signal, () => this.resolveRuntime(config, { signal }));
+        const judgeSpec = setup?.behaviorContract?.completionJudge;
+        if (judgeSpec) {
+          if (!this.resolveCompletionJudgeRuntime || !this.createCompletionJudge) throw new Error("Completion judge is unavailable.");
+          const judgeRuntime = await abortable(signal, () => this.resolveCompletionJudgeRuntime(structuredClone(judgeSpec), { signal }));
+          completionJudge = await abortable(signal, () => this.createCompletionJudge({ runtime: judgeRuntime, config: structuredClone(judgeSpec), signal }));
+        }
+        signal.throwIfAborted();
         task = await this.tasks.create({ ...selection, mode: "simulated", actor: config, ...(setup ? { actorSetupRevisionId: setup.id } : {}) }, { signal });
         this.running.set(task.id, run);
         this.running.delete(startupId);
         resolveStarted(task);
-        await this.run(task.id, runtime, controller.signal, signal);
+        await this.run(task.id, runtime, controller.signal, signal, completionJudge);
       } catch (error) {
         const safe = actorFailure(error, { cancelled: controller.signal.aborted, timedOut: signal.aborted && !controller.signal.aborted });
         rejectStarted(Object.assign(new Error(safe.message), { code: safe.category }));
         if (task) await this.tasks.interruptActor(task.id, controller.signal.aborted ? "actor_cancelled" : signal.aborted ? "actor_timeout" : "actor_failed");
-      } finally { this.running.delete(startupId); if (task) this.running.delete(task.id); }
+      } finally { try { await completionJudge?.close(); } finally { this.running.delete(startupId); if (task) this.running.delete(task.id); } }
     })();
     return started;
   }
@@ -78,7 +86,7 @@ export class TaskActorService {
       await delay(this.pollMs, undefined, { signal });
     }
   }
-  async run(id, runtime, cancellation, deadlineSignal) {
+  async run(id, runtime, cancellation, deadlineSignal, completionJudge = null) {
     const task = this.tasks.get(id);
     const signal = deadlineSignal ?? AbortSignal.any([cancellation, AbortSignal.timeout(this.deadlineMs ?? task.actor.timeoutMs)]);
     const prompt = actorPrompt({ config: task.actor, request: task.prepared.plan[0].prompts[0], endpoint: task.endpoint, privateBrief: task.prepared.humanBrief });
@@ -93,6 +101,8 @@ export class TaskActorService {
       let observedSubmission;
       let finishRepairPending = false;
       let controlRepairPending = false;
+      let judgeInteractionRequired = false;
+      let completionJudgeFeedback = null;
       for (let index = 0; index <= task.actor.maxActions; index++) {
         phase = "settle";
         const current = await this.settled(id, signal);
@@ -112,7 +122,9 @@ export class TaskActorService {
         if (current.step + 1 >= current.prepared.plan.length || current.completions >= current.maxCompletions) {
           actionSchema.properties.kind.enum = actionSchema.properties.kind.enum.filter(kind => kind !== "next_step");
         }
+        if (judgeInteractionRequired) actionSchema.properties.kind.enum = actionSchema.properties.kind.enum.filter(kind => kind !== "finish");
         observation.availableActions = [...actionSchema.properties.kind.enum];
+        if (completionJudgeFeedback) observation.completionJudgeFeedback = completionJudgeFeedback;
         if (finishRepairPending) observation.previousActionError = "Your previous finish decision was rejected before execution. Reconsider using the visible evidence. endpoint_reached requires endpointStatus reached and empty remainingWork. If work remains, report incomplete or uncertain with satisfied or abandoned. Do not erase unfinished work merely to satisfy the format.";
         else if (controlRepairPending) observation.previousActionError = "Your previous control action was not executed because its observed control was no longer available. Choose a new action from this fresh workspace observation; do not reuse an old reference.";
         observedSubmission = submission?.id;
@@ -120,7 +132,7 @@ export class TaskActorService {
         signal.throwIfAborted();
         if (index === task.actor.maxActions) {
           await this.tasks.actorEvent(id, "actor_limit", { reason: "action_limit" });
-          await this.tasks.finish(id, { reason: "abandoned" }, { signal });
+          await this.tasks.finish(id, { reason: completionJudge ? "budget_exhausted" : "abandoned" }, { signal });
           return;
         }
         phase = "decide";
@@ -144,7 +156,34 @@ export class TaskActorService {
         signal.throwIfAborted();
         if (action.kind === "finish") {
           await this.tasks.actorEvent(id, "actor_satisfaction", { scale: "actor-1-4", value: action.satisfaction, comment: action.comment, endpointStatus: action.endpointStatus, remainingWork: action.remainingWork });
-          await this.tasks.finish(id, { reason: action.reason, actorActionEventId: intent.id }, { signal });
+          if (task.actorSetup?.behaviorContract?.completionJudge) {
+            phase = "completion_judge";
+            if (!completionJudge) throw new Error("Pinned completion judge is unavailable.");
+            const evidence = await abortable(signal, () => this.tasks.completionJudgeEvidence(id, { signal }));
+            const evidenceEvent = await this.tasks.actorEvent(id, "actor_completion_evidence", {
+              actorActionEventId: intent.id, observationEventId: observed.id, judge: structuredClone(task.actorSetup.behaviorContract.completionJudge), evidence,
+            });
+            signal.throwIfAborted();
+            const result = await abortable(signal, () => completionJudge.evaluate({ ...evidence, screenshot: observation.screenshot, actorFinish: action }, signal));
+            signal.throwIfAborted();
+            const { usage: judgeUsage, ...assessment } = result ?? {};
+            validateCompletionAssessment(assessment);
+            const judgment = await this.tasks.actorEvent(id, "actor_completion_judgment", {
+              actorActionEventId: intent.id, observationEventId: observed.id, evidenceEventId: evidenceEvent.id, judge: structuredClone(task.actorSetup.behaviorContract.completionJudge),
+              verdict: result.verdict, evidenceExplanation: result.evidenceExplanation, continuationHint: result.continuationHint, usage: judgeUsage ?? null,
+            });
+            signal.throwIfAborted();
+            if (result.verdict !== "complete") {
+              if (this.tasks.get(id).completions >= this.tasks.get(id).maxCompletions) {
+                await this.tasks.finish(id, { reason: "budget_exhausted" }, { signal });
+                return;
+              }
+              completionJudgeFeedback = result.continuationHint;
+              judgeInteractionRequired = true;
+              continue;
+            }
+            await this.tasks.finish(id, { reason: "endpoint_reached", actorActionEventId: intent.id, completionJudgeEventId: judgment.id }, { signal });
+          } else await this.tasks.finish(id, { reason: action.reason, actorActionEventId: intent.id }, { signal });
           return;
         }
         if (current.completions >= current.maxCompletions && action.kind === "next_step") {
@@ -168,6 +207,7 @@ export class TaskActorService {
           }
         }
         controlRepairPending = false;
+        judgeInteractionRequired = false;
         await this.tasks.actorEvent(id, "actor_action_completed", { actionEventId: intent.id });
       }
 

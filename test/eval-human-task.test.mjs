@@ -457,3 +457,84 @@ it("Stop releases a stalled external catalog check before follow-up admission", 
   expect(f.tasks.get(f.session.id).completions).toBe(before);
   expect(f.calls.some(call => call.method === "POST")).toBe(false);
 });
+
+async function gatedTask() {
+  const f = await fixture();
+  const session = f.tasks.find(f.session.id);
+  session.mode = "simulated";
+  session.actor = { maxActions: 5 };
+  session.actorSetup = { behaviorContract: { completionJudge: { version: "completion-judge-v1", model: "strong", modelReasoningEffort: "high" } } };
+  return f;
+}
+async function judgedFinish(f, verdict = "complete") {
+  const action = await f.tasks.actorEvent(f.session.id, "actor_action", { observationEventId: "visible", action: { kind: "finish", reason: "satisfied", endpointStatus: "incomplete", remainingWork: "User thinks work remains", satisfaction: 3 } });
+  const evidence = await f.tasks.actorEvent(f.session.id, "actor_completion_evidence", { actorActionEventId: action.id, observationEventId: "visible", judge: f.tasks.get(f.session.id).actorSetup.behaviorContract.completionJudge, evidence: { artifactEvidence: {} } });
+  const judgment = await f.tasks.actorEvent(f.session.id, "actor_completion_judgment", { actorActionEventId: action.id, observationEventId: "visible", judge: f.tasks.get(f.session.id).actorSetup.behaviorContract.completionJudge, evidenceEventId: evidence.id, verdict });
+  return { reason: "endpoint_reached", actorActionEventId: action.id, completionJudgeEventId: judgment.id };
+}
+
+it("gates normal finishes on the latest exact completion judgment and freezes the original claim", async () => {
+  const f = await gatedTask(); const id = f.session.id;
+  for (const reason of ["satisfied", "abandoned", "endpoint_reached", "budget_exhausted"]) await expect(f.tasks.finish(id, { reason })).rejects.toThrow();
+  await expect(f.tasks.finish(id, await judgedFinish(f, "incomplete"))).rejects.toThrow("completion judgment");
+  const stale = await judgedFinish(f);
+  await f.tasks.actorEvent(id, "actor_action", { action: { kind: "click", ref: "visible" } });
+  await expect(f.tasks.finish(id, stale)).rejects.toThrow("completion judgment");
+  const superseded = await judgedFinish(f);
+  await f.tasks.actorEvent(id, "actor_completion_judgment", { actorActionEventId: superseded.actorActionEventId, verdict: "uncertain" });
+  await expect(f.tasks.finish(id, superseded)).rejects.toThrow("completion judgment");
+  const accepted = await judgedFinish(f);
+  const judgment = f.tasks.find(id).events.find(event => event.id === accepted.completionJudgeEventId);
+  const evidenceId = judgment.evidenceEventId; judgment.evidenceEventId = "missing";
+  await expect(f.tasks.finish(id, accepted)).rejects.toThrow("completion judgment");
+  judgment.evidenceEventId = evidenceId;
+  const result = await f.tasks.finish(id, accepted);
+  expect(result.termination).toMatchObject({ endpointAttainment: "judge_reported", success: null, completionJudgeEventId: accepted.completionJudgeEventId, actorClaim: { reason: "satisfied", endpointStatus: "incomplete", satisfaction: 3 } });
+  const reopened = await new HumanTaskService(f.options).open();
+  expect((await reopened.export(id)).bundle.session.termination).toEqual(result.termination);
+});
+
+it("does not reuse judgment after submission or accept another judge identity", async () => {
+  const f = await gatedTask(); const id = f.session.id;
+  const prior = await judgedFinish(f);
+  await f.tasks.write(id, "/api/threads/1/interactions", "POST", { text: "More work" });
+  await expect(f.tasks.finish(id, prior)).rejects.toThrow("completion judgment");
+  const latest = await judgedFinish(f);
+  f.tasks.find(id).events.find(event => event.id === latest.completionJudgeEventId).judge.model = "other";
+  await expect(f.tasks.finish(id, latest)).rejects.toThrow("completion judgment");
+  expect((await f.tasks.finish(id, { reason: "budget_exhausted" })).termination.endpointAttainment).toBe("not_claimed");
+});
+
+it("builds bounded completion evidence without grades and rechecks settled state after artifact reads", async () => {
+  const f = await gatedTask(); const id = f.session.id;
+  Object.assign(f.tasks.find(id).prepared, { humanBrief: "Private taste", humanRubric: "HIDDEN_RUBRIC" });
+  await f.tasks.grade(id, { satisfaction: 1, comment: "HIDDEN_GRADE" });
+  await f.tasks.actorEvent(id, "actor_action", { action: { kind: "fill", value: "x".repeat(10000), secret: "HIDDEN_ACTION_FIELD" }, usage: { hidden: "HIDDEN_USAGE" } });
+  f.options.evalService.completionJudgeArtifactEvidence = vi.fn(async () => ({ files: [{ path: "deliverable.md", content: "Bounded output" }] }));
+  f.options.evalService.gradeHumanTaskStep = vi.fn();
+  const packet = await f.tasks.completionJudgeEvidence(id);
+  expect(packet).toMatchObject({ request: "Build the thing", endpoint: "A working artifact", privateBrief: "Private taste", artifactEvidence: { files: [{ path: "deliverable.md", content: "Bounded output" }] } });
+  expect(packet.trajectory[0]).toMatchObject({ kind: "task_progress", currentStep: 1, totalSteps: 1, remainingSteps: 0, completions: 1, maxCompletions: 2 });
+  expect(JSON.stringify(packet)).not.toContain("HIDDEN_");
+  expect(packet.trajectory.at(-1).action.value.length).toBeLessThan(10000);
+  expect(packet.trajectory.at(-1).action.value).toContain("[truncated:");
+  for (let i = 0; i < 90; i++) f.tasks.event(f.tasks.find(id), "actor_action", { action: { kind: "fill", value: "界".repeat(5000) } });
+  const bounded = await f.tasks.completionJudgeEvidence(id);
+  expect(Buffer.byteLength(JSON.stringify(bounded.trajectory))).toBeLessThan(21000);
+  expect(bounded.trajectory.at(-1)).toMatchObject({ kind: "evidence_omitted" });
+  expect(f.options.evalService.gradeHumanTaskStep).not.toHaveBeenCalled();
+  f.options.evalService.completionJudgeArtifactEvidence.mockImplementation(async () => { f.threads.get(1)[0].completionStatus = "running"; return {}; });
+  await expect(f.tasks.completionJudgeEvidence(id)).rejects.toThrow("Wait for the current response");
+});
+
+it("cancels completion evidence collection without holding the task queue", async () => {
+  const f = await gatedTask(); let enter, release;
+  const entered = new Promise(resolve => { enter = resolve; });
+  f.options.evalService.completionJudgeArtifactEvidence = () => { enter(); return new Promise(resolve => { release = resolve; }); };
+  const controller = new AbortController();
+  const pending = f.tasks.completionJudgeEvidence(f.session.id, { signal: controller.signal });
+  const rejected = expect(pending).rejects.toMatchObject({ name: "AbortError" });
+  await entered; controller.abort(); await rejected;
+  await f.tasks.interruptActor(f.session.id, "actor_cancelled"); release({});
+  expect(f.tasks.get(f.session.id).status).toBe("interrupted");
+});

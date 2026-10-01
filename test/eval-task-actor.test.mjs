@@ -5,6 +5,8 @@ import { mkdtemp, rm, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
+import { COMPLETION_JUDGE_SPEC } from "../desktop/eval-main/task-completion-judge.mjs";
+import { defaultActorSetup } from "../desktop/eval-main/setup-registry.mjs";
 import { HumanTaskService } from "../desktop/eval-main/human-task-service.mjs";
 import { TaskActorService } from "../desktop/eval-main/task-actor-service.mjs";
 import { actorConfiguration, actorPrompt, createCodexTaskActor, validateActorAction } from "../desktop/eval-main/task-actor.mjs";
@@ -13,12 +15,13 @@ import { createHumanTaskSurface } from "../desktop/eval-main/web-host.mjs";
 const cleanups = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); });
 const action = (kind, extra = {}) => ({ kind, ref: "visible", value: "", reason: "", satisfaction: null, comment: "", endpointStatus: "incomplete", remainingWork: "Route undecided", ...extra });
-async function fixture({ decide, maxActions = 8, busy = false, failWrite = false, navigateOnly = false, retry = false, timeoutMs = 900000, planCount = 1, maxCompletions = 2, controlErrors = [] } = {}) {
+async function fixture({ decide, maxActions = 8, busy = false, failWrite = false, navigateOnly = false, retry = false, timeoutMs = 900000, planCount = 1, maxCompletions = 2, controlErrors = [], completionJudge = null, judgeEvaluate = null } = {}) {
   const directory = await mkdtemp(join(tmpdir(), "task-actor-test-"));
   cleanups.push(() => rm(directory, { recursive: true, force: true }));
   const turns = [{ id: 1, completionStatus: busy ? "running" : retry ? "not_started" : "accepted", ...(retry ? { latestAttempt: { id: 91, outcome: "model_failed" } } : {}) }];
   const dispatches = [];
-  const options = { stateFile: join(directory, "tasks.json"), productSession: { origin: "http://product.invalid", cookie: { name: "control", value: "secret" }, readOnlyCookie: { name: "read", value: "only" } },
+  const setupRegistry = completionJudge ? { selected: () => ({ ...defaultActorSetup(), id: "judge-gated-setup", settings: { ...defaultActorSetup().settings, maxActions }, behaviorContract: { ...defaultActorSetup().behaviorContract, completionJudge } }) } : null;
+  const options = { setupRegistry, stateFile: join(directory, "tasks.json"), productSession: { origin: "http://product.invalid", cookie: { name: "control", value: "secret" }, readOnlyCookie: { name: "read", value: "only" } },
     evalService: {
       prepareHumanTask: async () => ({ name: "Task", humanBrief: "PRIVATE BRIEF", humanRubric: "SECRET RUBRIC", execution: { harnessConfigurationName: "fixture", projectId: 1, modelResolution: {} }, plan: Array.from({ length: planCount }, () => ({ name: "Task", prompts: ["Help me plan a trip"] })) }),
       createHumanTaskThread: async () => ({ id: 1, rootInteractionId: 1 }),
@@ -37,6 +40,8 @@ async function fixture({ decide, maxActions = 8, busy = false, failWrite = false
     },
   };
   const tasks = await new HumanTaskService(options).open();
+  const judge = { evaluate: vi.fn(judgeEvaluate ?? (async () => ({ verdict: "complete", evidenceExplanation: "Endpoint satisfied", continuationHint: "", usage: null }))), close: vi.fn() };
+  if (completionJudge) tasks.completionJudgeEvidence = vi.fn(async () => ({ request: "Help me plan a trip", endpoint: "A trip plan", privateBrief: "PRIVATE BRIEF", trajectory: [], artifactEvidence: [] }));
   const seen = [];
   let id;
   let browserSignal;
@@ -46,7 +51,7 @@ async function fixture({ decide, maxActions = 8, busy = false, failWrite = false
     nextStep: vi.fn(),
     close: vi.fn(),
   };
-  const actors = new TaskActorService({ tasks, pollMs: 1, deadlineMs: timeoutMs, resolveRuntime: async () => ({}), openBrowser: async (_id, signal) => { browserSignal = signal; return browser; },
+  const actors = new TaskActorService({ tasks, setupRegistry, resolveCompletionJudgeRuntime: async () => ({}), createCompletionJudge: async () => judge, pollMs: 1, deadlineMs: timeoutMs, resolveRuntime: async () => ({}), openBrowser: async (_id, signal) => { browserSignal = signal; return browser; },
     createActor: async ({ prompt }) => ({ decide: async (observation, signal, decisionOptions) => {
       seen.push({ prompt, observation });
       return { action: decide ? await decide(observation, signal, decisionOptions) : turns.length === 1 ? action("click") : action("finish", { reason: "satisfied", satisfaction: 3, comment: "Good enough" }), usage: { input_tokens: 10, output_tokens: 5 } };
@@ -55,7 +60,7 @@ async function fixture({ decide, maxActions = 8, busy = false, failWrite = false
   cleanups.push(() => actors.close());
   const task = await actors.create({ maxCompletions, endpoint: "A trip plan", actor: { maxActions } }); id = task.id;
   const done = actors.running.get(id).done;
-  return { tasks, actors, id, done, seen, browser, dispatches, turns, options };
+  return { tasks, actors, id, done, seen, browser, dispatches, turns, options, judge };
 }
 
 it("adapts to successive rendered states through session admission, then preserves independent actor and human evidence", async () => {
@@ -456,4 +461,97 @@ it.each(["action", "breadcrumb"])("resolves only the same production %s after DO
   const unknown = document.createElement("button"); unknown.textContent = replacement.textContent; replacement.after(unknown);
   expect(taskActorControlIdentity(unknown)).toBeNull();
   window.happyDOM.abort();
+});
+
+
+it("stronger completion gate preserves proposals and requires interaction before reconsidering finish", async () => {
+  const spec = structuredClone(COMPLETION_JUDGE_SPEC);
+  const choices = [action("finish", { reason: "satisfied", satisfaction: 4 }), action("click"), action("click"), action("finish", { reason: "satisfied", satisfaction: 3 })];
+  let evaluations = 0;
+  const f = await fixture({ completionJudge: spec, controlErrors: [Object.assign(new Error("stale"), { code: "actor_control_stale", actionDispatched: false })], decide: () => choices.shift(), judgeEvaluate: async () => ++evaluations === 1
+    ? { verdict: "incomplete", evidenceExplanation: "Only an initial suggestion exists", continuationHint: "Ask for a concrete trip plan.", usage: null }
+    : { verdict: "complete", evidenceExplanation: "Concrete plan delivered", continuationHint: "", usage: null } });
+  await f.done;
+  const task = f.tasks.get(f.id);
+  expect(f.browser.act).toHaveBeenCalledTimes(2);
+  expect(task.events.filter(event => event.kind === "actor_satisfaction").map(event => event.value)).toEqual([4, 3]);
+  expect(task.events.filter(event => event.kind === "actor_completion_judgment").map(event => event.verdict)).toEqual(["incomplete", "complete"]);
+  expect(f.seen[1].observation.availableActions).not.toContain("finish");
+  expect(f.seen[2].observation.availableActions).not.toContain("finish");
+  expect(f.seen[3].observation.availableActions).toContain("finish");
+  expect(f.seen[1].observation.completionJudgeFeedback).toBe("Ask for a concrete trip plan.");
+  expect(JSON.stringify(f.seen)).not.toContain("Only an initial suggestion exists");
+  expect(task.termination).toMatchObject({ reason: "endpoint_reached", endpointAttainment: "judge_reported" });
+  expect(f.judge.close).toHaveBeenCalledOnce();
+});
+
+it("preflights the pinned completion judge before candidate task creation", async () => {
+  const create = vi.fn();
+  const spec = structuredClone(COMPLETION_JUDGE_SPEC);
+  const setup = { ...defaultActorSetup(), id: "pinned", behaviorContract: { ...defaultActorSetup().behaviorContract, completionJudge: spec } };
+  const resolveCompletionJudgeRuntime = vi.fn(async () => { throw new Error("model not supported private-token"); });
+  const actors = new TaskActorService({ tasks: { create }, setupRegistry: { selected: () => setup }, resolveRuntime: async () => ({}), resolveCompletionJudgeRuntime });
+  await expect(actors.create({})).rejects.toThrow(/model available/);
+  expect(create).not.toHaveBeenCalled();
+  expect(resolveCompletionJudgeRuntime).toHaveBeenCalledWith(spec, { signal: expect.any(AbortSignal) });
+});
+
+
+it.each(["incomplete", "uncertain"])("completion judge %s consumes the same action budget without accepting a finish loop", async (verdict) => {
+  let decision = 0;
+  const f = await fixture({ completionJudge: COMPLETION_JUDGE_SPEC, maxActions: 2, navigateOnly: true,
+    decide: () => ++decision === 1 ? action("finish", { reason: "satisfied", satisfaction: 4 }) : action("click"),
+    judgeEvaluate: async () => ({ verdict, evidenceExplanation: "Endpoint evidence missing", continuationHint: "Ask for the remaining detail.", usage: null }) });
+  await f.done;
+  expect(f.judge.evaluate).toHaveBeenCalledOnce();
+  expect(f.browser.act).toHaveBeenCalledOnce();
+  expect(f.tasks.get(f.id).termination).toMatchObject({ reason: "budget_exhausted", success: null });
+});
+
+it("judge failure preserves proposed satisfaction and supplied evidence, then interrupts with a typed phase", async () => {
+  const f = await fixture({ completionJudge: COMPLETION_JUDGE_SPEC, decide: () => action("finish", { reason: "satisfied", satisfaction: 4 }),
+    judgeEvaluate: async () => { throw new Error("private provider token sk-secret"); } });
+  await f.done;
+  const task = f.tasks.get(f.id);
+  expect(task.status).toBe("interrupted");
+  expect(task.events.find(event => event.kind === "actor_error")).toMatchObject({ phase: "completion_judge", category: "runtime_failure" });
+  expect(task.events.some(event => event.kind === "actor_completion_evidence")).toBe(true);
+  expect(task.events.some(event => event.kind === "actor_satisfaction")).toBe(true);
+  expect(JSON.stringify(task.events)).not.toContain("sk-secret");
+  expect(f.judge.close).toHaveBeenCalledOnce();
+});
+
+it("manual stop cancels a pending completion judgment without allowing late completion", async () => {
+  let started; const pending = new Promise(resolve => { started = resolve; });
+  let release; const gate = new Promise(resolve => { release = resolve; });
+  const f = await fixture({ completionJudge: COMPLETION_JUDGE_SPEC, decide: () => action("finish", { reason: "satisfied", satisfaction: 4 }),
+    judgeEvaluate: async () => { started(); await gate; return { verdict: "complete", evidenceExplanation: "Late response", continuationHint: "", usage: null }; } });
+  await pending;
+  await f.actors.stop(f.id);
+  release(); await f.done;
+  expect(f.tasks.get(f.id).termination.reason).toBe("actor_cancelled");
+  expect(f.tasks.get(f.id).events.some(event => event.kind === "actor_completion_judgment")).toBe(false);
+});
+
+it("another finish without an intervening interaction never calls the judge twice", async () => {
+  const f = await fixture({ completionJudge: COMPLETION_JUDGE_SPEC, decide: () => action("finish", { reason: "satisfied", satisfaction: 4 }),
+    judgeEvaluate: async () => ({ verdict: "incomplete", evidenceExplanation: "Not delivered", continuationHint: "Ask for a deliverable.", usage: null }) });
+  await f.done;
+  expect(f.judge.evaluate).toHaveBeenCalledOnce();
+  expect(f.tasks.get(f.id).status).toBe("interrupted");
+  expect(f.tasks.get(f.id).events.find(event => event.kind === "actor_error")).toMatchObject({ category: "invalid_action" });
+});
+
+
+it("stops at the completion budget after recording a rejected final-turn judgment", async () => {
+  const f = await fixture({ completionJudge: COMPLETION_JUDGE_SPEC, maxCompletions: 1,
+    decide: () => action("finish", { reason: "satisfied", satisfaction: 4 }),
+    judgeEvaluate: async () => ({ verdict: "uncertain", evidenceExplanation: "The final turn does not establish completion", continuationHint: "Ask for the missing plan.", usage: null }) });
+  await f.done;
+  const task = f.tasks.get(f.id);
+  expect(task.termination).toMatchObject({ reason: "budget_exhausted", success: null });
+  expect(task.events.filter(event => event.kind === "actor_completion_judgment")).toHaveLength(1);
+  expect(task.events.some(event => event.kind === "actor_error")).toBe(false);
+  expect(f.browser.act).not.toHaveBeenCalled();
+  expect(f.seen).toHaveLength(1);
 });

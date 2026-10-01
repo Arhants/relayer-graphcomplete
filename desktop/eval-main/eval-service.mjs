@@ -1,3 +1,4 @@
+import { completionArtifactEvidence } from "./task-completion-artifacts.mjs";
 import { abortable } from "./abortable.mjs";
 import { interactiveTripCase } from "./interactive-trip-case.mjs";
 import { evalSelectionRequiresLiveAuthorization, validateExternalLiveAuthorization } from "../eval-renderer/eval-live-authorization.js";
@@ -2552,6 +2553,11 @@ export class EvalService {
     });
     prepared.execution.pinnedModelResolution ??= copy(prepared.execution.modelResolution);
     return thread;
+  }
+
+  async completionJudgeArtifactEvidence(prepared, { signal } = {}) {
+    await abortable(signal, () => this.assertHumanTaskCatalog(prepared));
+    return completionArtifactEvidence(prepared.execution.fixture?.workspaceDirectory, { signal });
   }
 
   async gradeHumanTaskStep(prepared, step, { signal } = {}) {

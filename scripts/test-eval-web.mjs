@@ -486,7 +486,16 @@ async function proveTaskActor({ browser, service, productSession, data }) {
   let decision = 0;
   const snapshots = [];
   let controlPage;
+  let completionAssessments = 0;
   const actors = new TaskActorService({ tasks, setupRegistry, resolveRuntime: async () => ({}),
+    resolveCompletionJudgeRuntime: async (spec) => { assert.equal(spec.model, "gpt-5.6-sol"); return {}; },
+    createCompletionJudge: async () => ({ close: async () => {}, evaluate: async (evidence) => {
+      assert.ok(evidence.screenshot, "completion reviewer receives current rendered screenshot");
+      completionAssessments++;
+      return completionAssessments === 1
+        ? { verdict: "incomplete", evidenceExplanation: "Fixture reviewer requires one more visible graph inspection.", continuationHint: "Could I check one more part of the plan?", usage: null }
+        : { verdict: "complete", evidenceExplanation: "Fixture reviewer accepts the plan after the additional graph inspection.", continuationHint: "", usage: null };
+    } }),
     openBrowser: async (sessionId, signal, observationContract) => {
       const controller = await openTaskActorBrowser({ tasks, sessionId, productSession, browser, signal, observationContract });
       const actorPage = browser.contexts().flatMap((context) => context.pages()).find((page) => new URL(page.url()).searchParams.get("taskActor") === "1");
@@ -720,6 +729,12 @@ async function proveTaskActor({ browser, service, productSession, data }) {
         await until(() => oldInvoke.evaluate(element => !element.isConnected), "invoke button replaced by production refresh");
         await oldInvoke.dispose();
       }
+      if (decision === 6) {
+        assert.equal(observation.completionJudgeFeedback, "Could I check one more part of the plan?");
+        assert.ok(!observation.availableActions.includes("finish"), "judge rejection requires an ordinary interaction first");
+        const label = await controlPage.locator(".graph-node").first().getAttribute("aria-label");
+        Object.assign(action, { kind: "click", ref: find(control => control.name === label) });
+      }
       decision++;
       return { action, usage: null };
     } }),
@@ -741,34 +756,53 @@ async function proveTaskActor({ browser, service, productSession, data }) {
     assert.equal(await page.locator("#actorSettings").isVisible(), true);
     await page.locator("#humanCase").selectOption("empty-project.task-system.two-turn");
     await page.locator("#humanHarness").selectOption("fixture-task-system");
-    await page.locator('[name="maxCompletions"]').fill("3");
+    await page.locator('[name="maxCompletions"]').fill("4");
     await page.locator("#humanEndpoint").fill("An understandable task system");
     await page.locator("#humanCreate button").click();
     await until(() => tasks.list().length > 0, "actor session created through dashboard");
     const task = await until(() => { const task = tasks.get(tasks.list()[0].id); return ["completed", "interrupted", "failed"].includes(task.status) ? task : null; }, "actor session terminal");
     assert.equal(task.status, "completed", JSON.stringify(task.events.map(({ kind, ...event }) => ({ kind, ...(kind === "actor_error" ? event : {}) }))));
     assert.equal(task.completions, 3);
-    assert.equal(decision, 6);
+    await until(async () => (await page.locator("#humanTaskDetail").textContent()).includes("Completion reviewer: gpt-5.6-sol"), "pinned completion reviewer visible in task details");
+    assert.ok((await page.locator("#humanTaskDetail").textContent()).includes("high reasoning"));
+    assert.equal(decision, 8);
+    assert.equal(completionAssessments, 2);
+    const judgments = task.events.filter(event => event.kind === "actor_completion_judgment");
+    assert.deepEqual(judgments.map(event => event.verdict), ["incomplete", "complete"]);
+    for (const judgment of judgments) {
+      assert.ok(task.events.some(event => event.id === judgment.actorActionEventId && event.kind === "actor_action" && event.action.kind === "finish"));
+      assert.ok(task.events.some(event => event.id === judgment.observationEventId && event.kind === "actor_observation"));
+      assert.ok(task.events.some(event => event.id === judgment.evidenceEventId && event.kind === "actor_completion_evidence"));
+    }
+    assert.ok(task.events.some(event => event.kind === "actor_action_completed" && event.sequence > judgments[0].sequence && event.sequence < judgments[1].sequence), "real browser interaction separates rejected and accepted finish");
+    assert.equal(task.termination.completionJudgeEventId, judgments[1].id);
+    assert.equal(task.termination.reason, "endpoint_reached");
     assert.ok(task.events.some((event) => event.kind === "submission" && event.path?.endsWith("/invoke")));
     const lastTurn = (await tasks.detail(task.currentThreadId)).interactions.at(-1);
     assert.equal(String(task.events.findLast(event => event.kind === "presentation").snapshot.turnId), String(lastTurn.id), "latest completed response is painted before actor finishes");
     for (const snapshot of snapshots) {
-      assert.deepEqual(Object.keys(snapshot).sort(), ["availableActions", "controls", "screenshot", "text"]);
-      assert.deepEqual(snapshot.availableActions, ["click", "fill", "select", "scroll", "finish"]);
+      assert.deepEqual(Object.keys(snapshot).sort(), [...["availableActions", "controls", "screenshot", "text"], ...(snapshot.completionJudgeFeedback ? ["completionJudgeFeedback"] : [])].sort());
+      assert.deepEqual(snapshot.availableActions, ["click", "fill", "select", "scroll", ...(snapshot === snapshots[6] ? [] : ["finish"])]);
       for (const control of snapshot.controls) assert.deepEqual(Object.keys(control).sort(), ["name", "ref", "role"]);
     }
     assert.ok(task.events.filter(event => event.kind === "actor_observation").every(event => !event.observation.screenshot && event.observation.screenshotArtifact));
-    assert.equal(task.events.filter((event) => event.kind === "actor_satisfaction").length, 1);
+    assert.equal(task.events.filter((event) => event.kind === "actor_satisfaction").length, 2);
     assert.equal(task.satisfaction.value, 1, "human grade saved during the active actor session stays separate from actor satisfaction");
     const exported = await tasks.export(task.id);
-    assert.equal(exported.bundle.session.events.filter((event) => event.kind === "actor_observation").length, 6);
+    assert.equal(exported.bundle.session.events.filter((event) => event.kind === "actor_observation").length, 8);
     assert.equal(exported.bundle.session.satisfaction.value, 1);
-    assert.equal(exported.bundle.actorScreenshots.length, 6);
+    assert.equal(exported.bundle.actorScreenshots.length, 8);
+    assert.equal(exported.bundle.session.termination.completionJudgeEventId, judgments[1].id);
     assert.equal(await page.locator("#actorSettings [name=actorModel]").inputValue(), "gpt-5.6-luna");
     assert.ok(snapshots.every((snapshot) => !JSON.stringify(snapshot).includes("Independent human feedback") && !JSON.stringify(snapshot).includes("Unnecessary exploration")));
     const baseline = setupRegistry.selected("actor");
     await page.locator("#humanTools > summary").click();
     await page.locator("#setupPredecessor").selectOption(baseline.id);
+    await until(async () => (await page.locator("#setupEditor").textContent()).includes("Completion reviewer: gpt-5.6-sol"), "pinned reviewer rendered in setup editor");
+    assert.ok((await page.locator("#setupEditor").textContent()).includes("requires its approval to finish"));
+    await page.locator("#setupUseCurrentActor").click();
+    assert.ok((await page.locator("#setupCompletionReviewer").textContent()).includes("gpt-5.6-sol"));
+    assert.equal(await page.locator('#setupPublish [name="promptVersion"]').inputValue(), setupRegistry.catalog().actorDefinition.promptVersion);
     await page.locator('#setupPublish [name="name"]').fill("Brief user from human feedback");
     await page.locator('#setupPublish [name="promptVersion"]').fill("browser-manual-actor-v1");
     await page.locator('#setupPublish [name="timeoutMinutes"]').fill("60");
@@ -1062,6 +1096,8 @@ async function proveTaskActorInputs({ browser, service, productSession, data }) 
   const tasks = await new HumanTaskService({ stateFile: join(data, "actor-input-tasks.json"), evalService: service, productSession }).open();
   let stage = 0;
   const actors = new TaskActorService({ tasks, resolveRuntime: async () => ({}),
+    resolveCompletionJudgeRuntime: async () => ({}),
+    createCompletionJudge: async () => ({ close: async () => {}, evaluate: async () => ({ verdict: "complete", evidenceExplanation: "Fixture input was incorporated.", continuationHint: "", usage: null }) }),
     openBrowser: (sessionId, signal) => openTaskActorBrowser({ tasks, sessionId, productSession, browser, signal }),
     createActor: async () => ({ close: async () => {}, decide: async ({ controls }) => {
       const action = { kind: "scroll", ref: "", value: "down", reason: "", satisfaction: null, comment: "", endpointStatus: "incomplete", remainingWork: "Further choices remain." };

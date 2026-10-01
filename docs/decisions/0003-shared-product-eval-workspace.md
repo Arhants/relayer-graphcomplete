@@ -137,3 +137,22 @@ consistent preferences and explicit uncertainty. It records endpoint status and
 remaining work independently of satisfaction. Action-specific human annotations
 support manual tuning, not automatic policy changes. The actor default is
 GPT-5.6 Luna, with model/effort catalog preflight before candidate inference.
+
+
+### Optional completion judge (approved 2026-10-01)
+
+A versioned actor setup may enable a stronger, separately configured completion
+judge. This explicitly supersedes the earlier no-influence rule only for stopping
+guidance: the judge may reject a proposed normal finish and require another user
+interaction. Historical setups retain their original behavior. Model and effort
+availability for both actor and judge are checked before candidate dispatch.
+
+The judge evaluates the endpoint from bounded task context, actor-visible
+evidence, and a host-read artifact packet with explicit omissions. Artifact
+contents are not evidence that the user saw them. It has no candidate or user action capability. Its continuation guidance
+is brief; grading rubrics, human feedback and held-out labels stay hidden. It does
+not invent preferences, rewrite satisfaction, or turn approval to finish into an
+objective success judgment. Each proposed finish and judge decision is durable.
+Stop, cancellation, failure and existing budgets prevail over continuation.
+Default tests use injected decisions rather than paid inference. PRD 13.2.3 owns
+this opt-in contract; setup lineage remains governed by PRD 13.2.4.

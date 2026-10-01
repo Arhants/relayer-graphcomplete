@@ -401,3 +401,72 @@ Logs: `/tmp/actor-select-red.log`, `/tmp/actor-v6-browser.log`, and
 `/tmp/actor-v6-browser-repair.log`. Full check/build and final review receipts
 are recorded with the exact source in the pull request. The real v6 follow-up
 remains separate from the preserved original ten-case cohort.
+
+
+### Optional stronger completion judge (approved 2026-10-01)
+
+The user explicitly authorized a stronger judge to overrule the simulated user's
+proposed finish and require more interaction. This is a narrow exception to the
+prior prohibition on influencing the actor. It applies only to explicitly enabled,
+versioned setups. Historical runs and unguided setup revisions remain unchanged.
+Neither the earlier ten-case cohort nor the v6 native-menu follow-up establishes
+proof for this new behavior.
+
+Changed executable seams to map are setup normalization/pinning, judge runtime
+preflight, bounded judge evidence construction, native decision transport, proposed
+finish admission, continuation feedback, durable event export, and cancellation.
+Actor satisfaction remains a distinct report even when permission to finish is
+denied. Judge acceptance never substitutes for objective endpoint grading.
+
+| Checkpoint | Production-seam verification mapping |
+|---|---|
+| Explicit opt-in and immutable history | `test/eval-setup-registry.test.mjs`: publish/reopen the new pinned contract; historical revisions stay identical; a promotion during discovery cannot change the starting setup. |
+| Both runtimes available before spending | `test/eval-task-actor.test.mjs` service regression: unavailable judge model/effort rejects before candidate creation; disabled/legacy sessions never resolve or invoke the completion judge. |
+| Reject and continue honestly | `test/eval-task-actor.test.mjs` service regression: proposed incomplete/uncertain finish, recorded rejection, fresh observation with short guidance, real next actor action, then accepted finish. Preserve both satisfaction reports, all decisions and their evidence references. |
+| Bounded evidence and authority | `test/eval-task-completion-judge.test.mjs` observes the restricted native constructor, pinned prompt/schema, evidence allowlist, size rejection and cancellation. `test/eval-task-completion-artifacts.test.mjs` reads actual files, excludes hidden files/symlinks/binary/oversized content and records omissions. `test/eval-human-task.test.mjs` bounds Unicode trajectory evidence and excludes human grades/rubrics. The existing restricted native transport tests retain tool-denial coverage. |
+| Feedback stays scoped | `test/eval-task-actor.test.mjs` observes that only `continuationHint`, not the full judgment explanation, reaches the next actor decision. The schema limits hint length; instructions forbid solutions or new private facts. These semantic restrictions are prompt constraints, not deterministic guarantees about model-generated content. The judge has no action dispatch capability. |
+| Stop and budgets win | `test/eval-task-actor.test.mjs` and `test/eval-task-completion-judge.test.mjs` cancel during judge inference and pending decision persistence; no later actor action or finish runs. Action/completion limits and deadline cannot be extended by repeated rejection. Judge failure remains explicit and cannot silently accept a finish. |
+| Persistence and restart | `test/eval-human-task.test.mjs` preserves rejected proposals, original satisfaction, judge configuration/decisions and terminal snapshots across export/reopen. It rejects missing, mismatched, superseded or stale judgment/evidence links before normal finish. Existing interruption tests retain no-auto-resume coverage. |
+| Explicit publication UI | `scripts/test-eval-web.mjs` exercises Use current actor and completion reviewer, feedback-backed publication, pinned reviewer display, and immutable prior revision. `test/eval-setup-registry.test.mjs` preserves historical contracts and requires explicit version upgrade; publication does not promote the revision. |
+| End-to-end user experience | The actor chapter of `npm run test:eval-web` uses an injected judge to reject a finish, observe another ordinary product interaction, and verify final review/export while human grading remains isolated. |
+
+Use focused in-process actor/setup/session/native-transport tests while editing.
+Required final deterministic gates remain `npm run check`, `npm run build`, and
+`npm run test:eval-web`. An authorized live guided session is separate evidence;
+it must identify both pinned contracts and preserve the original unguided cohort.
+Before proof claims, review the executable seams and this mapping adversarially.
+These planned checkpoints and documentation establish no implementation pass.
+
+The file-evidence reader does not rerun workspace tests or catalog graders at each
+finish proposal. Its bounded file snapshot is input to model judgment, not a
+verified code-execution result. Full snapshot export and deterministic final checks
+remain separate. Native helper validation and service authority tests constrain
+structure and dispatch; they do not certify the stronger model's judgment quality.
+
+
+Completion-gate verification (2026-10-01): final `npm run check` passed with
+3510 JavaScript tests, two separate secret-boundary tests, all Rust checks and
+66 Python tests; three existing JavaScript tests remain skipped. `npm run build`
+passed using the existing warm native cache. All twelve `test:eval-web` chapters
+passed, including injected rejection, an ordinary graph interaction and accepted
+finish with linked evidence. Logs: `/tmp/completion-gate-check.log`,
+`/tmp/completion-gate-build.log`, `/tmp/completion-gate-browser-final-ui.log`.
+The browser exercises the current revision UI; historical upgrade is covered by
+registry tests. No live model-quality or calibrated completion accuracy claim is made.
+
+Independent reviews found no unresolved blocker. `/root/slice1_authority` reviewed
+fourteen executable/test files, excluding its own HumanTaskService changes:
+`1b149ceebad0b8e26989ebf00d765477a3fb799102e733b008ec360d4b0cf1f6`.
+`/root/provider_backend` reviewed ten artifact, setup, UI, wiring and HumanTaskService
+files, excluding its own actor-service edits:
+`ce1955b3e09e46a22d263b499594e9ec1014ca668ea8219daf72b74f5d2708f1`.
+Both are SHA256 of sorted path + NUL + file bytes. Fixed review findings included
+bounded file allocation, rejection of symlink roots, and persistent pending-reviewer
+UI text. Reviews constrain implementation authority, not judge accuracy or atomic
+snapshots under hostile concurrent filesystem mutation. Original cohorts remain unchanged.
+
+Failed attempts remain recorded: `/tmp/completion-budget-red.log` reproduced the
+exhausted-budget rejection bug before repair; `/tmp/completion-gate-browser.log`
+exposed an asynchronous UI assertion; `/tmp/completion-gate-browser-final.log`
+exhausted the fixture budget before the required continuation. The final fixture
+permits four candidate completions but uses three; no live turns were padded.

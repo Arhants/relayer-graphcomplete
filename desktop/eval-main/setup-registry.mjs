@@ -1,3 +1,4 @@
+import { COMPLETION_JUDGE_SPEC } from "./task-completion-judge.mjs";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile, rename } from "node:fs/promises";
 import { dirname, join, basename } from "node:path";
@@ -46,7 +47,7 @@ function judgeConfigurations(directory) {
 }
 export function defaultActorSetup() {
   return { kind: "actor", name: "Low-effort user", promptVersion: ACTOR_PROMPT_VERSION, promptTemplate: ACTOR_PROMPT_TEMPLATE,
-    settings: actorConfiguration(), behaviorContract: { id: "task-actor-v3", actionSchema: copy(ACTOR_ACTION_SCHEMA), observationContract: copy(ACTOR_OBSERVATION_CONTRACT) } };
+    settings: actorConfiguration(), behaviorContract: { id: "task-actor-v4", actionSchema: copy(ACTOR_ACTION_SCHEMA), observationContract: copy(ACTOR_OBSERVATION_CONTRACT), completionJudge: copy(COMPLETION_JUDGE_SPEC) } };
 }
 export function defaultJudgeSetup() {
   const config = judgeConfigurations(defaultJudgeDirectory)[0];
@@ -59,11 +60,12 @@ function normalize(input) {
   if (typeof input.promptVersion !== "string" || !input.promptVersion.trim() || input.promptVersion.length > 100) fail("Name the prompt version.");
   if (input.kind === "actor") {
     const behaviorContract = defaultActorSetup().behaviorContract;
+    const nativeMenuContract = { id: "task-actor-v3", actionSchema: copy(ACTOR_ACTION_SCHEMA), observationContract: copy(ACTOR_OBSERVATION_CONTRACT) };
     const priorContract = { id: "task-actor-v2", actionSchema: copy(ACTOR_ACTION_SCHEMA) };
     const legacyContract = copy(priorContract);
     legacyContract.actionSchema.properties.reason = { type: "string" };
     // Publication may upgrade a known historical contract; stored revisions stay immutable.
-    if (![behaviorContract, priorContract, legacyContract].some(contract => JSON.stringify(input.behaviorContract) === JSON.stringify(contract))) fail("Actor behavior authority contract is not editable.");
+    if (![behaviorContract, nativeMenuContract, priorContract, legacyContract].some(contract => JSON.stringify(input.behaviorContract) === JSON.stringify(contract))) fail("Actor behavior authority contract is not editable.");
     return { kind: input.kind, name: input.name.trim(), promptVersion: input.promptVersion,
       promptTemplate: template(input.promptTemplate, ["request", "endpoint", "privateBrief", "exploration", "meticulousness"]),
       settings: actorConfiguration(input.settings), behaviorContract: input.promptVersion === ACTOR_PROMPT_VERSION ? behaviorContract : copy(input.behaviorContract) };
@@ -128,7 +130,7 @@ export class SetupRegistry {
   selected(kind, id) {
     return this.get(id || this.state.promotions.findLast((item) => item.kind === kind)?.revisionId || this.state.revisions.find((item) => item.kind === kind)?.id, kind);
   }
-  catalog() { return { ...copy(this.state), judgeConfigs: this.judgeConfigs() }; }
+  catalog() { return { ...copy(this.state), actorDefinition: defaultActorSetup(), judgeConfigs: this.judgeConfigs() }; }
   judgeConfigs() { return copy(judgeConfigurations(this.judgeConfigDirectory)); }
   async publishConfig({ configFile, configDigest, predecessorId, feedback }) {
     const config = this.judgeConfigs().find((item) => item.file === configFile);
