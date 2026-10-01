@@ -206,6 +206,43 @@ pub(super) struct ActionDestinationResponse {
     root_layer_id: i64,
 }
 
+#[derive(Deserialize)]
+pub(super) struct ArchiveRequest {
+    archived: bool,
+}
+
+pub(super) async fn archived(
+    State(state): State<ApiState>,
+    headers: HeaderMap,
+) -> Result<Json<ThreadsResponse>, ApiError> {
+    authorize_read(&state, &headers)?;
+    Ok(Json(ThreadsResponse {
+        threads: state
+            .product
+            .list_archived_threads()
+            .await?
+            .into_iter()
+            .map(Into::into)
+            .collect(),
+    }))
+}
+
+pub(super) async fn set_archived(
+    State(state): State<ApiState>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+    Json(request): Json<ArchiveRequest>,
+) -> Result<Json<ThreadResponse>, ApiError> {
+    authorize_write(&state, &headers)?;
+    Ok(Json(
+        state
+            .product
+            .set_thread_archived(ThreadId::try_from(id)?, request.archived)
+            .await?
+            .into(),
+    ))
+}
+
 pub(super) async fn list(
     State(state): State<ApiState>,
     headers: HeaderMap,

@@ -170,6 +170,8 @@ pub(crate) enum CompletionExecutionRestartSettlement {
 
 #[derive(Debug, Error)]
 pub(crate) enum StorageError {
+    #[error("Available when work finishes.")]
+    ThreadArchiveBusy,
     #[error("database operation failed: {0}")]
     Database(#[from] sqlx::Error),
     #[error("thread creation request conflict: {0}")]

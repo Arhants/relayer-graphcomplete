@@ -98,7 +98,8 @@
     "test:desktop:worktrees": "npm run build && node scripts/run-worktree-test.mjs",
     "evidence:edge-shapes": "RELAYER_CAPTURE_EDGE_SHAPE_EVIDENCE=1 electron scripts/capture-edge-shape-evidence.mjs",
     "evidence:agent-preview": "electron scripts/capture-agent-preview-evidence.mjs",
-    "evidence:agent-preview:live": "node scripts/run-agent-preview-live.mjs"
+    "evidence:agent-preview:live": "node scripts/run-agent-preview-live.mjs",
+    "evidence:thread-archive": "electron scripts/capture-thread-archive-evidence.mjs"
   },
   "devDependencies": {
     "@actions/cache": "6.2.0",

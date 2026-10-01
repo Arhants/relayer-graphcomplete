@@ -1,4 +1,5 @@
 import { expandThreadProject } from "./project-sidebar.js";
+import { restoreArchivedForNavigation, threadActivityOrder } from "./thread-archive.js";
 import { checkoutController, setCheckoutSubmitting } from "./checkout.js";
 import { isResolvedInvokeAction } from "./product-workspace/node-detail-runtime.js";
 import { preferredLayerNode, rememberedLayerSelection, rememberLayerSelection } from "./product-workspace/layer-selection.js";
@@ -779,6 +780,13 @@ export async function loadThread(threadId) {
   history.replaceState(null, "", url);
   await refreshState(threadId, { historyMode: "push" });
   if (String(viewState.currentThreadId) === String(threadId)) {
+    const thread = appState.threads.find((item) => String(item.id) === String(threadId));
+    const restored = await restoreArchivedForNavigation(thread);
+    if (restored !== thread && String(viewState.currentThreadId) === String(threadId)) {
+      appState.threads = appState.threads.map((item) => String(item.id) === String(threadId) ? { ...item, ...restored } : item);
+      renderSidebar();
+      renderThread();
+    }
     expandThreadProject(appState.threads.find((thread) => String(thread.id) === String(threadId)));
     renderSidebar();
   }
@@ -870,7 +878,7 @@ async function selectInteractionGraphSource(threadId, interactionId) {
   const requestToken = resolvedInvokeNavigationGate.begin();
   pendingResolvedInvokeNavigation = true;
   try {
-    const resolved = await resolveNavigationPresentation({
+    let resolved = await resolveNavigationPresentation({
       threadId, turnId: interactionId, navigationPath: [], selectedNodeId: null,
     }, {
       loadThread: (id) => request(`/api/threads/${encodeURIComponent(id)}`),
@@ -883,6 +891,11 @@ async function selectInteractionGraphSource(threadId, interactionId) {
     if (!resolvedInvokeNavigationGate.isCurrent(requestToken)
       || !currentNavigationEntry()
       || navigationEntryKey(currentNavigationEntry()) !== sourceLocationKey) return false;
+    if (String(resolved.thread.id) !== String(viewState.currentThreadId)) {
+      resolved = { ...resolved, thread: await restoreArchivedForNavigation(resolved.thread) };
+      if (!resolvedInvokeNavigationGate.isCurrent(requestToken)
+        || navigationEntryKey(currentNavigationEntry()) !== sourceLocationKey) return false;
+    }
     refreshGate.invalidate();
     layerNavigationCoordinator.cancel();
     applyResolvedPresentation(resolved);
@@ -1137,7 +1150,7 @@ export async function navigateResolvedInvoke(action, { beforeCommit } = {}) {
       || String(destination.targetLayerId) !== String(action.targetLayerId)
       || String(destination.rootLayerId) !== String(action.targetLayerId)
     ) throw new Error("Resolved invoke destination did not match the selected graph action.");
-    const resolved = await resolveNavigationPresentation({
+    let resolved = await resolveNavigationPresentation({
       threadId: destination.threadId,
       turnId: destination.interactionId,
       navigationPath: [{ layerId: destination.rootLayerId, viaActionId: null }],
@@ -1154,6 +1167,11 @@ export async function navigateResolvedInvoke(action, { beforeCommit } = {}) {
       || !currentNavigationEntry()
       || navigationEntryKey(currentNavigationEntry()) !== sourceLocationKey
     ) return false;
+    if (String(resolved.thread.id) !== String(viewState.currentThreadId)) {
+      resolved = { ...resolved, thread: await restoreArchivedForNavigation(resolved.thread) };
+      if (!resolvedInvokeNavigationGate.isCurrent(requestToken)
+        || navigationEntryKey(currentNavigationEntry()) !== sourceLocationKey) return false;
+    }
     refreshGate.invalidate();
     layerNavigationCoordinator.cancel();
     applyResolvedPresentation(resolved);
@@ -1262,6 +1280,7 @@ function applyResolvedPresentation(resolved, { restoreSelection = false } = {}) 
       String(thread.id) === String(resolvedThread.id) ? resolvedThread : thread
     ))
     : [...appState.threads, resolvedThread];
+  appState.threads.sort(threadActivityOrder);
   appState.interactions = [
     ...appState.interactions.filter((interaction) => (
       String(interaction.threadId) !== String(resolved.thread.id)
@@ -1332,7 +1351,7 @@ export async function navigateHistory(deltaOrDirection, { beforeCommit } = {}) {
     // Keep ancestor caching, but revalidate the selected descendant on entry.
     const destination = descendantLayerIdentities(transition.entry).at(-1);
     if (destination) acceptedLayerCache.delete(destination);
-    const resolved = await resolveNavigationPresentation(transition.entry, {
+    let resolved = await resolveNavigationPresentation(transition.entry, {
       loadThread: (threadId) => request(`/api/threads/${encodeURIComponent(threadId)}`),
       loadLayer: ({ threadId, turnId, layerId }) => request(
         `/api/threads/${encodeURIComponent(threadId)}/interactions/${encodeURIComponent(turnId)}/layers/${encodeURIComponent(layerId)}`,
@@ -1340,6 +1359,10 @@ export async function navigateHistory(deltaOrDirection, { beforeCommit } = {}) {
       layerCache: acceptedLayerCache,
     });
     if (!navigationHistory.isCurrentTransition(transition)) throw navigationSupersededError();
+    if (String(resolved.thread.id) !== String(viewState.currentThreadId)) {
+      resolved = { ...resolved, thread: await restoreArchivedForNavigation(resolved.thread) };
+      if (!navigationHistory.isCurrentTransition(transition)) throw navigationSupersededError();
+    }
     sourceSnapshot = captureWorkspaceState();
     refreshGate.invalidate();
     applied = true;

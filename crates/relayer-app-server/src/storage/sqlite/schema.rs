@@ -32,6 +32,7 @@ const THREAD_COLUMNS: &[(&str, &str, bool, i64)] = &[
     ("checkout_context_json", "TEXT", false, 0),
     ("icon", "TEXT", false, 0),
     ("icon_selection_eligible", "INTEGER", true, 0),
+    ("archived_at", "TEXT", false, 0),
 ];
 const CONVERSATION_IMPORT_COLUMNS: &[(&str, &str, bool, i64)] = &[
     ("id", "TEXT", true, 1),
@@ -393,7 +394,50 @@ pub(super) async fn validate_existing_or_empty(pool: &SqlitePool) -> Result<(), 
     Ok(())
 }
 
+async fn validate_archive_authority(pool: &SqlitePool) -> Result<(), StorageError> {
+    // Compare authority objects to their versioned definitions. A missing or weakened
+    // guard must fail at reopen, before a caller can admit execution on archived work.
+    let migration = include_str!("migrations/0042_thread_archive.sql");
+    for (kind, name) in [
+        ("view", "thread_archive_activity"),
+        ("trigger", "thread_archive_busy"),
+        ("trigger", "archived_thread_interaction_insert"),
+        ("trigger", "archived_thread_interaction_start"),
+        ("trigger", "archived_thread_attempt_insert"),
+        ("trigger", "archived_thread_execution_insert"),
+        ("trigger", "archived_thread_execution_start"),
+        ("trigger", "archived_thread_input_insert"),
+        ("trigger", "archived_thread_input_start"),
+    ] {
+        let prefix = format!("CREATE {} {name}", kind.to_uppercase());
+        let start = migration
+            .find(&prefix)
+            .expect("versioned archive schema object");
+        let definition = &migration[start..];
+        let end = if kind == "view" {
+            definition.find(';').unwrap()
+        } else {
+            definition.find("END;").unwrap() + 3
+        };
+        let expected = &definition[..end];
+        let actual: Option<String> =
+            sqlx::query_scalar("SELECT sql FROM sqlite_schema WHERE type=?1 AND name=?2")
+                .bind(kind)
+                .bind(name)
+                .fetch_optional(pool)
+                .await?;
+        let normalize = |sql: &str| sql.split_whitespace().collect::<Vec<_>>().join(" ");
+        if actual.as_deref().map(normalize) != Some(normalize(expected)) {
+            return Err(incompatible(&format!(
+                "archive authority object {name} does not match the supported schema"
+            )));
+        }
+    }
+    Ok(())
+}
+
 pub(super) async fn validate(pool: &SqlitePool) -> Result<(), StorageError> {
+    validate_archive_authority(pool).await?;
     validate_columns(pool, "projects", PROJECT_COLUMNS).await?;
     validate_columns(
         pool,
@@ -1324,6 +1368,31 @@ fn incompatible(message: &str) -> StorageError {
 #[cfg(test)]
 mod tests {
     use super::super::SqliteProductStore;
+
+    #[tokio::test]
+    async fn archive_authority_rejects_missing_or_weakened_objects_on_reopen() {
+        for (kind, name) in [
+            ("VIEW", "thread_archive_activity"),
+            ("TRIGGER", "archived_thread_interaction_start"),
+        ] {
+            let directory = tempfile::tempdir().unwrap();
+            let database = directory.path().join("schema.sqlite3");
+            let store = SqliteProductStore::open(&database).await.unwrap();
+            let mut connection = store.pool.acquire().await.unwrap();
+            sqlx::query(&format!("DROP {kind} {name}"))
+                .execute(&mut *connection)
+                .await
+                .unwrap();
+            if kind == "TRIGGER" {
+                sqlx::query("CREATE TRIGGER archived_thread_interaction_start BEFORE UPDATE OF completion_status ON interactions BEGIN SELECT 1; END").execute(&mut *connection).await.unwrap();
+            }
+            drop(connection);
+            assert!(matches!(
+                SqliteProductStore::open(&database).await,
+                Err(crate::storage::StorageError::IncompatibleSchema(_))
+            ));
+        }
+    }
 
     #[tokio::test]
     async fn malformed_import_asset_contents_fails_current_schema_open() {

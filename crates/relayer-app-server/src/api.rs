@@ -232,6 +232,8 @@ pub(crate) fn router(
             "/api/completions/{completion_id}/stop",
             axum::routing::post(threads::stop_completion),
         )
+        .route("/api/threads/archived", get(threads::archived))
+        .route("/api/threads/{id}/archive", axum::routing::post(threads::set_archived))
         .route("/api/threads/{id}", get(threads::get))
         .route("/api/threads/{id}/export", get(threads::export))
         .route(

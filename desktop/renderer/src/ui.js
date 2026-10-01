@@ -35,12 +35,19 @@ export function escapeHtmlAttribute(value) {
     .replaceAll("'", "&#39;");
 }
 
-export function toast(message) {
+export function toast(message, { actionLabel, onAction } = {}) {
   clearTimeout(toastTimer);
   const element = $("#toast");
   element.textContent = message;
+  if (actionLabel && onAction) {
+    const action = document.createElement("button");
+    action.type = "button";
+    action.textContent = actionLabel;
+    action.onclick = () => { clearTimeout(toastTimer); element.classList.add("hidden"); void onAction(); };
+    element.append(action);
+  }
   element.classList.remove("hidden");
-  toastTimer = setTimeout(() => element.classList.add("hidden"), 2_600);
+  toastTimer = setTimeout(() => element.classList.add("hidden"), actionLabel ? 8_000 : 2_600);
 }
 
 export function threadTitle(prompt) {

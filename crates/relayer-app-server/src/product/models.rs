@@ -66,6 +66,8 @@ pub(crate) struct Thread {
     pub(crate) created_at: String,
     pub(crate) updated_at: String,
     pub(crate) imported: bool,
+    pub(crate) archived_at: Option<String>,
+    pub(crate) archive_blocked: bool,
     /// The latest interaction's live state for thread lists: running, stopping,
     /// needs_approval or failed. None when idle, accepted, stopped or cancelled.
     pub(crate) activity: Option<String>,

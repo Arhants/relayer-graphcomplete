@@ -10,7 +10,10 @@ import { request } from "./api.js";
 import { createLucideIcon } from "./product-workspace/icons.js";
 import { THREAD_ACTIVITY } from "./product-workspace/run-state.js";
 
+import { sidebarArchiveButton, loadArchivedChats } from "./thread-archive.js";
+
 const settingsTabs = {
+  archived: "Archived chats",
   account: "Account",
   providers: "Providers",
   models: "Model families",
@@ -52,6 +55,7 @@ export function setMainView(view, { moveFocus = false } = {}) {
 export function setSettingsTab(tab) {
   const selectedTab = Object.hasOwn(settingsTabs, tab) ? tab : "appearance";
   viewState.settingsTab = selectedTab;
+  if (selectedTab === "archived") void loadArchivedChats();
   $("#settingsTitle").textContent = settingsTabs[selectedTab];
   const compactSelect = $("#settingsCompactSelect");
   if (compactSelect) compactSelect.value = selectedTab;
@@ -81,10 +85,13 @@ function threadEntry(thread) {
   const activity = THREAD_ACTIVITY[thread.activity];
   const name = activity ? `${thread.title}, ${activity.label}` : thread.title;
   const tooltip = activity ? `${thread.title} · ${activity.label}` : thread.title;
-  return `<button class="entry ${String(thread.id) === String(viewState.currentThreadId) ? "active" : ""}" data-thread="${escapeHtml(thread.id)}"${activity ? ` data-activity="${escapeHtmlAttribute(thread.activity)}"` : ""} data-review-ref="thread-${escapeHtml(thread.id)}" data-review-kind="thread" aria-label="${escapeHtmlAttribute(name)}" title="${escapeHtmlAttribute(tooltip)}"><span class="entry-icon thread-topic-icon" aria-hidden="true">${threadIconMarkup(thread.icon)}</span><span class="thread-entry-title">${escapeHtml(thread.title)}</span><span class="entry-icon thread-activity" aria-hidden="true"></span></button>`;
+  return `<div class="thread-entry-row"><button class="entry ${String(thread.id) === String(viewState.currentThreadId) ? "active" : ""}" data-thread="${escapeHtml(thread.id)}"${activity ? ` data-activity="${escapeHtmlAttribute(thread.activity)}"` : ""} data-review-ref="thread-${escapeHtml(thread.id)}" data-review-kind="thread" aria-label="${escapeHtmlAttribute(name)}" title="${escapeHtmlAttribute(tooltip)}"><span class="entry-icon thread-topic-icon" aria-hidden="true">${threadIconMarkup(thread.icon)}</span><span class="thread-entry-title">${escapeHtml(thread.title)}</span><span class="entry-icon thread-activity" aria-hidden="true"></span></button>${sidebarArchiveButton(thread)}</div>`;
 }
 
 function renderThreadActivity() {
+  $$(".thread-archive-button").forEach((button) => {
+    button.replaceChildren(createLucideIcon("Trash2", { "aria-hidden": "true" }));
+  });
   $$("[data-thread][data-activity]").forEach((entry) => {
     const activity = THREAD_ACTIVITY[entry.dataset.activity];
     entry.querySelector(".thread-activity")?.replaceChildren(createLucideIcon(activity.icon));
@@ -92,7 +99,7 @@ function renderThreadActivity() {
   $$('[data-project-activity]').forEach((entry) => {
     entry.replaceChildren(createLucideIcon(THREAD_ACTIVITY[entry.dataset.projectActivity].icon));
   });
-  const live = appState.threads.some((thread) => THREAD_ACTIVITY[thread.activity]?.live);
+  const live = appState.threads.some((thread) => THREAD_ACTIVITY[thread.activity]?.live || thread.archiveBlocked);
   if (live && threadActivityTimer === null) {
     threadActivityTimer = setTimeout(refreshThreadActivity, THREAD_ACTIVITY_POLL_MS);
   } else if (!live && threadActivityTimer !== null) {
@@ -106,12 +113,13 @@ async function refreshThreadActivity() {
   threadActivityTimer = null;
   try {
     const threads = await request("/api/threads");
-    const activityById = new Map((Array.isArray(threads) ? threads : threads?.threads ?? []).map((thread) => [String(thread.id), thread.activity]));
+    const activityById = new Map((Array.isArray(threads) ? threads : threads?.threads ?? []).map((thread) => [String(thread.id), thread]));
     let changed = false;
     appState.threads = appState.threads.map((thread) => {
-      if (!activityById.has(String(thread.id)) || activityById.get(String(thread.id)) === thread.activity) return thread;
+      const next = activityById.get(String(thread.id));
+      if (!next || (next.activity === thread.activity && next.archiveBlocked === thread.archiveBlocked)) return thread;
       changed = true;
-      return { ...thread, activity: activityById.get(String(thread.id)) };
+      return { ...thread, activity: next.activity, archiveBlocked: next.archiveBlocked };
     });
     if (changed) renderSidebar();
     else renderThreadActivity();
@@ -140,12 +148,12 @@ export function renderSidebar() {
     }).join("");
     return;
   }
-  const standalone = appState.threads.filter((thread) => !thread.projectId);
+  const standalone = appState.threads.filter((thread) => !thread.archivedAt && !thread.projectId);
   $("#chatList").innerHTML = standalone.length
     ? standalone.map(threadEntry).join("")
     : `<div class="entry"><span class="entry-icon">—</span><span>No chats yet</span></div>`;
   $("#projectList").innerHTML = appState.projects.map((project) => {
-    const threads = appState.threads.filter((thread) => String(thread.groupedProjectId ?? thread.projectId) === String(project.id));
+    const threads = appState.threads.filter((thread) => !thread.archivedAt && String(thread.groupedProjectId ?? thread.projectId) === String(project.id));
     const collapsed = projectCollapsed(project.id);
     const activity = collapsed ? projectActivity(threads) : null;
     const activityLabel = activity ? `, ${THREAD_ACTIVITY[activity].label}` : "";

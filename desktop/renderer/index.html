@@ -61,6 +61,7 @@
             <button class="entry settings-tab" type="button" role="tab" data-settings-tab="harnesses" aria-label="Harnesses" title="Harnesses" aria-controls="harnessSettingsPanel"><span class="entry-icon" aria-hidden="true">⌘</span><span>Harnesses</span></button>
             <button class="entry settings-tab" type="button" role="tab" data-settings-tab="appearance" aria-label="Appearance" title="Appearance" aria-controls="appearanceSettingsPanel"><span class="entry-icon" aria-hidden="true">◐</span><span>Appearance</span></button>
             <button class="entry settings-tab" type="button" role="tab" data-settings-tab="updates" aria-label="Application updates" title="Application updates" aria-controls="updatesSettingsPanel"><span class="entry-icon" aria-hidden="true">↓</span><span>Application updates</span></button>
+            <button class="entry settings-tab" type="button" role="tab" data-settings-tab="archived" aria-label="Archived chats" title="Archived chats" aria-controls="archivedSettingsPanel"><span class="entry-icon" aria-hidden="true">▤</span><span>Archived chats</span></button>
             <button class="entry settings-tab" type="button" role="tab" data-settings-tab="advanced" aria-label="Advanced" title="Advanced" aria-controls="advancedSettingsPanel"><span class="entry-icon" aria-hidden="true">⋯</span><span>Advanced</span></button>
           </div>
         </div>
@@ -131,6 +132,7 @@
               <option value="harnesses">Harnesses</option>
               <option value="appearance">Appearance</option>
               <option value="updates">Application updates</option>
+              <option value="archived">Archived chats</option>
               <option value="advanced">Advanced</option>
             </select>
           </div>
@@ -194,6 +196,13 @@
             <h2>Application updates</h2>
             <label class="setting-row"><div><b>Update channel</b><small>Preview receives beta builds before Stable.</small></div><select id="updateChannel"><option value="stable">Stable</option><option value="preview">Preview</option></select></label>
             <div class="setting-row"><div><b id="updateStatus">Up to date</b><small id="currentVersion"></small></div><button type="button" class="secondary" id="checkUpdates">Check for updates</button></div>
+          </section>
+          <section class="settings-section hidden" id="archivedSettingsPanel" role="tabpanel" data-settings-panel="archived" aria-labelledby="archivedSettingsHeading">
+            <h2 id="archivedSettingsHeading">Archived chats</h2>
+            <p>Opening an archived chat restores it to your sidebar.</p>
+            <label for="archivedChatSearch">Search archived chats</label>
+            <input id="archivedChatSearch" type="search" placeholder="Search by title">
+            <div id="archivedChatList" aria-live="polite"></div>
           </section>
           <section class="settings-section hidden" id="advancedSettingsPanel" role="tabpanel" data-settings-panel="advanced">
             <h2>Advanced</h2>

@@ -1152,6 +1152,11 @@ const server = createServer(async (request, response) => {
         ],
       });
     }
+    const threadMatch = /^\/api\/threads\/([^/]+)$/.exec(url.pathname);
+    if (threadMatch && request.method === "GET") {
+      const thread = productState(scene).threads.find((item) => String(item.id) === decodeURIComponent(threadMatch[1]));
+      return json(response, { thread }, thread ? 200 : 404);
+    }
     if (url.pathname === "/api/state") return json(response, productState(scene));
     const target = resolve(repositoryRoot, `.${decodeURIComponent(url.pathname)}`);
     if (!target.startsWith(repositoryRoot)) return json(response, { error: "not found" }, 404);
