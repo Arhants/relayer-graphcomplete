@@ -4,19 +4,21 @@ import { stringify, parse } from "yaml";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
-import { SetupRegistry } from "../desktop/eval-main/setup-registry.mjs";
+import { SetupRegistry, defaultActorSetup } from "../desktop/eval-main/setup-registry.mjs";
 import { HumanTaskService } from "../desktop/eval-main/human-task-service.mjs";
 import { TaskActorService } from "../desktop/eval-main/task-actor-service.mjs";
 import { createEvalDashboard, createHumanTaskSurface } from "../desktop/eval-main/web-host.mjs";
 
 const cleanup = [];
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close(); });
-async function fixture() {
+async function fixture({ initialActor } = {}) {
   const directory = await mkdtemp(join(tmpdir(), "setup-revisions-"));
   cleanup.push(() => rm(directory, { recursive: true, force: true }));
   let tasks; let calibration;
   const stateFile = join(directory, "setups.json");
-  const registry = await new SetupRegistry({ stateFile, feedbackLoader: (ref) => { if (calibration?.isHeldOutFeedback(ref)) throw new Error("Held-out labels cannot motivate setup tuning."); return tasks.feedbackReference(ref); } }).open();
+  const registry = new SetupRegistry({ stateFile, feedbackLoader: (ref) => { if (calibration?.isHeldOutFeedback(ref)) throw new Error("Held-out labels cannot motivate setup tuning."); return tasks.feedbackReference(ref); } });
+  if (initialActor) await registry.publish({ ...initialActor, predecessorId: null, feedback: [] });
+  await registry.open();
   const options = { stateFile: join(directory, "tasks.json"), setupRegistry: registry,
     productSession: { origin: "http://product.invalid", cookie: { name: "control", value: "secret" }, readOnlyCookie: { name: "read", value: "only" } },
     evalService: { prepareHumanTask: async () => ({ name: "Trip", humanBrief: "PRIVATE BRIEF", humanRubric: "SECRET RUBRIC",
@@ -230,4 +232,83 @@ it("publishes exact judge config files, rejects stale or unsafe files, and retai
   expect(() => registry.judgeConfigs()).toThrow("Unsupported judge config contract");
   await writeFile(path, "schemaVersion: 1\nschemaVersion: 1\n");
   expect(() => registry.judgeConfigs()).toThrow("Invalid judge config");
+});
+
+
+it("recovers an interrupted first-open registry without rewriting the saved actor revision", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "setup-bootstrap-")); cleanup.push(() => rm(directory, { recursive: true, force: true }));
+  const stateFile = join(directory, "setups.json"); const registry = new SetupRegistry({ stateFile });
+  const persist = registry.persist.bind(registry); let writes = 0;
+  registry.persist = async () => { if (++writes === 2) throw new Error("disk full"); await persist(); };
+  await expect(registry.open()).rejects.toThrow("disk full");
+  const actor = JSON.parse(await readFile(stateFile, "utf8")).revisions[0];
+  const reopened = await new SetupRegistry({ stateFile }).open();
+  expect(reopened.selected("actor")).toEqual(actor);
+  expect(reopened.selected("judge").kind).toBe("judge");
+  expect((await new SetupRegistry({ stateFile }).open()).catalog().revisions).toEqual(reopened.catalog().revisions);
+});
+
+it("pins historical v2 through a promotion during discovery, while explicit v3 executes its own template", async () => {
+  const legacy = { ...defaultActorSetup(), promptVersion: "task-actor-v2", promptTemplate: defaultActorSetup().promptTemplate.replace("a visibly displayed option label", "an option value") };
+  const f = await fixture({ initialActor: legacy });
+  const original = await f.start(); await f.tasks.grade(original.id, { satisfaction: 2, comment: "Use visible option labels" });
+  const old = f.registry.selected("actor");
+  const next = await f.registry.publish({ ...defaultActorSetup(), predecessorId: old.id, feedback: [{ sessionId: original.id, gradeIndex: 0 }] });
+  const reopened = await new SetupRegistry({ stateFile: f.stateFile }).open();
+  f.actors.setupRegistry = reopened; f.tasks.setupRegistry = reopened;
+  let entered, release; const discovering = new Promise(resolve => { entered = resolve; });
+  f.actors.resolveRuntime = async () => { entered(); await new Promise(resolve => { release = resolve; }); return {}; };
+  const pending = f.actors.create({ mode: "simulated", maxCompletions: 1, endpoint: "Agreement" });
+  await discovering;
+  await reopened.promote({ revisionId: next.id, comment: "Human explicitly promotes v3" }, f.tasks.annotator);
+  release(); const task = await pending; await f.actors.running.get(task.id).done;
+  expect(f.tasks.get(task.id).actorSetup).toEqual(old);
+  expect(f.calls.at(-1).config.promptVersion).toBe("task-actor-v2");
+  expect(f.calls.at(-1).prompt).toContain("select uses an option value");
+  f.actors.resolveRuntime = f.runtime;
+  const revised = await f.start(next.id);
+  expect(revised.actorSetup).toEqual(next);
+  expect(f.calls.at(-1).config.promptVersion).toBe("task-actor-v3");
+  expect(f.calls.at(-1).prompt).toContain("select uses a visibly displayed option label");
+  expect(reopened.get(old.id)).toEqual(old);
+});
+
+
+it("preflights frozen calibration identity and pins its candidate route before dispatch", async () => {
+  const f = await fixture(); const original = await f.start();
+  const route = { selectedModel: { providerId: "original", familyId: 1, modelId: "frozen" }, productModelSelection: true };
+  f.tasks.find(original.id).prepared.execution.modelResolution = route;
+  await f.tasks.grade(original.id, { satisfaction: 2, comment: "Calibrate brevity" });
+  const baseline = f.registry.selected("actor");
+  const candidate = await f.registry.publish({ ...baseline, predecessorId: baseline.id, feedback: [{ sessionId: original.id, gradeIndex: 0 }] });
+  const set = await f.calibration.freeze({ name: "Pinned candidate", members: [{ source: { kind: "task", id: original.id }, membership: "tuning", labels: [] }] });
+  const { comparison } = await f.calibration.compare({ baselineRevisionId: baseline.id, candidateRevisionId: candidate.id, calibrationSetId: set.id });
+  const ref = { comparisonId: comparison.id, memberId: set.members[0].id, revisionId: candidate.id };
+  const selection = f.calibration.actorSelection(ref);
+  expect(JSON.stringify(selection)).not.toMatch(/feedback|labels|Calibrate brevity/);
+  const create = vi.spyOn(f.options.evalService, "createHumanTaskThread");
+  const prepare = f.options.evalService.prepareHumanTask;
+  f.options.evalService.prepareHumanTask = async () => {
+    const prepared = await prepare(); prepared.execution.pinnedModelResolution = { ...route, providerAdapterId: "codex-subscription" }; return prepared;
+  };
+  const task = await f.actors.create(selection); await f.actors.running.get(task.id).done;
+  expect(create.mock.calls[0][0].execution.pinnedModelResolution).toEqual({ ...route, providerAdapterId: "codex-subscription" });
+  for (const alteration of ["case", "authorized-route"]) {
+    create.mockClear();
+    f.options.evalService.prepareHumanTask = async () => {
+      const prepared = await prepare();
+      if (alteration === "case") prepared.casePlanDigest = "changed";
+      else prepared.execution.pinnedModelResolution = { ...route, selectedModel: { ...route.selectedModel, modelId: "other" } };
+      return prepared;
+    };
+    await expect(f.actors.create(selection)).rejects.toThrow();
+    expect(create).not.toHaveBeenCalled();
+    expect(f.tasks.list()[0].completions).toBe(0);
+  }
+  const dashboard = await createEvalDashboard({ setupRegistry: f.registry, humanTasks: f.tasks, calibration: f.calibration, taskActors: { create: async value => value } });
+  cleanup.push(() => dashboard.close());
+  const post = value => fetch(new URL("/eval-api/createHumanTask", dashboard.url), { method: "POST", headers: { Authorization: `Bearer ${new URL(dashboard.url).hash.slice(1)}` }, body: JSON.stringify([value]) });
+  expect((await post({ calibrationCandidate: selection.calibrationCandidate })).status).toBe(400);
+  const response = await post({ calibrationRef: ref, endpoint: "easier", maxCompletions: 100 });
+  expect(await response.json()).toMatchObject({ endpoint: "Agreement", maxCompletions: 1, calibrationCandidate: { modelResolution: route } });
 });

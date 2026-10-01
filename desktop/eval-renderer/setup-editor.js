@@ -17,7 +17,7 @@ export function initializeSetupEditor({ api, root, toast, changed }) {
       <label>Prompt version<input name="promptVersion" value="${escape(source.promptVersion)}" required maxlength="100"></label>
       <label>Model<input name="model" value="${escape(source.settings.model)}" required></label>
       <label>Reasoning<select name="modelReasoningEffort">${["low", "medium", "high"].map((value) => `<option ${source.settings.modelReasoningEffort === value ? "selected" : ""}>${value}</option>`).join("")}</select></label>
-      <label>Exploration<select name="exploration">${["low", "medium", "high"].map((value) => `<option ${source.settings.exploration === value ? "selected" : ""}>${value}</option>`).join("")}</select></label><label>Meticulousness<select name="meticulousness">${["low", "medium", "high"].map((value) => `<option ${source.settings.meticulousness === value ? "selected" : ""}>${value}</option>`).join("")}</select></label><label>Action limit<input name="maxActions" type="number" value="${source.settings.maxActions}" min="1" max="500"></label><label>Actor deadline (ms)<input name="timeoutMs" type="number" value="${source.settings.timeoutMs}" min="1000" max="3600000"></label>
+      <label>Exploration<select name="exploration">${["low", "medium", "high"].map((value) => `<option ${source.settings.exploration === value ? "selected" : ""}>${value}</option>`).join("")}</select></label><label>Meticulousness<select name="meticulousness">${["low", "medium", "high"].map((value) => `<option ${source.settings.meticulousness === value ? "selected" : ""}>${value}</option>`).join("")}</select></label><label>Action limit<input name="maxActions" type="number" value="${source.settings.maxActions}" min="1" max="500"></label><p>Actor deadline: 15 minutes, including startup.</p>
       <label>Prompt template<textarea name="promptTemplate" rows="10" maxlength="100000" required>${escape(source.promptTemplate)}</textarea></label>
       <p>Keep the {{runtime}} variables. Task evidence is supplied at execution, without feedback lineage or human target grades.</p>`}
       <p>Select motivating human feedback before publishing.</p>
@@ -45,7 +45,7 @@ export function initializeSetupEditor({ api, root, toast, changed }) {
       const revision = await api.publishSetup(judgeConfig ? { configFile: judgeConfig.file, configDigest: judgeConfig.digest, predecessorId: source.id, feedback } : { ...source, name: data.name, promptVersion: data.promptVersion,
         promptTemplate: data.promptTemplate, ...(source.kind === "judge" ? { inputPromptTemplate: data.inputPromptTemplate } : {}),
         settings: { ...source.settings, model: data.model, modelReasoningEffort: data.modelReasoningEffort,
-          ...(source.kind === "actor" ? { exploration: data.exploration, meticulousness: data.meticulousness, maxActions: Number(data.maxActions), timeoutMs: Number(data.timeoutMs) } : {}) },
+          ...(source.kind === "actor" ? { exploration: data.exploration, meticulousness: data.meticulousness, maxActions: Number(data.maxActions), timeoutMs: 900000 } : {}) },
         predecessorId: source.id, feedback });
       await changed(); await open(revision.id); root.querySelector("#setupPublished").textContent = `Published ${revision.id}`;
     }); };

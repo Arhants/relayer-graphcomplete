@@ -71,11 +71,13 @@ export function initializeCalibrationEditor({ api, root, toast }) {
       const set = catalog.sets.find((item) => item.id === report.comparison.calibrationSetId); const member = set.members.find((item) => item.id === row.memberId);
       if (report.comparison.kind === "actor") {
         if (member.source.kind !== "task") throw new Error("Actor execution requires a task-session seed.");
-        if (!window.confirm("Start a new candidate and actor task with the selected revision? This spends inference; completion limits are not cost limits.")) return;
         const original = member.evidence.session;
-        const task = await api.createHumanTask({ mode: "simulated", testCaseId: original.prepared.execution.testCaseId,
-          harnessConfigurationName: original.prepared.execution.harnessConfigurationName, endpoint: original.endpoint,
-          maxCompletions: original.maxCompletions, actorSetupRevisionId: data.revisionId });
+        const external = Boolean(original.prepared.execution.catalogIdentity);
+        if (!window.confirm(`Start a new candidate and actor task with the selected revision? This spends inference; completion limits are not cost limits.${external ? " Use the connected Codex subscription only; no API spending is authorized." : ""}`)) return;
+        const liveAuthorization = external ? { confirmed: true, billingMode: "subscription-only",
+          testCaseId: original.prepared.execution.testCaseId, harnessConfigurationName: original.prepared.execution.harnessConfigurationName,
+          endpoint: original.endpoint, maxCompletions: original.maxCompletions, mode: "simulated" } : undefined;
+        const task = await api.createHumanTask({ calibrationRef: { comparisonId: report.comparison.id, memberId: member.id, revisionId: data.revisionId }, liveAuthorization });
         form.elements.taskId.value = task.id; await api.openHumanTask(task.id, true);
         toast("Actor started. Grade realism after the task finishes.");
       } else {

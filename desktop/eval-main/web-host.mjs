@@ -187,7 +187,11 @@ export async function createEvalDashboard({ service, rendererDirectory, refreshC
     humanTasks: () => humanTasks.list(),
     humanTask: ([id]) => humanTasks.get(id),
     actorScreenshot: ([id, eventId]) => humanTasks.actorScreenshot(id, eventId),
-    createHumanTask: ([selection]) => selection?.mode === "simulated" ? taskActors.create(selection) : humanTasks.create(selection),
+    createHumanTask: ([selection]) => {
+      if (selection?.calibrationRef) selection = { ...calibration.actorSelection(selection.calibrationRef), startupId: selection.startupId, liveAuthorization: selection.liveAuthorization };
+      else if (selection?.calibrationCandidate) throw fail(400, "Choose a frozen calibration comparison.");
+      return selection?.mode === "simulated" ? taskActors.create(selection) : humanTasks.create(selection);
+    },
     stopTaskActor: ([id]) => taskActors.stop(id),
     nextHumanTaskStep: ([id]) => humanTasks.nextStep(id),
     finishHumanTask: ([id, input]) => humanTasks.finish(id, input),
