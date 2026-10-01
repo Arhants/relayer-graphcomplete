@@ -10,9 +10,13 @@ import { startModelCatalogRefreshServer } from "../desktop/main/models/model-cat
 import { GraphCompleteRuntimeService } from "../desktop/main/services/graphcomplete-runtime.mjs";
 import { RelayerAppServerService } from "../desktop/main/services/relayer-app-server.mjs";
 import { createSettingsStore } from "../desktop/main/services/settings-store.mjs";
-import { registerComposerDraftIpc, registerLayerSelectionIpc, registerWorktreeIpc } from "../desktop/main/ipc/register-ipc.mjs";
+import { registerComposerDraftIpc, registerLayerSelectionIpc, registerWorktreeIpc, registerProjectSidebarIpc } from "../desktop/main/ipc/register-ipc.mjs";
 import { createWorktreeService } from "../desktop/main/services/worktree-service.mjs";
 import { createWindowFactory } from "../desktop/main/window.mjs";
+
+import { createProjectSidebarDemoVideo } from "./project-sidebar-demo-video.mjs";
+
+const demoVideo = process.env.RELAYER_PROJECT_SIDEBAR_VIDEO ? createProjectSidebarDemoVideo(resolve(process.env.RELAYER_PROJECT_SIDEBAR_VIDEO)) : null;
 
 const repositoryRoot = resolve(import.meta.dirname, "..");
 const dataDirectory = mkdtempSync(join(tmpdir(), "relayer-project-new-thread-"));
@@ -46,6 +50,7 @@ function registerTestIpc() {
   }));
   ipcMain.handle("relayer:appearance-read", () => ({ appearance: "dark" }));
   registerComposerDraftIpc({ ipcMain, settings: desktopSettings });
+  registerProjectSidebarIpc({ ipcMain, settings: desktopSettings });
   registerLayerSelectionIpc({ ipcMain, settings: { read: () => desktopSettings.read(), update: (fn) => desktopSettings.update(fn) } });
   ipcMain.handle("relayer:folder-choose", () => null);
   ipcMain.handle("relayer:provider-status", () => ({
@@ -74,6 +79,8 @@ function unregisterTestIpc() {
   for (const channel of [
     "relayer:account-read",
     "relayer:appearance-read",
+    "relayer:project-sidebar-read",
+    "relayer:project-sidebar-set",
     "relayer:composer-drafts-read",
     "relayer:composer-drafts-write",
     "relayer:layer-selections-read",
@@ -491,6 +498,29 @@ async function run() {
     return String(thread.projectId) === String(project.id) ? thread : false;
   });
 
+  await waitFor("new chat creation expands its project", () => evaluate(`document.querySelector('[data-project-toggle="${project.id}"]')?.getAttribute('aria-expanded') === 'true'`));
+  // Native keyboard activation exercises the production header without changing the open chat.
+  await evaluate(`document.querySelector('[data-project-toggle="${project.id}"]').focus()`);
+  webContents.sendInputEvent({ type: "keyDown", keyCode: "Space" });
+  webContents.sendInputEvent({ type: "keyUp", keyCode: "Space" });
+  await waitFor("keyboard project collapse", () => evaluate(`document.querySelector('[data-project-toggle="${project.id}"]')?.getAttribute('aria-expanded') === 'false'`));
+  if (!await evaluate(`import('./src/state.js').then(m => String(m.viewState.currentThreadId) === '${firstThread.id}' && !document.querySelector('#threadView').classList.contains('hidden') && !document.querySelector('#project-threads-${project.id}').checkVisibility())`)) throw new Error("Collapsing the active project changed its open chat or left the chat list visible.");
+  evidence.collapsedProject = await captureEvidence("04-collapsed-project");
+  if (demoVideo) {
+    await demoVideo.scene(webContents, "Collapse a project; the current chat stays open");
+    await demoVideo.scene(webContents, "Expand the project to reveal its chats", () => click(`[data-project-toggle="${project.id}"]`));
+    await demoVideo.scene(webContents, "Collapse it again without leaving the chat", () => click(`[data-project-toggle="${project.id}"]`));
+  }
+  await clickProjectAction(project.id);
+  await waitFor("real compose action expands collapsed project", () => evaluate(`document.querySelector('[data-project-toggle="${project.id}"]')?.getAttribute('aria-expanded') === 'true' && !document.querySelector('#newThreadView').classList.contains('hidden')`));
+  if (demoVideo) await demoVideo.scene(webContents, "Compose independently: New Thread opens in this project");
+  await click(`[data-thread="${firstThread.id}"]`);
+  if (demoVideo) {
+    await demoVideo.scene(webContents, "The whole sidebar can still collapse into its icon rail", () => click("#collapseSidebar"));
+    await demoVideo.scene(webContents, "Select a project icon to reopen the sidebar", () => click(`[data-project-toggle="${project.id}"]`));
+    if (await evaluate("document.body.classList.contains('sidebar-collapsed')")) throw new Error("Demo rail project selection did not expand the sidebar.");
+  }
+
   const followupPrompt = "Keep this unsent follow-up with the saved thread.";
   await waitFor("the saved-thread composer", () => evaluate(`(
     !document.querySelector('#threadView')?.classList.contains('hidden')
@@ -557,6 +587,8 @@ async function run() {
     return saved.composerDrafts?.pendingNewThread?.text === separatePendingPrompt
       && Object.values(saved.composerDrafts?.threadFollowups || {}).includes(followupPrompt);
   });
+  await click(`[data-project-toggle="${project.id}"]`);
+  await waitFor("collapse reaches durable settings before restart", async () => (await desktopSettings.read()).collapsedProjectIds?.includes(String(project.id)));
   const previousOrigin = productSession.origin;
   window.destroy();
   window = undefined;
@@ -567,6 +599,9 @@ async function run() {
   ipcMain.removeHandler("relayer:composer-drafts-read");
   ipcMain.removeHandler("relayer:composer-drafts-write");
   registerComposerDraftIpc({ ipcMain, settings: desktopSettings });
+  ipcMain.removeHandler("relayer:project-sidebar-read");
+  ipcMain.removeHandler("relayer:project-sidebar-set");
+  registerProjectSidebarIpc({ ipcMain, settings: desktopSettings });
   await startProduct();
   if (productSession.origin === previousOrigin) {
     throw new Error("The restart scenario did not move to a new product origin.");
@@ -577,7 +612,12 @@ async function run() {
       && document.querySelector('#newThreadPrompt')?.value === ${JSON.stringify(separatePendingPrompt)}
       && document.querySelector('#scopeLabel')?.textContent === ${JSON.stringify(project.name)}
   )`));
-  await click(`[data-thread="${firstThread.id}"]`);
+  await waitFor("collapsed project after changed-origin restart", () => evaluate(`document.querySelector('[data-project-toggle="${project.id}"]')?.getAttribute('aria-expanded') === 'false'`));
+  if (demoVideo) await demoVideo.scene(webContents, "Collapsed preference survives renderer and server restart");
+  // Explicit load uses the real navigation seam even while its sidebar entry is hidden.
+  await evaluate(`import('./src/threads.js').then(m => m.loadThread(${JSON.stringify(firstThread.id)}))`);
+  await waitFor("explicit navigation expands restored project", () => evaluate(`document.querySelector('[data-project-toggle="${project.id}"]')?.getAttribute('aria-expanded') === 'true'`));
+  if (demoVideo) await demoVideo.scene(webContents, "Explicit chat navigation expands its project again");
   await waitFor("the remembered detail after restart on a different origin", () => evaluate(`(
     document.querySelector('.graph-node.selected')?.dataset.node === ${JSON.stringify(rememberedNodeId)}
       && !document.querySelector('#inspector')?.classList.contains('hidden')
@@ -708,11 +748,13 @@ async function run() {
     throw new Error("A restored pending draft was replaced by automatic onboarding.");
   }
 
+  if (demoVideo) await demoVideo.finish();
   process.stdout.write(`RELAYER_PROJECT_NEW_THREAD ${JSON.stringify({
     passed: true,
     projectId: project.id,
     threads: 2,
     restartPersistence: true,
+    projectCollapse: true,
     layerSelectionRestartPersistence: true,
     evidence,
   })}\n`);

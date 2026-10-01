@@ -153,6 +153,10 @@ if (contextBridge) contextBridge.exposeInMainWorld("relayerDesktop", {
     read: () => ipcRenderer.invoke("relayer:workspace-layout-read"),
     set: (ratio) => ipcRenderer.invoke("relayer:workspace-layout-set", ratio),
   },
+  projectSidebar: {
+    read: () => ipcRenderer.invoke("relayer:project-sidebar-read"),
+    set: (ids) => ipcRenderer.invoke("relayer:project-sidebar-set", ids),
+  },
   layerSelections: {
     read: () => ipcRenderer.invoke("relayer:layer-selections-read"),
     remember: (key, nodeId) => ipcRenderer.invoke("relayer:layer-selections-remember", { key, nodeId }),
