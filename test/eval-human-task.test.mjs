@@ -21,7 +21,7 @@ async function fixture({ steps = 1 } = {}) {
     stateFile: join(dir, "sessions.json"),
     productSession: { origin: "http://product.invalid", cookie: { name: "control", value: "secret" }, readOnlyCookie: { name: "read", value: "only" } },
     evalService: {
-      prepareHumanTask: async () => ({ name: "Task", execution: { harnessConfigurationName: "fixture", modelResolution: { productModelSelection: true, selectedModel: { familyId: 1, providerId: "pinned", modelId: "model" } } }, plan: Array.from({ length: steps }, (_, i) => ({ name: `Step ${i}`, prompts: ["Build the thing"], permissionProfileId: "auto" })) }),
+      prepareHumanTask: async () => ({ name: "Task", execution: { testCaseId: "case", harnessConfigurationName: "fixture", modelResolution: { productModelSelection: true, selectedModel: { familyId: 1, providerId: "pinned", modelId: "model" } } }, plan: Array.from({ length: steps }, (_, i) => ({ name: `Step ${i}`, prompts: ["Build the thing"], permissionProfileId: "auto" })) }),
       createHumanTaskThread: async () => {
         const id = threads.size + 1; threads.set(id, [{ id: 10 * id, completionStatus: "accepted" }]);
         return { id, rootInteractionId: id * 10 };
@@ -58,6 +58,7 @@ async function fixture({ steps = 1 } = {}) {
 it("preserves a multi-step human trajectory through reopen, anchored annotations and immutable export", async () => {
   const { tasks, session, options } = await fixture({ steps: 2 });
   const id = session.id;
+  expect(tasks.list()[0].testCaseId).toBe("case");
   const eventId = await tasks.observe(id, { threadId: 1, turnId: 10, layerId: 5, selectedNodeId: 6, navigationPath: [{ layerId: 5 }], graphVisible: true, observedAt: Date.now(), content: "A useful option" });
   await tasks.write(id, "/api/threads/1/input-draft/attachments", "PUT", { value: { text: "Warm colors" } });
   expect(tasks.get(id).completions).toBe(1);

@@ -54,7 +54,7 @@ export class HumanTaskService {
     if (!session) throw failure("Unknown human task session.", 404);
     return session;
   }
-  list() { return this.sessions.map(({ prepared, events, conversations, stepChecks, annotations, grades, responseTimings, ...session }) => ({ ...clone(session), name: prepared?.name, eventCount: events.length })); }
+  list() { return this.sessions.map(({ prepared, events, conversations, stepChecks, annotations, grades, responseTimings, ...session }) => ({ ...clone(session), name: prepared?.name, testCaseId: prepared?.execution?.testCaseId ?? null, eventCount: events.length })); }
   get(id) { return clone(this.find(id)); }
   actorEvent(id, kind, data) {
     return this.serial(async () => {

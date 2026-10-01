@@ -33,7 +33,14 @@ export function initializeHumanTasks({ api, show, toast }) {
   };
   async function list() {
     const sessions = await api.humanTasks();
-    root.querySelector("#humanSessions").innerHTML = sessions.map((item) => `<button class="secondary" data-human-session="${escape(item.id)}">${escape(item.name || item.id)} · ${escape(item.mode || "human")} · ${escape(item.status)} · ${item.completions}/${item.maxCompletions}</button>`).join("") || "No human sessions yet.";
+    const active = sessions.filter(item => ["active", "preparing", "finishing"].includes(item.status));
+    const current = active.length ? active : sessions.filter(item => item.status === "completed" && item.testCaseId === root.querySelector("#humanCase").value).slice(0, 1);
+    const currentIds = new Set(current.map(item => item.id));
+    const history = sessions.filter(item => !currentIds.has(item.id));
+    const buttons = items => items.map(item => `<button class="secondary" data-human-session="${escape(item.id)}">${escape(item.name || item.id)} · ${escape(item.mode || "human")} · ${escape(item.status)} · ${item.completions}/${item.maxCompletions}</button>`).join("");
+    root.querySelector("#humanSessions").innerHTML = buttons(current) || "No current sessions. Start a task above.";
+    root.querySelector("#humanHistorySessions").innerHTML = buttons(history) || "No earlier sessions.";
+    root.querySelector("#humanHistoryCount").textContent = `(${history.length})`;
     root.querySelectorAll("[data-human-session]").forEach((button) => { button.onclick = () => run(() => inspect(button.dataset.humanSession)); });
   }
   async function inspect(id, onlyStatusChange = false) {
@@ -41,6 +48,8 @@ export function initializeHumanTasks({ api, show, toast }) {
     const task = await api.humanTask(id);
     if (selected !== id || (onlyStatusChange && task.status === displayedStatus)) return;
     displayedStatus = task.status;
+    root.querySelector("#humanNewTask").open = false;
+    root.querySelector("#humanTaskDetail").classList.remove("hidden");
     const reviewable = ["completed", "failed", "interrupted"].includes(task.status);
     const active = task.status === "active";
     const simulated = task.mode === "simulated";
@@ -61,11 +70,11 @@ export function initializeHumanTasks({ api, show, toast }) {
       ${active && !simulated ? `<form id="humanFinish"><label>Finish reason <select name="reason"><option value="endpoint_reached">Endpoint reached</option><option value="satisfied">Satisfied</option><option value="abandoned">Abandoned</option><option value="budget_exhausted">Completion limit reached</option></select></label>
       <label>Satisfaction <select name="satisfaction"><option value="">Choose…</option><option value="1">1 · Bad</option><option value="2">2 · Needs work</option><option value="3">3 · Good</option><option value="4">4 · Great</option></select></label>
       <label>Feedback <textarea name="comment" maxlength="8000"></textarea></label><button type="button" id="humanSaveGrade" class="secondary">Save grade</button><button class="primary">Finish task</button></form>` : `<p>Termination: ${escape(task.termination?.reason || task.status)} · Satisfaction: ${escape(task.satisfaction?.value ?? "not recorded")}</p>`}
-      <h3>Response timing</h3><pre>${escape(JSON.stringify(task.responseTimings || [], null, 2))}</pre><p>Only observations armed before a submission are suitable for response comparisons.</p><h3>Recorded trajectory</h3><p>Presentation records contain rendered text and navigation state, not a visual-quality verdict. Actor observations include captured screenshots.</p>
+      <details><summary>Timing and recorded trajectory</summary><h3>Response timing</h3><pre>${escape(JSON.stringify(task.responseTimings || [], null, 2))}</pre><p>Only observations armed before a submission are suitable for response comparisons.</p><h3>Recorded trajectory</h3><p>Presentation records contain rendered text and navigation state, not a visual-quality verdict. Actor observations include captured screenshots.</p>
       <ol class="human-timeline">${task.events.map((event) => `<li><details ${event.observation?.screenshotArtifact ? `data-actor-image="${escape(event.id)}"` : ""}><summary>${event.sequence}. ${escape(event.kind)} · ${escape(event.at)}</summary><pre>${escape(JSON.stringify(event.observation?.screenshot ? { ...event, observation: { ...event.observation, screenshot: "PNG captured with this observation" } } : event, null, 2))}</pre>${event.observation?.screenshot ? `<img alt="Workspace observed by the simulated user" style="max-width:100%" src="data:image/png;base64,${escape(event.observation.screenshot)}">` : ""}</details>
       ${active || reviewable ? `<button class="secondary" data-annotate-event="${escape(event.id)}">Annotate this moment</button>` : ""}</li>`).join("")}</ol>
       <h3>Moment annotations</h3>${task.annotations.map((note) => `<p><b>${escape(note.eventId)}</b> ${escape(note.comment)}</p>`).join("")}
-      <form id="humanAnnotation" class="hidden"><input name="eventId" type="hidden"><label>Comment on this moment<textarea name="comment" maxlength="8000" required></textarea></label><button class="primary">Save annotation</button></form>`;
+      <form id="humanAnnotation" class="hidden"><input name="eventId" type="hidden"><label>Comment on this moment<textarea name="comment" maxlength="8000" required></textarea></label><button class="primary">Save annotation</button></form></details>`;
     root.querySelector("#humanOpen").onclick = () => run(() => api.openHumanTask(id, !active || simulated));
     root.querySelector("#humanRefresh").onclick = () => run(() => inspect(id));
     root.querySelectorAll("[data-actor-image]").forEach(details => {
@@ -107,9 +116,23 @@ export function initializeHumanTasks({ api, show, toast }) {
     show("humanView");
     const catalog = await api.catalog();
     const externalIds = new Set(catalog.externalCaseIds || []);
-    root.querySelector("#humanCase").innerHTML = catalog.cases.map((item) => `<option value="${escape(item.id)}">${escape(item.name)}</option>`).join("");
+    const caseSelect = root.querySelector("#humanCase");
+    const showAll = root.querySelector("#humanAllCases");
+    const interactive = catalog.cases.filter(item => item.caseSnapshot?.interactive);
+    const renderCases = () => {
+      const previous = caseSelect.value;
+      const cases = showAll.checked || !interactive.length ? catalog.cases : interactive;
+      caseSelect.innerHTML = cases.map(item => `<option value="${escape(item.id)}">${escape(item.name)}</option>`).join("");
+      if (cases.some(item => item.id === previous)) caseSelect.value = previous;
+    };
+    renderCases();
     externalCaseIds = externalIds;
     root.querySelector("#humanHarness").innerHTML = catalog.harnessConfigurations.filter((item) => item.available).map((item) => `<option value="${escape(item.name)}">${escape(item.name)}</option>`).join("");
+    const summary = () => {
+      root.querySelector("#humanExecutionSummary").textContent = `· ${root.querySelector("#humanHarness").value} · ${root.querySelector('[name="maxCompletions"]').value || "choose a limit"} completions`;
+      root.querySelector("#humanGoal").textContent = root.querySelector("#humanEndpoint").value;
+    };
+    root.querySelector("#humanAdvanced").oninput = summary;
     const setEndpoint = () => {
       const item = catalog.cases.find((item) => item.id === root.querySelector("#humanCase").value);
       const contract = item?.caseSnapshot?.interactive;
@@ -120,8 +143,10 @@ export function initializeHumanTasks({ api, show, toast }) {
       if (contract) limit.value = contract.maxCompletions;
       root.querySelector("#externalHumanAuthorization").classList.toggle("hidden", !externalIds.has(item?.id));
       root.querySelector('[name="subscriptionConfirmed"]').checked = false;
+      summary();
     };
-    root.querySelector("#humanCase").onchange = setEndpoint; setEndpoint();
+    showAll.onchange = () => { renderCases(); setEndpoint(); void run(list); };
+    root.querySelector("#humanCase").onchange = () => { setEndpoint(); void run(list); }; setEndpoint();
     await refreshSetups(); await setups.open(); await calibration.open();
     await list();
     if (selected) await inspect(selected);
@@ -147,7 +172,10 @@ export function initializeHumanTasks({ api, show, toast }) {
     window.removeEventListener("focus", refreshLifecycle);
   }, { once: true });
   document.querySelector("#humanGrader").onclick = () => run(open);
-  root.querySelector("#taskMode").onchange = (event) => root.querySelector("#actorSettings").classList.toggle("hidden", event.target.value !== "simulated");
+  root.querySelector("#taskMode").onchange = (event) => {
+    for (const id of ["#actorSettings", "#humanActorNotice"]) root.querySelector(id).classList.toggle("hidden", event.target.value !== "simulated");
+  };
+  root.querySelector("#humanCreate").addEventListener("invalid", () => { root.querySelector("#humanAdvanced").open = true; }, true);
   root.querySelector("#humanCreate").onsubmit = (event) => { event.preventDefault(); void run(async () => {
     const form = event.target; const button = form.querySelector("button"); button.disabled = true;
     const startupId = crypto.randomUUID();

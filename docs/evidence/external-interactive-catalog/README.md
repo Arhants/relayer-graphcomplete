@@ -145,3 +145,59 @@ identity. Same HEAD and six-file scope; its sorted path + NUL + raw SHA256
 manifest digest is `c5eb8cdba95e2a53d7bb38525a9f87cf8e556c5d4b50fb6489678980c178dcc3`.
 The different digest format identifies the same reviewed bytes. This was a
 source review, not an independent browser or live-inference run.
+
+## Human Grader simplification
+
+The user approved hiding setup complexity and unrelated sessions. PRD §13.2.2
+records this display-only decision. No sessions, grades or revisions are removed.
+
+| Changed executable seam | Checkpoint |
+| --- | --- |
+| Case shortlist and all-cases toggle | Existing browser flow checks participant shortlist and expands developer cases for actor fixture execution |
+| Collapsed run settings and visible launch contract | Browser checks default collapse, expands actual controls, verifies actor notice and launches through unchanged consent |
+| Invalid input under collapsed settings | Production renderer test dispatches invalid input and observes settings opening |
+| Active sessions / latest completed / older history | Populated-session production renderer test covers all three active states, completed fallback, failed/interrupted history and unchanged stored records |
+| Historical review and task form collapse | Renderer test opens a historical read-only review; browser verifies creation collapses the form while workspace controls remain available |
+| Setup/calibration and raw trajectory disclosure | Existing browser publication, selected-revision execution, frozen comparison, export/reopen; raw trajectory remains available through disclosure |
+
+Required: focused renderer test, `npm run test:eval-web`, and check/build before
+commit. The first browser attempt passed the human lifecycle but stopped when
+the old test tried selecting a revision inside the newly collapsed task form.
+The test now opens that form through its visible summary; no forced visibility
+or product workaround. Final results and adversarial review are recorded below.
+
+The populated-session renderer test passed. All twelve final browser chapters
+passed. A second intermediate browser run reached setup publication but raced
+its asynchronous editor refresh before promotion; the final test waits for the
+visible published-revision confirmation before selecting and promoting it.
+No assertion was removed or weakened.
+
+Reviewer `/root/eval_facts` found no remaining blocker at six-file sorted
+path + NUL + raw SHA256 manifest digest
+`371793cf1ad063785ed3d882c3547807e591a16be5088fa178a88a138c859840`.
+Scope: `desktop/eval-renderer/human-tasks.js`, `desktop/eval-renderer/index.html`,
+`desktop/eval-renderer/styles.css`, `docs/prd/index.html`,
+`scripts/test-eval-web.mjs`, `test/eval-human-tasks-renderer.test.mjs`.
+Review covers disclosure, session retention/reopening, launch consent and test
+mapping. Browser evidence is parent-run; full check/build results follow.
+
+Final refinement scopes the completed fallback to the selected case. All active
+states remain visible regardless of case. The list API adds only `testCaseId`
+from existing prepared execution; persistence and capabilities are unchanged.
+The existing service scenario checks this projection, and the populated renderer
+scenario puts a newer unrelated completion ahead of the matching completion.
+Both suites passed (29 tests). Case selection refreshes the list.
+
+This supersedes the six-file review above: reviewer `/root/eval_facts` found no
+blocker in the final eight-file scope at raw manifest digest
+`e5ffc222ae5215b5348f5bd90f9e7709d74e823329ead29442e041090e9d6108`.
+It adds `desktop/eval-main/human-task-service.mjs` and
+`test/eval-human-task.test.mjs` to that scope. Final full gates follow.
+
+Final UX source verification passed: `npm run check` (3,460 Vitest tests, two
+secret-boundary tests, 66 Python tests, native workspace/crash suites, type,
+receipt and readability checks), `npm run build`, and all twelve final browser
+chapters. Three Vitest tests and one file remain skipped by the existing
+portfolio. No live inference was used. The running review profile was restarted
+only after confirming it had no active tasks; its seven historical sessions and
+authentication remain available. The manual gate is still required before merge.

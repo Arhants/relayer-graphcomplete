@@ -583,7 +583,12 @@ async function proveTaskActor({ browser, service, productSession, data }) {
   try {
     await page.goto(surface.url);
     await page.locator("#humanGrader").click();
+    assert.equal(await page.locator("#humanHarness").isVisible(), false);
+    assert.equal(await page.locator("#setupEditor").isVisible(), false);
+    await page.locator("#humanAllCases").check();
+    await page.locator("#humanAdvanced > summary").click();
     await page.locator("#taskMode").selectOption("simulated");
+    assert.equal(await page.locator("#humanActorNotice").isVisible(), true);
     assert.equal(await page.locator("#actorSettings").isVisible(), true);
     await page.locator("#humanCase").selectOption("empty-project.task-system.two-turn");
     await page.locator("#humanHarness").selectOption("fixture-task-system");
@@ -612,6 +617,7 @@ async function proveTaskActor({ browser, service, productSession, data }) {
     assert.equal(await page.locator("#actorSettings [name=actorModel]").inputValue(), "gpt-5.6-luna");
     assert.ok(snapshots.every((snapshot) => !JSON.stringify(snapshot).includes("Independent human feedback") && !JSON.stringify(snapshot).includes("Unnecessary exploration")));
     const baseline = setupRegistry.selected("actor");
+    await page.locator("#humanTools > summary").click();
     await page.locator("#setupPredecessor").selectOption(baseline.id);
     await page.locator('#setupPublish [name="name"]').fill("Brief user from human feedback");
     await page.locator('#setupPublish [name="promptVersion"]').fill("browser-manual-actor-v1");
@@ -620,9 +626,11 @@ async function proveTaskActor({ browser, service, productSession, data }) {
     await page.locator("#setupFeedbackRecords input").first().check();
     await page.locator("#setupPublish button").click();
     const revision = await until(() => setupRegistry.catalog().revisions.find((item) => item.promptVersion === "browser-manual-actor-v1"), "setup revision published");
+    await until(async () => (await page.locator("#setupPublished").textContent()).includes(revision.id), "published revision visible in editor");
     assert.equal(revision.predecessorId, baseline.id);
     assert.ok(revision.feedback[0].feedback.comment.includes("Unnecessary exploration"));
     assert.equal(tasks.get(task.id).actorSetup.id, baseline.id);
+    await page.locator("#humanNewTask > summary").click();
     await page.locator("#actorSetupRevision").selectOption(revision.id);
     assert.equal(await page.locator("#actorSetupRevision").inputValue(), revision.id);
     await page.locator('#setupPromote [name="comment"]').fill("Human reviewed the saved action feedback.");
@@ -749,13 +757,18 @@ async function proveHumanTask({ browser, service, productSession, data }) {
     await dashboard.locator("#newRun").click();
     assert.equal(await dashboard.locator('#caseOptions input[value="fixture.external-human"]').isDisabled(), true);
     await dashboard.locator("#humanGrader").click();
+    assert.equal(await dashboard.locator('#humanCase option[value="empty-project.task-system.two-turn"]').count(), 0);
+    assert.equal(await dashboard.locator("#humanHarness").isVisible(), false);
+    assert.equal(await dashboard.locator("#calibrationEditor").isVisible(), false);
     await dashboard.locator("#humanCase").selectOption("fixture.external-human");
+    await dashboard.locator("#humanAdvanced > summary").click();
     await dashboard.locator("#humanHarness").selectOption("fixture-task-system");
     await dashboard.locator('[name="maxCompletions"]').fill("2");
     assert.equal(await dashboard.locator("#humanEndpoint").inputValue(), "An explained task system and a refined response");
     await dashboard.locator('[name="subscriptionConfirmed"]').check();
     await dashboard.locator("#humanCreate button").click();
     await dashboard.locator("#humanOpen").waitFor();
+    assert.equal(await dashboard.locator("#humanCreate").isVisible(), false);
     const humanId = (await rpc(host.url, "humanTasks"))[0].id;
     assert.equal(tasks.get(humanId).prepared.humanBrief, "PRIVATE_BROWSER_PERSONA");
     assert.equal(tasks.get(humanId).prepared.execution.catalogIdentity.commit, "browser-fixture");
