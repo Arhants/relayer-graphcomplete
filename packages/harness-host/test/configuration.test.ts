@@ -108,7 +108,7 @@ describe("harness configuration", () => {
   });
 
   it.each([
-    ["codex-basic", "medium", 9, "layered-navigation-multi-agent-v1"],
+    ["codex-basic", "medium", 10, "layered-navigation-multi-agent-v1"],
     ["codex-basic-high", "high", 4, undefined],
   ])("loads the checked-in %s configuration", async (name, modelReasoningEffort, revision, promptProfile) => {
     await expect(loadHarnessConfiguration(join(repositoryRoot, `harnesses/${name}.yaml`))).resolves.toEqual({
@@ -133,7 +133,7 @@ describe("harness configuration", () => {
         deny: [],
       },
       executionAccessContracts: ["managed-runtime@1", "secret@1"],
-      modelDefaults: { familyPolicy: { id: "codex-default-family", version: name === "codex-basic" ? 3 : 2 } },
+      modelDefaults: { familyPolicy: { id: "codex-default-family", version: name === "codex-basic" ? 4 : 2 } },
       ...(name === "codex-basic" ? { complete: { agentAuthored: true }, graphCapabilityProfile: { search: "query-v1", preview: "enabled" } } : {}),
       settings: {
         modelReasoningEffort,

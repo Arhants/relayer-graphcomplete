@@ -1,0 +1,84 @@
+{
+  "runtimeVersion": "0.159.3",
+  "providerStatus": "available",
+  "models": [
+    {
+      "id": "gpt-6.1-sol",
+      "label": "GPT-6.1-Sol",
+      "visible": true,
+      "isDefault": true,
+      "availability": "available"
+    },
+    {
+      "id": "gpt-6-astra",
+      "label": "GPT-6-Astra",
+      "visible": true,
+      "isDefault": false,
+      "availability": "available"
+    },
+    {
+      "id": "gpt-6-sol",
+      "label": "GPT-6-Sol",
+      "visible": true,
+      "isDefault": false,
+      "availability": "available"
+    },
+    {
+      "id": "gpt-6-luna",
+      "label": "GPT-6-Luna",
+      "visible": true,
+      "isDefault": false,
+      "availability": "available"
+    },
+    {
+      "id": "gpt-reserve",
+      "label": "GPT-Reserve",
+      "visible": false,
+      "isDefault": false,
+      "availability": "available"
+    },
+    {
+      "id": "gpt-5.6-sol",
+      "label": "GPT-5.6-Sol",
+      "visible": true,
+      "isDefault": false,
+      "availability": "available"
+    },
+    {
+      "id": "gpt-5.6-terra",
+      "label": "GPT-5.6-Terra",
+      "visible": true,
+      "isDefault": false,
+      "availability": "available"
+    },
+    {
+      "id": "gpt-5.6-luna",
+      "label": "GPT-5.6-Luna",
+      "visible": true,
+      "isDefault": false,
+      "availability": "available"
+    },
+    {
+      "id": "gpt-daybreak-blue-latest",
+      "label": "Daybreak Blue",
+      "visible": true,
+      "isDefault": false,
+      "availability": "available"
+    },
+    {
+      "id": "gpt-5.5",
+      "label": "GPT-5.5",
+      "visible": true,
+      "isDefault": false,
+      "availability": "available"
+    },
+    {
+      "id": "codex-auto-review",
+      "label": "Codex Auto Review",
+      "visible": false,
+      "isDefault": false,
+      "availability": "available"
+    }
+  ],
+  "paidInferenceCalls": 0
+}

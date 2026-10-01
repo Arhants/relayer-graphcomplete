@@ -9,10 +9,12 @@ import { managedRuntimeExecutionDetails, requireManagedRuntime } from "./managed
 // Claude Code does not currently expose a subscription-authenticated model
 // catalog command. Keep only the literal CLI-documented execution aliases in
 // this versioned manifest; do not guess full model ids from display names.
+// Version labels match the release-owned Claude Code 2.1.286 alias mappings:
+// https://code.claude.com/docs/en/model-config
 export const CLAUDE_SUBSCRIPTION_MODELS = Object.freeze([
-  Object.freeze({ id: "sonnet", label: "Sonnet", providerDefault: true, catalogSource: "code-manifest-cli-alias" }),
-  Object.freeze({ id: "opus", label: "Opus", providerDefault: false, catalogSource: "code-manifest-cli-alias" }),
-  Object.freeze({ id: "fable", label: "Fable", providerDefault: false, catalogSource: "code-manifest-cli-alias" }),
+  Object.freeze({ id: "sonnet", label: "Sonnet 5.5", providerDefault: true, catalogSource: "code-manifest-cli-alias" }),
+  Object.freeze({ id: "opus", label: "Opus 5.5", providerDefault: false, catalogSource: "code-manifest-cli-alias" }),
+  Object.freeze({ id: "fable", label: "Fable 5.1", providerDefault: false, catalogSource: "code-manifest-cli-alias" }),
 ]);
 
 function runClaude(executable, args, environment, {

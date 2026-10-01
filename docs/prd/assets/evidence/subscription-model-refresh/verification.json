@@ -1,0 +1,24 @@
+{
+  "baseCommit": "33da5d371b1a1c6e5cdb1246228ebab88f6964d3",
+  "branch": "codex/latest-subscription-models",
+  "codeTestDiffSha256": "d32a0dded25feb81b80491a03108071808065334646b6075dcb72ae7588cd80e",
+  "prdSha256": "82354f43b53b8c7858d28fbb758b40a956a7e938c9c51fa20a6956acd64ad21e",
+  "pickerSha256": "7be04f335253c513d7332e3502dc94770a219150a26a34a30578f68d85fe0658",
+  "buildExitCode": 0,
+  "checkExitCode": 0,
+  "checkFailure": null,
+  "prdRepairRecheckExitCode": 0,
+  "fullCheckRepeatedAfterDocumentationRepair": true,
+  "vitest": {
+    "passed": 3389,
+    "skipped": 3
+  },
+  "secretBoundaryTestsPassed": 2,
+  "pythonTestsPassed": 66,
+  "fullPickerProofPassed": false,
+  "failedPickerCheckpoint": "rendered nth-turn model identity and enabled composer",
+  "paidInferenceCalls": 0,
+  "released": false,
+  "reviews": "source-only, non-certifying without PR",
+  "priorCheckFailure": "Earlier full run exited 1 at final PRD readability: one 31-word sentence; repaired and full check subsequently passed."
+}

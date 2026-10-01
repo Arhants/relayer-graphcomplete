@@ -39,7 +39,7 @@ async function setup({ managed = false, failing = false, credentialStore, now, a
       };
     },
   }]);
-  const runtimeResolver = { get: vi.fn(async () => ({ runtimeId: "codex", version: "0.147.0", executable: "/managed/codex" })), prepare: vi.fn(async () => ({ runtimeId: "codex", version: "0.147.0", executable: "/managed/codex" })), validate: vi.fn(async () => ({ runtimeId: "codex" })) };
+  const runtimeResolver = { get: vi.fn(async () => ({ runtimeId: "codex", version: "0.159.3", executable: "/managed/codex" })), prepare: vi.fn(async () => ({ runtimeId: "codex", version: "0.159.3", executable: "/managed/codex" })), validate: vi.fn(async () => ({ runtimeId: "codex" })) };
   const due = new Set(updatesDue);
   const publishHarnessReadiness = vi.fn(async (updates) => { for (const { harnessId } of updates) due.delete(harnessId); });
   const fetchImpl = vi.fn(async (url, options) => {
@@ -99,7 +99,7 @@ describe("Eval production provider setup", () => {
     expect(fixture.runtimeResolver.prepare).not.toHaveBeenCalled();
     const login = await fixture.connect();
     expect(login.login.authUrl).toBe("https://provider.example/login");
-    expect(fixture.runtimeResolver.prepare).toHaveBeenCalledWith("codex@0.147.0");
+    expect(fixture.runtimeResolver.prepare).toHaveBeenCalledWith("codex@0.159.3");
     const home = join(fixture.directory, "provider-runtime", "chosen", "codex-home");
     expect(fixture.dependencies[0].environment.CODEX_HOME).toBe(home);
     expect(fixture.dependencies[0].environment.API_KEY).toBeUndefined();
@@ -219,7 +219,7 @@ describe("Eval production provider setup", () => {
     await fixture.service.settingsOpened();
     expect(fixture.runtimeResolver.prepare).not.toHaveBeenCalled();
     await fixture.service.refresh(null);
-    expect(fixture.runtimeResolver.prepare).toHaveBeenCalledWith("codex@0.147.0");
+    expect(fixture.runtimeResolver.prepare).toHaveBeenCalledWith("codex@0.159.3");
     const judge = await fixture.service.resolveCodexJudgeRuntime();
     expect(judge.environment.CODEX_HOME).toBe(join(fixture.directory, "provider-runtime", "chosen", "codex-home"));
     expect(judge.environment.API_KEY).toBeUndefined();

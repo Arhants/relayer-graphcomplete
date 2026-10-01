@@ -6,6 +6,8 @@ import { join, resolve } from "node:path";
 
 import { taskSystemFixtureFactory } from "@relayer/eval-runner";
 
+import { codexSubscriptionDescriptor } from "../desktop/main/providers/implementations/codex-subscription.mjs";
+
 import { CodexCredentialAdapter } from "../desktop/main/credentials/codex-credential-adapter.mjs";
 import { CodexModelCatalogAdapter } from "../desktop/main/models/codex-model-catalog-adapter.mjs";
 import { startModelCatalogRefreshServer } from "../desktop/main/models/model-catalog-refresh-server.mjs";
@@ -42,9 +44,18 @@ function registerIpc(channel, handler) {
 }
 
 function registerEvidenceIpc(modelCatalog) {
+  let drafts = { version: 1, drafts: {} };
+  registerIpc("relayer:composer-drafts-read", () => drafts);
+  registerIpc("relayer:composer-drafts-write", (_event, value) => (drafts = value));
+  registerIpc("relayer:layer-selections-read", () => ({}));
+  registerIpc("relayer:layer-selections-remember", () => ({}));
+  registerIpc("relayer:share-pending", () => null);
+  registerIpc("relayer:provider-status", () => ({ adapters: [], definitions: [], hasCompletedOnboarding: true }));
+  registerIpc("relayer:tutorial-read", () => ({ status: "dismissed", automaticEligible: false }));
+  registerIpc("relayer:workspace-layout-read", () => 0.5);
+  registerIpc("relayer:workspace-layout-set", () => null);
   registerIpc("relayer:account-read", () => ({
-    status: "connected",
-    account: { email: "catalog-verified@relayer.test", planType: "Evidence" },
+    status: "signed-in", channel: "preview", subject: "fixture|model-selector",
   }));
   registerIpc("relayer:account-login", () => ({ status: "connected" }));
   registerIpc("relayer:account-logout", () => ({ status: "disconnected" }));
@@ -136,15 +147,24 @@ async function closePicker(rootSelector) {
 }
 
 async function acceptedThread(productSession, interactionCount) {
+  let observed = null;
   return waitFor(`${interactionCount} accepted interactions`, async () => {
     const state = await productRequest(productSession, "/api/state");
+    observed = { threadCount: state.threads.length };
     if (state.threads.length !== 1) return false;
     const detail = await productRequest(productSession, `/api/threads/${state.threads[0].id}`);
+    observed.interactions = detail.interactions.map(({ completionStatus, completionError, latestAttempt }) => ({ completionStatus, completionError, latestAttempt }));
+    if (detail.interactions.some((interaction) => interaction.completionStatus === "failed")) {
+      throw new Error(`Deterministic fixture failed: ${JSON.stringify(observed)}`);
+    }
     if (detail.interactions.length !== interactionCount) return false;
     return detail.interactions.every((interaction) => interaction.completionStatus === "accepted")
       ? detail
       : false;
-  }, 20_000);
+  }, 20_000).catch(async (error) => {
+    const ui = await evaluate(`({ error: document.querySelector('#newThreadError')?.textContent, toast: document.querySelector('[role="alert"]')?.textContent })`);
+    throw new Error(`${error.message} Observed: ${JSON.stringify({ ...observed, ui })}`);
+  });
 }
 
 async function run() {
@@ -163,6 +183,14 @@ async function run() {
     // Deliberately execute the deterministic fixture behind the real codex-basic
     // product harness identity. Catalog discovery below is live; completion is not.
     additionalImplementations: { "codex.basic": taskSystemFixtureFactory },
+    // Completion is the deterministic fixture, so provide its execution lease
+    // without passing live account credentials into the fixture harness.
+    acquireProviderExecution: async (providerId) => ({
+      definition: { id: providerId, adapterId: "codex-subscription", accessContract: "managed-runtime@1" },
+      descriptor: codexSubscriptionDescriptor,
+      runtime: { async executionAccess() { return { kind: "managed-runtime", environment: {} }; } },
+      async release() {},
+    }),
   });
   services.push(runtime);
   const runtimeSession = await runtime.start();
@@ -189,8 +217,12 @@ async function run() {
   });
   services.push(product);
   const productSession = await product.start();
-  const [catalog] = await modelCatalog.startup();
-  if (catalog.provider.status !== "available" || catalog.systemFamily.modelIds.length < 2) {
+  const [discovery] = await modelCatalog.startup();
+  if (discovery?.status !== "fulfilled") throw discovery?.reason ?? new Error("Codex discovery did not complete.");
+  const catalog = discovery.value;
+  // Native defaults are not the product managed family. The real picker below
+  // proves the family derived by the loaded harness policy.
+  if (catalog?.provider.status !== "available" || catalog.models.filter((model) => model.visible && model.availability === "available").length < 2) {
     throw new Error("Evidence capture requires a connected Codex account with at least two visible models.");
   }
   registerEvidenceIpc(modelCatalog);
@@ -198,6 +230,7 @@ async function run() {
   const createWindow = createWindowFactory({
     BrowserWindow,
     desktopDirectory: join(repositoryRoot, "desktop"),
+    openExternal: async () => { throw new Error("External navigation is outside model-selector evidence."); },
     getAppearance: () => appearance,
     updater: { status: () => ({ phase: "development" }) },
   });
@@ -271,7 +304,12 @@ async function run() {
   await waitFor("enabled follow-up submission", () => evaluate(`document.querySelector('#sendInteraction')?.disabled === false`));
   await evaluate(`document.querySelector('#sendInteraction')?.click()`);
   const secondThread = await acceptedThread(productSession, 2);
-  await evaluate(`document.querySelector(${JSON.stringify(`[data-thread="${secondThread.id}"]`)})?.click()`);
+  const interactionModels = secondThread.interactions.map((interaction) => interaction.modelSelection);
+  if (interactionModels[1]?.modelId !== selectedModel.modelId) {
+    throw new Error(`Second interaction did not persist selected model ${selectedModel.modelId}.`);
+  }
+  process.stdout.write(`${JSON.stringify({ checkpoint: "accepted-model-receipts", interactionModels })}\n`);
+  await evaluate(`document.querySelector(${JSON.stringify(`[data-thread="${secondThread.thread.id}"]`)})?.click()`);
   await waitFor("rendered nth-turn model identity and enabled composer", () => evaluate(`(() => {
     const identity = document.querySelector('#interactionModelIdentity');
     const prompt = document.querySelector('#threadPrompt');
@@ -346,10 +384,6 @@ async function run() {
   await waitFor("narrow new-family editor", () => evaluate(`Boolean(document.querySelector('#familyNameInput'))`));
   await captureSettings("narrow-new-family-editor");
 
-  const interactionModels = secondThread.interactions.map((interaction) => interaction.modelSelection);
-  if (interactionModels[1]?.modelId !== selectedModel.modelId) {
-    throw new Error(`Second interaction did not persist selected model ${selectedModel.modelId}.`);
-  }
   if (secondThread.thread.harnessId !== "codex-basic") {
     throw new Error(`Thread did not retain pinned codex-basic harness: ${secondThread.thread.harnessId}`);
   }
