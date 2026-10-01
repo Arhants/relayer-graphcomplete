@@ -444,7 +444,7 @@ function fakeExternalProduct() {
       providers: [{ id: "openai", adapterId: "openai-api", connected: true, models: [{ id: "test-model", visible: true, available: true }] }],
       families: [{ id: 1, enabled: true, position: 0, members: [{ position: 0, providerId: "openai", modelId: "test-model" }] }],
     });
-    if (path === "/api/projects" && options.method === "POST") return jsonResponse({ id: `project-${++projectId}` });
+    if (path === "/api/projects" && options.method === "POST") return jsonResponse({ id: `project-${++projectId}`, path: JSON.parse(options.body).path });
     if (path === "/api/threads" && options.method === "POST") return jsonResponse({ id: "thread-1", rootInteractionId: interaction.id });
     if (path === "/api/threads/thread-1" && (!options.method || options.method === "GET")) return jsonResponse({ id: "thread-1", interactions: fetch.emptyAcceptedThread ? [] : interactions });
     if (path === "/api/threads/thread-1/interactions" && options.method === "POST") {

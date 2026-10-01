@@ -11,14 +11,14 @@ import { createHumanTaskSurface } from "../desktop/eval-main/web-host.mjs";
 const cleanups = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); });
 const action = (kind, extra = {}) => ({ kind, ref: "visible", value: "", reason: "", satisfaction: null, comment: "", endpointStatus: "incomplete", remainingWork: "Route undecided", ...extra });
-async function fixture({ decide, maxActions = 8, busy = false, failWrite = false, navigateOnly = false, retry = false, timeoutMs = 900000 } = {}) {
+async function fixture({ decide, maxActions = 8, busy = false, failWrite = false, navigateOnly = false, retry = false, timeoutMs = 900000, planCount = 1, maxCompletions = 2 } = {}) {
   const directory = await mkdtemp(join(tmpdir(), "task-actor-test-"));
   cleanups.push(() => rm(directory, { recursive: true, force: true }));
   const turns = [{ id: 1, completionStatus: busy ? "running" : retry ? "not_started" : "accepted", ...(retry ? { latestAttempt: { id: 91, outcome: "model_failed" } } : {}) }];
   const dispatches = [];
   const options = { stateFile: join(directory, "tasks.json"), productSession: { origin: "http://product.invalid", cookie: { name: "control", value: "secret" }, readOnlyCookie: { name: "read", value: "only" } },
     evalService: {
-      prepareHumanTask: async () => ({ name: "Task", humanBrief: "PRIVATE BRIEF", humanRubric: "SECRET RUBRIC", execution: { harnessConfigurationName: "fixture", projectId: 1, modelResolution: {} }, plan: [{ name: "Task", prompts: ["Help me plan a trip"] }] }),
+      prepareHumanTask: async () => ({ name: "Task", humanBrief: "PRIVATE BRIEF", humanRubric: "SECRET RUBRIC", execution: { harnessConfigurationName: "fixture", projectId: 1, modelResolution: {} }, plan: Array.from({ length: planCount }, () => ({ name: "Task", prompts: ["Help me plan a trip"] })) }),
       createHumanTaskThread: async () => ({ id: 1, rootInteractionId: 1 }),
       gradeHumanTaskStep: async () => ({ passed: false }),
     },
@@ -41,16 +41,17 @@ async function fixture({ decide, maxActions = 8, busy = false, failWrite = false
   const browser = {
     observe: vi.fn(async () => ({ text: turns.length > 1 ? "A trip plan based on your reply" : "Where do you want to go?", controls: [{ ref: "visible", name: "Send" }] })),
     act: vi.fn(async () => { if (navigateOnly) return; await tasks.write(id, retry ? "/api/threads/1/interactions/1/retry" : "/api/threads/1/interactions", "POST", { text: "Somewhere warm", ...(retry ? { attemptId: 91 } : {}) }, { signal: browserSignal }); }),
+    nextStep: vi.fn(),
     close: vi.fn(),
   };
   const actors = new TaskActorService({ tasks, pollMs: 1, deadlineMs: timeoutMs, resolveRuntime: async () => ({}), openBrowser: async (_id, signal) => { browserSignal = signal; return browser; },
-    createActor: async ({ prompt }) => ({ decide: async (observation, signal) => {
+    createActor: async ({ prompt }) => ({ decide: async (observation, signal, decisionOptions) => {
       seen.push({ prompt, observation });
-      return { action: decide ? await decide(observation, signal) : turns.length === 1 ? action("click") : action("finish", { reason: "satisfied", satisfaction: 3, comment: "Good enough" }), usage: { input_tokens: 10, output_tokens: 5 } };
+      return { action: decide ? await decide(observation, signal, decisionOptions) : turns.length === 1 ? action("click") : action("finish", { reason: "satisfied", satisfaction: 3, comment: "Good enough" }), usage: { input_tokens: 10, output_tokens: 5 } };
     }, close: vi.fn() }),
   });
   cleanups.push(() => actors.close());
-  const task = await actors.create({ maxCompletions: 2, endpoint: "A trip plan", actor: { maxActions } }); id = task.id;
+  const task = await actors.create({ maxCompletions, endpoint: "A trip plan", actor: { maxActions } }); id = task.id;
   const done = actors.running.get(id).done;
   return { tasks, actors, id, done, seen, browser, dispatches, turns, options };
 }
@@ -123,6 +124,10 @@ it("pins the actor runtime with no filesystem, shell, network or MCP tools and k
   cleanups.push(() => actor.close());
   await actor.decide({ text: "Visible" });
   expect(runOptions.outputSchema.properties.reason.enum).toEqual(["", "endpoint_reached", "satisfied", "abandoned"]);
+  const narrowed = structuredClone(runOptions.outputSchema);
+  narrowed.properties.kind.enum = narrowed.properties.kind.enum.filter(kind => kind !== "next_step");
+  await actor.decide({ text: "Final step" }, undefined, { outputSchema: narrowed });
+  expect(runOptions.outputSchema).toEqual(narrowed);
   expect(options.env).not.toHaveProperty("OPENAI_API_KEY");
   expect(options.config.features).toMatchObject({ shell_tool: false, unified_exec: false, browser_use: false, computer_use: false, multi_agent: false });
   expect(options.config.mcp_servers).toEqual({});
@@ -319,4 +324,63 @@ it("pins the configured deadline across actor preflight and execution without ex
     expect(timeout).toHaveBeenCalledTimes(1);
     await actors.close();
   } finally { timeout.mockRestore(); }
+});
+
+
+it.each([[1, 2], [2, 2], [2, 1]])("offers next_step only while another case step is admitted (steps: %s, budget: %s)", async (planCount, maxCompletions) => {
+  const offered = [];
+  const f = await fixture({ planCount, maxCompletions, decide: (observation, _signal, options) => {
+    const kinds = options.outputSchema.properties.kind.enum;
+    expect(observation.availableActions).toEqual(kinds);
+    const canAdvance = kinds.includes("next_step"); offered.push(canAdvance);
+    return canAdvance ? action("next_step") : action("finish", { reason: "abandoned", satisfaction: 2 });
+  } });
+  await f.done;
+  expect(offered).toEqual(planCount === 2 && maxCompletions > 1 ? [true, false] : [false]);
+  expect(f.tasks.get(f.id).status).toBe("completed");
+  expect(f.browser.nextStep).toHaveBeenCalledTimes(Math.min(planCount, maxCompletions) - 1);
+});
+
+
+it("rejects a decision outside the narrowed native schema before action intent or dispatch", async () => {
+  const f = await fixture({ decide: () => action("next_step") }); await f.done;
+  const task = f.tasks.get(f.id);
+  expect(task.events.find(event => event.kind === "actor_error")).toMatchObject({ category: "invalid_action", phase: "validate" });
+  expect(task.events.filter(event => event.kind === "actor_action")).toEqual([]);
+  expect(task.completions).toBe(1);
+  expect(task.step).toBe(0);
+  expect(f.dispatches).toEqual([]);
+  expect(f.browser.nextStep).not.toHaveBeenCalled();
+});
+
+
+it.each([false, true])("asks AI to reconsider one contradictory finish without executing or rewriting it (repeats: %s)", async repeats => {
+  let decisions = 0;
+  const f = await fixture({ decide: observation => {
+    decisions++;
+    if (decisions === 2) expect(observation.previousActionError).toContain("remainingWork");
+    return decisions === 1 || repeats
+      ? action("finish", { reason: "endpoint_reached", endpointStatus: "reached", satisfaction: 4, remainingWork: "Stock still unconfirmed" })
+      : action("finish", { reason: "abandoned", endpointStatus: "incomplete", satisfaction: 2, remainingWork: "Stock still unconfirmed" });
+  } });
+  await f.done;
+  const task = f.tasks.get(f.id);
+  expect(decisions).toBe(2);
+  expect(task.events.filter(event => event.kind === "actor_action_rejected").map(event => event.retryAllowed)).toEqual(repeats ? [true, false] : [true]);
+  expect(task.events.filter(event => event.kind === "actor_action")).toHaveLength(repeats ? 0 : 1);
+  expect(task.status).toBe(repeats ? "interrupted" : "completed");
+  expect(f.dispatches).toEqual([]);
+  expect(f.browser.act).not.toHaveBeenCalled();
+  if (!repeats) expect(task.termination.reason).toBe("abandoned");
+});
+
+
+it("preserves a contradictory finish at the last action slot without extending its budget", async () => {
+  const f = await fixture({ maxActions: 1, decide: () => action("finish", { reason: "endpoint_reached", endpointStatus: "reached", satisfaction: 4, remainingWork: "Unconfirmed stock" }) });
+  await f.done;
+  const task = f.tasks.get(f.id);
+  expect(f.seen).toHaveLength(1);
+  expect(task.status).toBe("interrupted");
+  expect(task.events.find(event => event.kind === "actor_action_rejected")).toMatchObject({ retryAllowed: false, action: { remainingWork: "Unconfirmed stock" }, usage: { input_tokens: 10 } });
+  expect(f.dispatches).toEqual([]);
 });

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { abortable } from "./abortable.mjs";
 import { setTimeout as delay } from "node:timers/promises";
-import { actorConfiguration, actorPrompt, createCodexTaskActor, validateActorAction } from "./task-actor.mjs";
+import { ACTOR_ACTION_SCHEMA, actorConfiguration, actorPrompt, createCodexTaskActor, validateActorAction } from "./task-actor.mjs";
 
 // Classification may inspect native errors, but evidence and UI use only these
 // closed categories and fixed messages; never copy provider text or error.name.
@@ -16,7 +16,7 @@ function actorFailure(error, { cancelled = false, timedOut = false } = {}) {
   else if ([401, 403].includes(status) || /authentication|unauthorized|not[_ -]?logged[_ -]?in|invalid[_ -]?(?:api[_ -]?)?key|token.{0,30}expired/.test(`${code} ${text}`)) category = "authentication";
   else if (code === "actor_control_stale") category = "stale_control";
   else if (code === "actor_control_unavailable") category = "unavailable_control";
-  else if (code === "actor_invalid_action") category = "invalid_action";
+  else if (["actor_invalid_action", "actor_inconsistent_finish"].includes(code)) category = "invalid_action";
   else if (code === "actor_effort_unsupported") category = "unsupported_effort";
   else if (/model[_ -](?:not[_ -]found|unsupported)|unsupported[_ -]model/.test(code)
     || /(?:model|reasoning effort).{0,120}(?:not supported|unsupported|not found|does not exist)/.test(text)) category = "unsupported_model";
@@ -91,6 +91,7 @@ export class TaskActorService {
       signal.throwIfAborted();
       browser = await this.openBrowser(id, signal);
       let observedSubmission;
+      let finishRepairPending = false;
       for (let index = 0; index <= task.actor.maxActions; index++) {
         phase = "settle";
         const current = await this.settled(id, signal);
@@ -106,8 +107,14 @@ export class TaskActorService {
         }
         phase = "observe";
         const observation = await browser.observe(expected);
+        const actionSchema = structuredClone(task.actorSetup?.behaviorContract?.actionSchema ?? ACTOR_ACTION_SCHEMA);
+        if (current.step + 1 >= current.prepared.plan.length || current.completions >= current.maxCompletions) {
+          actionSchema.properties.kind.enum = actionSchema.properties.kind.enum.filter(kind => kind !== "next_step");
+        }
+        observation.availableActions = [...actionSchema.properties.kind.enum];
+        if (finishRepairPending) observation.previousActionError = "Your previous finish decision was rejected before execution. Reconsider using the visible evidence. endpoint_reached requires endpointStatus reached and empty remainingWork. If work remains, report incomplete or uncertain with satisfied or abandoned. Do not erase unfinished work merely to satisfy the format.";
         observedSubmission = submission?.id;
-        const observed = await this.tasks.actorEvent(id, "actor_observation", { observation });
+        const observed = await this.tasks.actorEvent(id, "actor_observation", { observation, actionSchema });
         signal.throwIfAborted();
         if (index === task.actor.maxActions) {
           await this.tasks.actorEvent(id, "actor_limit", { reason: "action_limit" });
@@ -115,9 +122,19 @@ export class TaskActorService {
           return;
         }
         phase = "decide";
-        const { action, usage } = await actor.decide(observation, signal);
+        const { action, usage } = await actor.decide(observation, signal, { outputSchema: actionSchema });
         phase = "validate";
-        validateActorAction(action);
+        try { validateActorAction(action); }
+        catch (error) {
+          if (error.code !== "actor_inconsistent_finish" || action.kind !== "finish") throw error;
+          const retryAllowed = !finishRepairPending && index + 1 < task.actor.maxActions;
+          await this.tasks.actorEvent(id, "actor_action_rejected", { observationEventId: observed.id, action, usage, category: "inconsistent_finish", retryAllowed, message: "Finish fields contradicted each other. No action was executed." });
+          if (!retryAllowed) throw error;
+          finishRepairPending = true;
+          continue;
+        }
+        if (!observation.availableActions.includes(action.kind)) throw Object.assign(new Error("Actor chose an unavailable action."), { code: "actor_invalid_action" });
+        finishRepairPending = false;
         signal.throwIfAborted();
         // An intervening stop/finish or product request invalidates this choice.
         await this.tasks.settled(this.tasks.get(id), { signal });

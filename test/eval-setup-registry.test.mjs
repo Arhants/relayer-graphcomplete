@@ -251,7 +251,7 @@ it("recovers an interrupted first-open registry without rewriting the saved acto
   expect((await new SetupRegistry({ stateFile }).open()).catalog().revisions).toEqual(reopened.catalog().revisions);
 });
 
-it("pins historical v2 through a promotion during discovery, while explicit v4 executes its own template", async () => {
+it("pins historical v2 through a promotion during discovery, while explicit v5 executes its own template", async () => {
   const legacy = { ...defaultActorSetup(), promptVersion: "task-actor-v2", promptTemplate: defaultActorSetup().promptTemplate.replace("a visibly displayed option label", "an option value") };
   const f = await fixture({ initialActor: legacy });
   // Reopen a sealed pre-v4 record, rather than publishing an obsolete contract today.
@@ -264,14 +264,14 @@ it("pins historical v2 through a promotion during discovery, while explicit v4 e
   await f.registry.open();
   const original = await f.start(); await f.tasks.grade(original.id, { satisfaction: 2, comment: "Use visible option labels" });
   const old = f.registry.selected("actor");
-  const next = await f.registry.publish({ ...defaultActorSetup(), predecessorId: old.id, feedback: [{ sessionId: original.id, gradeIndex: 0 }] });
+  const next = await f.registry.publish({ ...old, name: "Edited historical actor", promptVersion: defaultActorSetup().promptVersion, promptTemplate: defaultActorSetup().promptTemplate, predecessorId: old.id, feedback: [{ sessionId: original.id, gradeIndex: 0 }] });
   const reopened = await new SetupRegistry({ stateFile: f.stateFile }).open();
   f.actors.setupRegistry = reopened; f.tasks.setupRegistry = reopened;
   let entered, release; const discovering = new Promise(resolve => { entered = resolve; });
   f.actors.resolveRuntime = async () => { entered(); await new Promise(resolve => { release = resolve; }); return {}; };
   const pending = f.actors.create({ mode: "simulated", maxCompletions: 1, endpoint: "Agreement" });
   await discovering;
-  await reopened.promote({ revisionId: next.id, comment: "Human explicitly promotes v4" }, f.tasks.annotator);
+  await reopened.promote({ revisionId: next.id, comment: "Human explicitly promotes v5" }, f.tasks.annotator);
   release(); const task = await pending; await f.actors.running.get(task.id).done;
   expect(f.tasks.get(task.id).actorSetup).toEqual(old);
   expect(f.calls.at(-1).config.promptVersion).toBe("task-actor-v2");
@@ -281,7 +281,7 @@ it("pins historical v2 through a promotion during discovery, while explicit v4 e
   const revised = await f.start(next.id);
   expect(revised.actorSetup).toEqual(next);
   expect(old.behaviorContract.actionSchema).not.toEqual(next.behaviorContract.actionSchema);
-  expect(f.calls.at(-1).config.promptVersion).toBe("task-actor-v4");
+  expect(f.calls.at(-1).config.promptVersion).toBe("task-actor-v5");
   expect(f.calls.at(-1).outputSchema).toEqual(next.behaviorContract.actionSchema);
   expect(f.calls.at(-1).prompt).toContain("select uses a visibly displayed option label");
   expect(reopened.get(old.id)).toEqual(old);

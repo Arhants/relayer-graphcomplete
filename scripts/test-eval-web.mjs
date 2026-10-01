@@ -635,7 +635,8 @@ async function proveTaskActor({ browser, service, productSession, data }) {
     const lastTurn = (await tasks.detail(task.currentThreadId)).interactions.at(-1);
     assert.equal(String(task.events.findLast(event => event.kind === "presentation").snapshot.turnId), String(lastTurn.id), "latest completed response is painted before actor finishes");
     for (const snapshot of snapshots) {
-      assert.deepEqual(Object.keys(snapshot).sort(), ["controls", "screenshot", "text"]);
+      assert.deepEqual(Object.keys(snapshot).sort(), ["availableActions", "controls", "screenshot", "text"]);
+      assert.deepEqual(snapshot.availableActions, ["click", "fill", "select", "scroll", "finish"]);
       for (const control of snapshot.controls) assert.deepEqual(Object.keys(control).sort(), ["name", "ref", "role"]);
     }
     assert.ok(task.events.filter(event => event.kind === "actor_observation").every(event => !event.observation.screenshot && event.observation.screenshotArtifact));
@@ -652,6 +653,7 @@ async function proveTaskActor({ browser, service, productSession, data }) {
     await page.locator("#setupPredecessor").selectOption(baseline.id);
     await page.locator('#setupPublish [name="name"]').fill("Brief user from human feedback");
     await page.locator('#setupPublish [name="promptVersion"]').fill("browser-manual-actor-v1");
+    await page.locator('#setupPublish [name="timeoutMinutes"]').fill("60");
     await page.locator('#setupPublish [name="promptTemplate"]').fill(baseline.promptTemplate + "\nKeep replies brief.");
     await page.locator("#setupFeedbackSession").selectOption(task.id);
     await page.locator("#setupFeedbackRecords input").first().check();
@@ -659,6 +661,8 @@ async function proveTaskActor({ browser, service, productSession, data }) {
     const revision = await until(() => setupRegistry.catalog().revisions.find((item) => item.promptVersion === "browser-manual-actor-v1"), "setup revision published");
     await until(async () => (await page.locator("#setupPublished").textContent()).includes(revision.id), "published revision visible in editor");
     assert.equal(revision.predecessorId, baseline.id);
+    assert.equal(revision.settings.timeoutMs, 3600000);
+    assert.equal(await page.locator('#setupPublish [name="timeoutMinutes"]').inputValue(), "60");
     assert.ok(revision.feedback[0].feedback.comment.includes("Unnecessary exploration"));
     assert.equal(tasks.get(task.id).actorSetup.id, baseline.id);
     await page.locator("#humanNewTask > summary").click();

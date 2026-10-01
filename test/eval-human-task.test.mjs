@@ -1,4 +1,4 @@
-import { mkdtemp, rm, readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { createSettingsStore } from "../desktop/main/services/settings-store.mjs";
@@ -167,7 +167,7 @@ it("prepares a real catalog project case with its fixture, separate thread steps
     const input = chunks.length ? JSON.parse(Buffer.concat(chunks).toString()) : null;
     received.push({ path: request.url, input });
     response.setHeader("Content-Type", "application/json");
-    response.end(JSON.stringify(request.url === "/api/projects" ? { id: 7 }
+    response.end(JSON.stringify(request.url === "/api/projects" ? { id: 7, path: input.path }
       : request.url === "/api/model-settings" ? { defaults: { harnessId: "fixture-human-task" }, harnesses: [{ id: "fixture-human-task", available: true }], providers: [], families: [] }
         : { id: received.length, rootInteractionId: 100 + received.length }));
   });
@@ -180,6 +180,7 @@ it("prepares a real catalog project case with its fixture, separate thread steps
     productSession: { origin: `http://127.0.0.1:${server.address().port}`, cookie: { name: "control", value: "test" } },
     projectFixtureMaterializer: async ({ workspaceDirectory }) => {
       materialized = workspaceDirectory;
+      await mkdir(workspaceDirectory, { recursive: true });
       return { schemaVersion: 1, fixtureId: H3_PROJECT_CASE_ID, workspaceDirectory, repositoryUrl: H3_REPOSITORY_URL, upstreamCommit: H3_UPSTREAM_COMMIT, upstreamTree: H3_UPSTREAM_TREE, seededCommit: H3_SEEDED_COMMIT, seededTree: H3_SEEDED_TREE, packageManager: H3_PACKAGE_MANAGER, installedWithFrozenLockfile: true };
     },
   }).open();

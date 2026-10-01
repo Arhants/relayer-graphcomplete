@@ -58,10 +58,14 @@ function normalize(input) {
   if (typeof input.name !== "string" || !input.name.trim() || input.name.length > 200) fail("Name the setup revision.");
   if (typeof input.promptVersion !== "string" || !input.promptVersion.trim() || input.promptVersion.length > 100) fail("Name the prompt version.");
   if (input.kind === "actor") {
-    if (JSON.stringify(input.behaviorContract) !== JSON.stringify(defaultActorSetup().behaviorContract)) fail("Actor behavior authority contract is not editable.");
+    const behaviorContract = defaultActorSetup().behaviorContract;
+    const legacyContract = copy(behaviorContract);
+    legacyContract.actionSchema.properties.reason = { type: "string" };
+    // Publication may upgrade a known historical contract; stored revisions stay immutable.
+    if (![behaviorContract, legacyContract].some(contract => JSON.stringify(input.behaviorContract) === JSON.stringify(contract))) fail("Actor behavior authority contract is not editable.");
     return { kind: input.kind, name: input.name.trim(), promptVersion: input.promptVersion,
       promptTemplate: template(input.promptTemplate, ["request", "endpoint", "privateBrief", "exploration", "meticulousness"]),
-      settings: actorConfiguration(input.settings), behaviorContract: copy(input.behaviorContract) };
+      settings: actorConfiguration(input.settings), behaviorContract };
   }
   const settings = { model: input.settings?.model, modelReasoningEffort: input.settings?.modelReasoningEffort, shellAccess: false };
   if (!/^[a-zA-Z0-9._-]{1,100}$/.test(settings.model ?? "") || !["low", "medium", "high"].includes(settings.modelReasoningEffort)) fail("Invalid judge model/settings.");

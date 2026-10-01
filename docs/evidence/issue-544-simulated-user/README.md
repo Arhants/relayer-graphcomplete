@@ -192,3 +192,61 @@ including the replacement-node negative cases and real node activation.
 An earlier browser invocation overlapped package rebuilding and timed out before
 native startup; it is retained as an unsuccessful attempt, not product proof.
 The complete sequential-build browser rerun passed.
+
+Follow-up boundaries found during adversarial/live review:
+
+- Editing a historical actor revision now accepts only the exact known legacy
+  contract and upgrades the newly published revision to the current code-owned
+  schema. Earlier revisions remain byte-preserved. The registry regression uses
+  the editor's predecessor-copy payload (failed before the fix, passed afterward).
+- The setup editor exposes the pinned deadline in minutes and preserves the chosen
+  value during publication/reopen. The browser chapter verifies sixty minutes.
+- A single-step local-weekend run chose `next_step` and was interrupted. Actor v5
+  supplies currently available action kinds and narrows the pinned native schema
+  before each decision. `next_step` is absent at the last step or exhausted budget.
+  The effective schema is saved with its observation; the actor still chooses the
+  next action. One- and two-step real-service tests failed before this repair and
+  passed afterward. The SDK seam verifies forwarding the narrowed schema. These
+  changes neither replay the failed action nor turn an interrupted run into success.
+
+The focused actor, registry and safe-error suite passed 48 tests after these fixes.
+Earlier full-gate results certify the preceding snapshot only; full final checks
+remain required for this follow-up snapshot. Active v4 runs retain their original
+runtime and are assessed separately from any v5 rerun.
+
+
+Workspace refresh exposed another boundary: a well-formed finish claimed reached
+while listing remaining work. The authority check still rejects that declaration.
+A single bounded fresh AI decision can now reconsider it with fixed validation
+feedback and a new observation. Both rejected action and usage are recorded;
+fields are never rewritten. Repeated contradictions and exhausted action budget
+still interrupt. Unknown actions, product-write errors and provider failures are
+not retried. Focused production-service tests cover repair-to-incomplete and
+repeated contradiction, with zero product dispatch. The focused suite now passes
+53 tests. Browser observation allowlists explicitly cover action availability and
+continue excluding evaluator state; full final gates remain pending.
+
+Terminal contradictory finishes also retain their exact bounded action and usage,
+with `retryAllowed: false`. A last-slot regression proves no budget extension.
+The first v5 browser attempt correctly failed its old observation-key allowlist;
+the updated allowlist explicitly permits only action admission metadata alongside
+controls, screenshot and text. The complete twelve-chapter browser rerun passed.
+
+An independent native-metadata audit then found all eight everyday candidates
+running in the parent Relayer repository, not their materialized task folders.
+Those runs are preserved but excluded from clean outcome evidence. The external
+catalog now owns isolated Git seeds with new materializer/environment and case
+identities. The host requests the exact subfolder and verifies its canonical
+returned project path before any candidate dispatch. The service regression
+returns an ancestor project and proves rejection before thread creation; it
+failed before the guard and passed afterward. Native cwd validation is required
+on all replacement everyday runs. The two coding cases used correct workspaces;
+their objective failures remain valid negative evidence.
+
+Final deterministic gates for the v5/isolation follow-up passed: `npm run check`
+(3479 tests passed, three skipped, plus two secret-boundary tests), `npm run build`,
+and all twelve `npm run test:eval-web` chapters. The preceding full check had one
+failure in an outdated fake project response; its correction creates the fixture
+folder and returns the real API's path field. The corrected 28-test suite and the
+subsequent complete check both passed. Earlier failed logs remain diagnostic
+history, not passing proof. Replacement live runs remain separate evidence.

@@ -884,6 +884,18 @@ describe("EvalService simulated-user result persistence", () => {
   });
 
 
+  it("rejects product project consolidation outside the isolated fixture before dispatch", async () => {
+    const { stateFile, configurationPath, directory } = await testPaths();
+    const product = fakeExternalAcceptedProduct();
+    globalThis.fetch = vi.fn(async (url, options = {}) => {
+      if (new URL(url).pathname === "/api/projects" && options.method === "POST") return jsonResponse({ id: "ancestor-project", path: directory });
+      return product.fetch(url, options);
+    });
+    const service = await new EvalService({ stateFile, productSession: productSession(), configurationPaths: [configurationPath], platform: "darwin", externalCatalog: withExternalIdentity(createSyntheticExternalCatalog()) }).open();
+    await expect(service.prepareHumanTask({ testCaseId: "fixture.external-a", harnessConfigurationName: "fixture-task-system", sessionId: "isolated-task", maxCompletions: 2, endpoint: "A result" })).rejects.toThrow("isolated fixture");
+    expect(product.fetch.mock.calls.some(([url, options]) => new URL(url).pathname === "/api/threads" && options?.method === "POST")).toBe(false);
+  });
+
   it("runs generic external cases and suites through materialize, grade, and durable catalog provenance", async () => {
     const { stateFile, configurationPath } = await testPaths();
     const product = fakeExternalAcceptedProduct();
@@ -1230,7 +1242,7 @@ function fakeExternalAcceptedProduct() {
     if (path === "/api/projects" && options.method === "POST") {
       const body = JSON.parse(options.body);
       projects.push(body);
-      return jsonResponse({ id: `external-project-${++nextProject}` });
+      return jsonResponse({ id: `external-project-${++nextProject}`, path: body.path });
     }
     const layerRoute = /^\/api\/threads\/thread-1\/interactions\/interaction-1\/layers\/(\d+)$/.exec(path);
     if (layerRoute) {

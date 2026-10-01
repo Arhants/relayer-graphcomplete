@@ -27,7 +27,7 @@ export async function createRestrictedCodexActor({ runtime, config, prompt, outp
     let first = true;
     let capture = 0;
     return {
-      async decide(observation: { screenshot?: string; [key: string]: unknown }, signal?: AbortSignal) {
+      async decide(observation: { screenshot?: string; [key: string]: unknown }, signal?: AbortSignal, options?: { outputSchema: Record<string, unknown> }) {
         const { screenshot, ...visible } = observation;
         const input: UserInput[] = [{ type: "text", text: `${first ? `${prompt}\n\n` : ""}Current workspace:\n${JSON.stringify(visible)}` }];
         if (screenshot) {
@@ -36,7 +36,7 @@ export async function createRestrictedCodexActor({ runtime, config, prompt, outp
           input.push({ type: "local_image", path });
         }
         signal?.throwIfAborted();
-        const result = await thread.run(input, { ...(signal ? { signal } : {}), outputSchema });
+        const result = await thread.run(input, { ...(signal ? { signal } : {}), outputSchema: options?.outputSchema ?? outputSchema });
         first = false;
         if (result.items?.some((item) => ["command_execution", "file_change", "mcp_tool_call", "web_search"].includes(item.type))) throw new Error("Actor attempted a forbidden tool.");
         return { action: JSON.parse(result.finalResponse), usage: result.usage ?? null };

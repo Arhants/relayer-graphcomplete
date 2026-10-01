@@ -4,7 +4,7 @@ import { evalSelectionRequiresLiveAuthorization, validateExternalLiveAuthorizati
 import { createHash, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { createReadStream, createWriteStream } from "node:fs";
-import { cp, link, mkdir, open, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { cp, link, mkdir, open, readFile, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -2629,8 +2629,12 @@ export class EvalService {
       body: {
         name: `${definition.name} · ${execution.id.slice(0, 8)}`,
         path: workspaceDirectory,
+        separateSubfolder: true,
       },
     });
+    if (typeof project.path !== "string" || await realpath(project.path) !== await realpath(workspaceDirectory)) {
+      throw new Error("Eval project must use the isolated fixture workspace; refusing candidate dispatch.");
+    }
     execution.projectId = project.id;
     execution.fixture = copy(fixture);
     return { project, fixture, workspaceDirectory, isH3, isCalibration, external };
