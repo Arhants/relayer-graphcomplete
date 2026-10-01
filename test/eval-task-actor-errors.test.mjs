@@ -11,6 +11,9 @@ it("preflights the exact actor configuration before creating candidate work", as
 });
 
 it.each([
+  [Object.assign(new Error("private-secret"), { code: "actor_control_stale" }), "stale_control"],
+  [Object.assign(new Error("private-secret"), { code: "actor_control_unavailable" }), "unavailable_control"],
+  [Object.assign(new Error("private-secret"), { code: "actor_invalid_action" }), "invalid_action"],
   [Object.assign(new Error("private-secret"), { code: "model_not_found" }), "unsupported_model"],
   [new Error("Model gpt-private is not supported when using this account: private-secret"), "unsupported_model"],
   [Object.assign(new Error("private-secret"), { status: 401 }), "authentication"],

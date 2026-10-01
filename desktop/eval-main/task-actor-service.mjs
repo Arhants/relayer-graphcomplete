@@ -14,6 +14,9 @@ function actorFailure(error, { cancelled = false, timedOut = false } = {}) {
   else if (timedOut || error?.name === "TimeoutError" || code === "etimedout" || /timed? ?out|timeout/.test(text)) category = "timeout";
   else if (status === 429 || /rate[_ -]?limit|quota[_ -]?(?:exceeded|exhausted)/.test(`${code} ${text}`)) category = "rate_limit";
   else if ([401, 403].includes(status) || /authentication|unauthorized|not[_ -]?logged[_ -]?in|invalid[_ -]?(?:api[_ -]?)?key|token.{0,30}expired/.test(`${code} ${text}`)) category = "authentication";
+  else if (code === "actor_control_stale") category = "stale_control";
+  else if (code === "actor_control_unavailable") category = "unavailable_control";
+  else if (code === "actor_invalid_action") category = "invalid_action";
   else if (code === "actor_effort_unsupported") category = "unsupported_effort";
   else if (/model[_ -](?:not[_ -]found|unsupported)|unsupported[_ -]model/.test(code)
     || /(?:model|reasoning effort).{0,120}(?:not supported|unsupported|not found|does not exist)/.test(text)) category = "unsupported_model";
@@ -24,13 +27,16 @@ function actorFailure(error, { cancelled = false, timedOut = false } = {}) {
     authentication: "Actor authentication is unavailable. Reconnect the Eval profile's Codex subscription in Settings.",
     unsupported_model: "Choose a model available to the connected Codex subscription before starting another task.",
     unsupported_effort: "Choose a reasoning effort supported by the actor model before starting another task.",
+    stale_control: "The observed control reference expired before the action. No action was replayed.",
+    unavailable_control: "The observed control became hidden, detached, or disabled before the action. No action was replayed.",
+    invalid_action: "The actor response did not satisfy the action contract. No action was executed.",
     runtime_failure: "Actor runtime failed without claiming task success. No action is replayed automatically.",
   };
   return { category, message: messages[category] };
 }
 
 export class TaskActorService {
-  constructor({ tasks, resolveRuntime, openBrowser, createActor = createCodexTaskActor, pollMs = 250, deadlineMs = 900000, setupRegistry = null }) {
+  constructor({ tasks, resolveRuntime, openBrowser, createActor = createCodexTaskActor, pollMs = 250, deadlineMs = null, setupRegistry = null }) {
     Object.assign(this, { tasks, resolveRuntime, openBrowser, createActor, pollMs, deadlineMs, setupRegistry });
     this.running = new Map();
   }
@@ -40,7 +46,7 @@ export class TaskActorService {
     const startupId = selection.startupId ?? randomUUID();
     if (typeof startupId !== "string" || !/^[a-zA-Z0-9-]{1,80}$/.test(startupId) || this.running.has(startupId)) throw new Error("Invalid actor startup identity.");
     const controller = new AbortController();
-    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(this.deadlineMs)]);
+    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(this.deadlineMs ?? config.timeoutMs)]);
     let resolveStarted, rejectStarted, task;
     const started = new Promise((resolve, reject) => { resolveStarted = resolve; rejectStarted = reject; });
     const run = { controller, done: null };
@@ -74,17 +80,19 @@ export class TaskActorService {
   }
   async run(id, runtime, cancellation, deadlineSignal) {
     const task = this.tasks.get(id);
-    const signal = deadlineSignal ?? AbortSignal.any([cancellation, AbortSignal.timeout(this.deadlineMs)]);
+    const signal = deadlineSignal ?? AbortSignal.any([cancellation, AbortSignal.timeout(this.deadlineMs ?? task.actor.timeoutMs)]);
     const prompt = actorPrompt({ config: task.actor, request: task.prepared.plan[0].prompts[0], endpoint: task.endpoint, privateBrief: task.prepared.humanBrief });
     let actor;
     let browser;
+    let phase = "startup";
     try {
       await this.tasks.actorEvent(id, "actor_started", { configuration: task.actor, prompt });
-      actor = await this.createActor({ runtime, config: task.actor, prompt });
+      actor = await this.createActor({ runtime, config: task.actor, prompt, outputSchema: task.actorSetup?.behaviorContract?.actionSchema });
       signal.throwIfAborted();
       browser = await this.openBrowser(id, signal);
       let observedSubmission;
       for (let index = 0; index <= task.actor.maxActions; index++) {
+        phase = "settle";
         const current = await this.settled(id, signal);
         const submission = current.events.findLast((event) => event.kind === "submission" && event.interactionId != null && (event.outcome == null || event.outcome === "accepted"));
         let expected;
@@ -96,6 +104,7 @@ export class TaskActorService {
           if (submission.path?.endsWith("/retry") && attemptId == null) throw new Error("Retried interaction has no settled attempt identity.");
           expected = { threadId: submission.threadId, turnId: submission.interactionId, submittedAt: Date.parse(submission.at), ...(attemptId == null ? {} : { attemptId }) };
         }
+        phase = "observe";
         const observation = await browser.observe(expected);
         observedSubmission = submission?.id;
         const observed = await this.tasks.actorEvent(id, "actor_observation", { observation });
@@ -105,7 +114,9 @@ export class TaskActorService {
           await this.tasks.finish(id, { reason: "abandoned" }, { signal });
           return;
         }
+        phase = "decide";
         const { action, usage } = await actor.decide(observation, signal);
+        phase = "validate";
         validateActorAction(action);
         signal.throwIfAborted();
         // An intervening stop/finish or product request invalidates this choice.
@@ -120,13 +131,14 @@ export class TaskActorService {
         if (current.completions >= current.maxCompletions && action.kind === "next_step") {
           await this.tasks.finish(id, { reason: "budget_exhausted" }, { signal }); return;
         }
+        phase = "act";
         if (action.kind === "next_step") { await this.tasks.nextStep(id, { signal }); signal.throwIfAborted(); await browser.nextStep(); }
         else await browser.act(action);
         await this.tasks.actorEvent(id, "actor_action_completed", { actionEventId: intent.id });
       }
 
     } catch (error) {
-      if (this.tasks.get(id).status === "active") await this.tasks.actorEvent(id, "actor_error", actorFailure(error, { cancelled: cancellation.aborted, timedOut: signal.aborted && !cancellation.aborted }));
+      if (this.tasks.get(id).status === "active") await this.tasks.actorEvent(id, "actor_error", { ...actorFailure(error, { cancelled: cancellation.aborted, timedOut: signal.aborted && !cancellation.aborted }), phase });
       await this.tasks.interruptActor(id, cancellation.aborted ? "actor_cancelled" : signal.aborted ? "actor_timeout" : "actor_failed");
     } finally {
       try { await browser?.close(); } finally { await actor?.close(); }

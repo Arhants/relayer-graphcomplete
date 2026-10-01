@@ -490,6 +490,36 @@ async function proveTaskActor({ browser, service, productSession, data }) {
       const controller = await openTaskActorBrowser({ tasks, sessionId, productSession, browser, signal });
       const actorPage = browser.contexts().flatMap((context) => context.pages()).find((page) => new URL(page.url()).searchParams.get("taskActor") === "1");
       await actorPage.locator(".graph-node").first().waitFor({ state: "visible" });
+      const beforeRefresh = await controller.observe();
+      const nodeChoice = beforeRefresh.controls.find(control => control.name.includes("Two-worker"));
+      assert.ok(nodeChoice, "real graph node is observed before model latency");
+      const observedNode = await actorPage.locator('.graph-node').filter({ hasText: "Two-worker" }).elementHandle();
+      await observedNode.evaluate(element => {
+        // renderGraph replaces nodeLayer children. Reproduce that same DOM
+        // replacement while retaining the real product activation callback.
+        const replacement = element.cloneNode(true);
+        replacement.onclick = element.onclick;
+        element.replaceWith(replacement);
+      });
+      const replacementNode = actorPage.locator('.graph-node').filter({ hasText: "Two-worker" });
+      const originalLabel = await replacementNode.getAttribute("aria-label");
+      await replacementNode.evaluate(element => element.setAttribute("aria-label", "Different meaning"));
+      await assert.rejects(controller.act({ kind: "click", ref: nodeChoice.ref }), /no longer visible/);
+      await replacementNode.evaluate((element, label) => element.setAttribute("aria-label", label), originalLabel);
+      await replacementNode.evaluate(element => { const duplicate = element.cloneNode(true); duplicate.id = "actor-duplicate-node"; element.after(duplicate); });
+      await assert.rejects(controller.act({ kind: "click", ref: nodeChoice.ref }), /no longer visible/);
+      await actorPage.locator("#actor-duplicate-node").evaluate(element => element.remove());
+      const originalTurn = await actorPage.evaluate(() => window.__taskActorPresentation.turnId);
+      await actorPage.evaluate(() => { window.__taskActorPresentation.turnId = "other-turn"; });
+      await assert.rejects(controller.act({ kind: "click", ref: nodeChoice.ref }), /no longer visible/);
+      await actorPage.evaluate(turnId => { window.__taskActorPresentation.turnId = turnId; }, originalTurn);
+      await replacementNode.evaluate(element => { element.hidden = true; });
+      await assert.rejects(controller.act({ kind: "click", ref: nodeChoice.ref }), /no longer visible/);
+      await replacementNode.evaluate(element => { element.hidden = false; });
+      const expectedNodeId = await replacementNode.getAttribute("data-node");
+      await controller.act({ kind: "click", ref: nodeChoice.ref });
+      await until(async () => String(await actorPage.evaluate(() => window.__taskActorPresentation.selectedNodeId)) === expectedNodeId, "rebound click selects the observed graph node");
+      await observedNode.dispose();
       assert.equal(await actorPage.locator("#humanTaskGrading").count(), 0);
       assert.equal(await actorPage.evaluate(async () => (await (await fetch("/api/capabilities")).json()).annotations), false);
       await actorPage.evaluate(() => {

@@ -130,3 +130,65 @@ Stop-button wiring and shutdown ordering are source-reviewed; service tests
 prove actor cancellation, while the browser separately proves process restart.
 Any change to that scope invalidates this assertion. Source review does not
 substitute for the required gates or live-model proof.
+
+## Overnight actor recovery (2026-10-01; verification in progress)
+
+The ten-case live batch preserved ten interrupted trajectories, not successful
+results. Nine action-associated failures involved graph-node clicks; one happened
+between observation and an actor decision. Raw errors were intentionally absent
+from exported evidence, so the generic category did not establish the cause.
+
+Changed executable seams and checkpoints:
+
+- Actor browser node resolution: keep opaque references, but allow a detached
+  graph-node handle to resolve only to one identical node in the same observed
+  thread, turn, layer, attempt, selected-node and navigation scope. Names alone
+  never resolve a target. Normal visibility, hit testing and browser clicks remain.
+  The real-browser actor chapter replaces an observed graph element using the
+  production DOM-replacement pattern and real activation callback. It verifies
+  selection after rebinding and rejects changed labels/scope, duplicates and hidden
+  replacements. Forged and expired observation references still fail closed.
+- Error classification and action validation: closed categories distinguish stale
+  controls, unavailable controls and invalid actions without logging raw provider
+  payloads. `test/eval-task-actor-errors.test.mjs` verifies safe classification.
+- Deadline admission and execution: the user's overnight request permits sufficient
+  interaction time. PRD §13.2.3 records configurable one-to-sixty-minute deadlines,
+  retaining the fifteen-minute default. One signal spans startup and the run;
+  `test/eval-task-actor.test.mjs` verifies configured timeout selection, bounds,
+  cancellation and no extension. Case budgets and AI stopping decisions remain.
+
+The natural-poll hypothesis did not reproduce in the deterministic fixture. A
+forced same-presentation DOM replacement did reproduce the runtime failure before
+rebinding. The initial repaired browser suite passed all twelve chapters. This
+establishes the detached-DOM failure boundary; a live canary is required before
+claiming it explains the saved failures. Additional adversarial checks and full
+check/build are pending. Focused actor/error tests passed 32 tests.
+
+Failed runs and subsequent attempts remain distinct. More actions, longer time,
+or actor-reported satisfaction do not establish independent endpoint attainment.
+Any new actor revision must preserve its predecessor and real motivating feedback;
+there is no automatic promotion. Genuine failures and incomplete endpoints belong
+in the final report alongside successful outcomes.
+
+The restaurant failure was independently traced to its final structured response:
+`reason` contained prose although finish validation required an enum. Actor v4
+constrains that field in the native output schema and locates explanations in
+`comment`. The service passes each revision's pinned schema, including historical
+unrestricted schemas. The registry test reopens a sealed legacy record and proves
+that old and new schemas remain distinct at dispatch. The SDK test observes the
+actual native `run` output schema. The focused three-file suite passed 46 tests.
+
+The repaired live canary preserved three submissions and successful node actions
+before its original fifteen-minute deadline. The first graph took roughly nine
+minutes. It ended `actor_timeout`, not success. This is live evidence that node
+interaction can proceed, not proof that all earlier failures had the same cause.
+The next revision gives each case sixty minutes and retains its case completion
+budget; the AI user still decides its actions and stopping outcome.
+
+Recovery verification: `npm run check` passed (276 test files, 3471 tests;
+three tests skipped, plus the separate two-test secret-boundary pass). `npm run
+build` passed. The final `npm run test:eval-web` passed all twelve chapters,
+including the replacement-node negative cases and real node activation.
+An earlier browser invocation overlapped package rebuilding and timed out before
+native startup; it is retained as an unsuccessful attempt, not product proof.
+The complete sequential-build browser rerun passed.

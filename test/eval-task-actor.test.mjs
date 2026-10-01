@@ -116,12 +116,13 @@ it("actor capability omits all evaluator context and cannot grade, annotate or o
 it("pins the actor runtime with no filesystem, shell, network or MCP tools and keeps credentials out of the prompt", async () => {
   const config = actorConfiguration();
   const prompt = actorPrompt({ config, request: "Help", endpoint: "A plan" });
-  let options; let threadOptions;
+  let options; let threadOptions; let runOptions;
   const actor = await createCodexTaskActor({ runtime: { executable: "/managed/codex", environment: { CODEX_HOME: "/owned", OPENAI_API_KEY: "secret", PATH: "/bin" } }, config, prompt,
-    createCodex: (value) => { options = value; return { startThread: (value) => { threadOptions = value; return { run: async () => ({ finalResponse: JSON.stringify(action("finish", { reason: "abandoned", satisfaction: 1 })), items: [], usage: null }) }; } }; },
+    createCodex: (value) => { options = value; return { startThread: (value) => { threadOptions = value; return { run: async (_input, runInput) => { runOptions = runInput; return ({ finalResponse: JSON.stringify(action("finish", { reason: "abandoned", satisfaction: 1 })), items: [], usage: null }); } }; } }; },
   });
   cleanups.push(() => actor.close());
   await actor.decide({ text: "Visible" });
+  expect(runOptions.outputSchema.properties.reason.enum).toEqual(["", "endpoint_reached", "satisfied", "abandoned"]);
   expect(options.env).not.toHaveProperty("OPENAI_API_KEY");
   expect(options.config.features).toMatchObject({ shell_tool: false, unified_exec: false, browser_use: false, computer_use: false, multi_agent: false });
   expect(options.config.mcp_servers).toEqual({});
@@ -268,7 +269,7 @@ it.each(["cancel", "deadline"])("%s covers discovery before candidate creation",
   await rejected;
   expect(create).not.toHaveBeenCalled();
   expect(actors.running.size).toBe(0);
-  expect(() => actorConfiguration({ timeoutMs: 3600000 })).toThrow("Invalid");
+  expect(() => actorConfiguration({ timeoutMs: 3600001 })).toThrow("Invalid");
 });
 
 it("stores screenshots outside hot session state and verifies them on reopen and immutable export", async () => {
@@ -302,4 +303,20 @@ it("Stop during task preparation releases admission and cannot create a candidat
   expect(createThread).not.toHaveBeenCalled();
   expect(f.tasks.list()[0]).toMatchObject({ completions: 0, termination: { reason: "actor_cancelled" } });
   await f.tasks.grade(f.id, { satisfaction: 2, comment: "Queue released" });
+});
+
+
+it("pins the configured deadline across actor preflight and execution without extending it", async () => {
+  const timeout = vi.spyOn(AbortSignal, "timeout");
+  const task = { id: "configured-deadline" };
+  const actors = new TaskActorService({ tasks: { create: async () => task }, resolveRuntime: async () => ({}) });
+  actors.run = vi.fn(async (_id, _runtime, _cancel, signal) => { expect(signal.aborted).toBe(false); });
+  try {
+    expect(actorConfiguration().timeoutMs).toBe(900000);
+    expect(() => actorConfiguration({ timeoutMs: 59999 })).toThrow("Invalid");
+    await actors.create({ actor: { timeoutMs: 3600000 } });
+    expect(timeout).toHaveBeenCalledWith(3600000);
+    expect(timeout).toHaveBeenCalledTimes(1);
+    await actors.close();
+  } finally { timeout.mockRestore(); }
 });

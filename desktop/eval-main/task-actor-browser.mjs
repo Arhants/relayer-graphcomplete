@@ -41,11 +41,13 @@ export async function openTaskActorBrowser({ tasks, sessionId, productSession, b
     await page.goto(surface.url);
     await page.locator(".workspace-layout").waitFor({ state: "visible" });
     let handles = new Map();
+    let nodeIdentities = new Map();
     async function observe(expected) {
       signal?.throwIfAborted();
       if (expected) await page.waitForFunction(taskActorPresentationReady, { expected }, { timeout: 30000 });
       for (const handle of handles.values()) await handle.dispose();
       handles = new Map();
+      nodeIdentities = new Map();
       const snapshot = await page.evaluateHandle(async () => {
         const { isVisibleElement, accessibleControlName } = await import("/src/review-tools.js");
         const root = document.querySelector(".workspace-layout");
@@ -90,7 +92,16 @@ export async function openTaskActorBrowser({ tasks, sessionId, productSession, b
         const elements = await snapshot.getProperty("elements");
         for (let index = 0; index < controls.length; index++) {
           const ref = randomUUID();
-          handles.set(ref, await elements.getProperty(String(index)));
+          const handle = await elements.getProperty(String(index));
+          handles.set(ref, handle);
+          const identity = await handle.evaluate(element => {
+            if (!element.matches?.("#nodeLayer .graph-node[data-node]")) return null;
+            const p = window.__taskActorPresentation;
+            if (!p?.threadId || !p?.turnId || !p?.layerId) return null;
+            return { nodeId: element.dataset.node, label: element.getAttribute("aria-label"),
+              text: element.textContent, scope: JSON.stringify([p.threadId, p.turnId, p.layerId, p.attemptId, p.selectedNodeId, p.navigationPath]) };
+          });
+          if (identity) nodeIdentities.set(ref, identity);
           controls[index].ref = ref;
         }
         await elements.dispose();
@@ -107,8 +118,23 @@ export async function openTaskActorBrowser({ tasks, sessionId, productSession, b
           await page.locator("#inspectorContent").hover();
           await page.mouse.wheel(0, action.value === "up" ? -600 : 600);
         } else {
-          const handle = handles.get(action.ref)?.asElement();
-          if (!handle) throw new Error("Actor control is stale or outside the observed workspace.");
+          let handle = handles.get(action.ref)?.asElement();
+          // A graph redraw replaces DOM nodes during model latency. Only rebind
+          // the same graph node in the same observed presentation, never by name.
+          const identity = nodeIdentities.get(action.ref);
+          if (handle && identity && !await handle.evaluate(element => element.isConnected)) {
+            const replacement = await page.evaluateHandle(identity => {
+              const p = window.__taskActorPresentation;
+              if (!p || JSON.stringify([p.threadId, p.turnId, p.layerId, p.attemptId, p.selectedNodeId, p.navigationPath]) !== identity.scope) return null;
+              const matches = [...document.querySelectorAll(".workspace-layout #nodeLayer .graph-node[data-node]")]
+                .filter(element => element.dataset.node === identity.nodeId && element.getAttribute("aria-label") === identity.label && element.textContent === identity.text);
+              return matches.length === 1 ? matches[0] : null;
+            }, identity);
+            const rebound = replacement.asElement();
+            if (rebound) { await handle.dispose(); handles.set(action.ref, replacement); handle = rebound; }
+            else await replacement.dispose();
+          }
+          if (!handle) throw Object.assign(new Error("Actor control is stale or outside the observed workspace."), { code: "actor_control_stale" });
           if (!await handle.evaluate(async (element) => {
             const { isVisibleElement } = await import("/src/review-tools.js");
             let owner = element;
@@ -118,7 +144,7 @@ export async function openTaskActorBrowser({ tasks, sessionId, productSession, b
             const y = Math.max(0, r.top) + Math.min(r.height, window.innerHeight - Math.max(0, r.top)) / 2;
             const hit = element.getRootNode().elementFromPoint?.(x, y);
             return Boolean(owner && isVisibleElement(element) && (hit === element || element.contains(hit)) && !element.disabled && element.getAttribute("aria-disabled") !== "true");
-          })) throw new Error("Actor control is no longer visible or enabled.");
+          })) throw Object.assign(new Error("Actor control is no longer visible or enabled."), { code: "actor_control_unavailable" });
           if (action.kind === "click") await handle.click({ timeout: 5000 });
           else if (action.kind === "fill") await handle.fill(action.value, { timeout: 5000 });
           else if (action.kind === "select") await handle.selectOption({ label: action.value }, { timeout: 5000 });
