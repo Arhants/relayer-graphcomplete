@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { abortable } from "./abortable.mjs";
 import { setTimeout as delay } from "node:timers/promises";
-import { ACTOR_ACTION_SCHEMA, actorConfiguration, actorPrompt, createCodexTaskActor, validateActorAction } from "./task-actor.mjs";
+import { ACTOR_ACTION_SCHEMA, ACTOR_OBSERVATION_CONTRACT, actorConfiguration, actorPrompt, createCodexTaskActor, validateActorAction } from "./task-actor.mjs";
 
 // Classification may inspect native errors, but evidence and UI use only these
 // closed categories and fixed messages; never copy provider text or error.name.
@@ -89,7 +89,7 @@ export class TaskActorService {
       await this.tasks.actorEvent(id, "actor_started", { configuration: task.actor, prompt });
       actor = await this.createActor({ runtime, config: task.actor, prompt, outputSchema: task.actorSetup?.behaviorContract?.actionSchema });
       signal.throwIfAborted();
-      browser = await this.openBrowser(id, signal);
+      browser = await this.openBrowser(id, signal, task.actorSetup ? structuredClone(task.actorSetup.behaviorContract?.observationContract ?? null) : structuredClone(ACTOR_OBSERVATION_CONTRACT));
       let observedSubmission;
       let finishRepairPending = false;
       let controlRepairPending = false;

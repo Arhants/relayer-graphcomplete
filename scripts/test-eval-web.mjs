@@ -487,11 +487,83 @@ async function proveTaskActor({ browser, service, productSession, data }) {
   const snapshots = [];
   let controlPage;
   const actors = new TaskActorService({ tasks, setupRegistry, resolveRuntime: async () => ({}),
-    openBrowser: async (sessionId, signal) => {
-      const controller = await openTaskActorBrowser({ tasks, sessionId, productSession, browser, signal });
+    openBrowser: async (sessionId, signal, observationContract) => {
+      const controller = await openTaskActorBrowser({ tasks, sessionId, productSession, browser, signal, observationContract });
       const actorPage = browser.contexts().flatMap((context) => context.pages()).find((page) => new URL(page.url()).searchParams.get("taskActor") === "1");
       controlPage = actorPage;
       await actorPage.locator(".graph-node").first().waitFor({ state: "visible" });
+      try {
+      // A native popup is outside Chromium screenshot pixels: its opened-only
+      // accessible option names are a separately authorized observation.
+      await actorPage.evaluate(() => {
+        const field = document.createElement("select"); field.id = "actor-native-select";
+        field.setAttribute("aria-label", "Budget proof");
+        field.style.cssText = "position:fixed;top:100px;left:900px;z-index:99999";
+        field.innerHTML = '<option value="a">Small</option><option value="b">Targeted</option><option disabled>Disabled secret</option><option hidden>Hidden secret</option><option>Duplicate</option><option>Duplicate</option><optgroup disabled><option>Group secret</option></optgroup>';
+        field.addEventListener("input", () => { window.actorSelectInput = (window.actorSelectInput || 0) + 1; });
+        field.addEventListener("change", () => { window.actorSelectChange = (window.actorSelectChange || 0) + 1; });
+        document.querySelector(".workspace-layout").append(field);
+      });
+      let menu = await controller.observe();
+      let budget = menu.controls.find(control => control.name === "Budget proof");
+      assert.equal(budget.options, undefined, "closed native options stay private");
+      await assert.rejects(controller.act({ kind: "select", ref: budget.ref, value: "Targeted" }), { code: "actor_control_unavailable", actionDispatched: false }).catch(error => { console.error("Native menu boundary:", error); throw error; });
+      await controller.act({ kind: "click", ref: budget.ref });
+      assert.equal(await actorPage.locator("#actor-native-select").evaluate(element => element.matches(":open")), true);
+      menu = await controller.observe(); budget = menu.controls.find(control => control.name === "Budget proof");
+      assert.deepEqual(budget.options, ["Small", "Targeted"]);
+      assert.equal(budget.optionObservation, "opened-native-select-accessibility");
+      for (const value of ["Guessed", "Disabled secret", "Hidden secret", "Duplicate", "Group secret"]) {
+        await assert.rejects(controller.act({ kind: "select", ref: budget.ref, value }), { code: "actor_control_unavailable", actionDispatched: false });
+      }
+      await controller.act({ kind: "select", ref: budget.ref, value: "Targeted" });
+      assert.deepEqual(await actorPage.evaluate(() => [document.querySelector("#actor-native-select").value, window.actorSelectInput, window.actorSelectChange]), ["b", 1, 1]);
+      assert.equal(await actorPage.locator("#actor-native-select").evaluate(element => element.matches(":open")), false, "selection closes native popup");
+      menu = await controller.observe(); budget = menu.controls.find(control => control.name === "Budget proof");
+      assert.equal(budget.options, undefined);
+      await controller.act({ kind: "click", ref: budget.ref });
+      assert.equal(await actorPage.locator("#actor-native-select").evaluate(element => element.matches(":open")), true, "next ordinary click opens the menu rather than dismissing a leftover popup");
+      menu = await controller.observe(); budget = menu.controls.find(control => control.name === "Budget proof");
+      assert.deepEqual(budget.options, ["Small", "Targeted"]);
+      await actorPage.locator("#actor-native-select option").nth(1).evaluate(element => { element.textContent = "Changed"; });
+      await assert.rejects(controller.act({ kind: "select", ref: budget.ref, value: "Targeted" }), { code: "actor_control_unavailable", actionDispatched: false });
+      await actorPage.keyboard.press("Escape");
+      // Closing or changing presentation invalidates an otherwise observed name.
+      menu = await controller.observe(); budget = menu.controls.find(control => control.name === "Budget proof");
+      await controller.act({ kind: "click", ref: budget.ref });
+      menu = await controller.observe(); budget = menu.controls.find(control => control.name === "Budget proof");
+      await actorPage.keyboard.press("Escape");
+      assert.equal(await actorPage.locator("#actor-native-select").evaluate(element => element.matches(":open")), false);
+      await assert.rejects(controller.act({ kind: "select", ref: budget.ref, value: "Small" }), { code: "actor_control_unavailable", actionDispatched: false });
+      menu = await controller.observe(); budget = menu.controls.find(control => control.name === "Budget proof");
+      await actorPage.locator("#actor-native-select").click();
+      assert.equal((await controller.observe()).controls.find(control => control.name === "Budget proof").options, undefined, "unowned opening grants no option observation");
+      await actorPage.keyboard.press("Escape");
+      menu = await controller.observe(); budget = menu.controls.find(control => control.name === "Budget proof");
+      await controller.act({ kind: "click", ref: budget.ref });
+      menu = await controller.observe(); budget = menu.controls.find(control => control.name === "Budget proof");
+      const menuTurn = await actorPage.evaluate(() => window.__taskActorPresentation.turnId);
+      await actorPage.evaluate(() => { window.__taskActorPresentation.turnId = "changed-menu-turn"; });
+      await assert.rejects(controller.act({ kind: "select", ref: budget.ref, value: "Small" }), { code: "actor_control_unavailable", actionDispatched: false });
+      assert.equal((await controller.observe()).controls.find(control => control.name === "Budget proof").options, undefined);
+      await actorPage.evaluate(turnId => { window.__taskActorPresentation.turnId = turnId; }, menuTurn);
+      await actorPage.keyboard.press("Escape");
+      menu = await controller.observe(); budget = menu.controls.find(control => control.name === "Budget proof");
+      await controller.act({ kind: "click", ref: budget.ref });
+      menu = await controller.observe(); budget = menu.controls.find(control => control.name === "Budget proof");
+      await actorPage.locator("#actor-native-select").evaluate(element => element.replaceWith(element.cloneNode(true)));
+      await assert.rejects(controller.act({ kind: "select", ref: budget.ref, value: "Small" }), { code: "actor_control_unavailable", actionDispatched: false });
+      assert.equal((await controller.observe()).controls.find(control => control.name === "Budget proof").options, undefined, "replacement cannot inherit menu authority");
+      await actorPage.locator("#actor-native-select").evaluate(element => { element.innerHTML = Array.from({ length: 33 }, (_, i) => `<option>Choice ${i}</option>`).join(""); });
+      menu = await controller.observe(); budget = menu.controls.find(control => control.name === "Budget proof");
+      await controller.act({ kind: "click", ref: budget.ref });
+      menu = await controller.observe(); budget = menu.controls.find(control => control.name === "Budget proof");
+      assert.equal(budget.options, undefined, "oversized native menus fail closed");
+      await assert.rejects(controller.act({ kind: "select", ref: budget.ref, value: "Choice 0" }), { code: "actor_control_unavailable", actionDispatched: false });
+      await actorPage.keyboard.press("Escape");
+      console.log("PASS actor native select: opened-only explicit accessibility, exact enabled unique labels, normal input/change, closed/unowned/stale/presentation/oversized rejection");
+      await actorPage.locator("#actor-native-select").evaluate(element => element.remove());
+      } catch (error) { console.error("Native select browser proof failed:", error); throw error; }
       const beforeRefresh = await controller.observe();
       const nodeChoice = beforeRefresh.controls.find(control => control.name.includes("Two-worker"));
       assert.ok(nodeChoice, "real graph node is observed before model latency");

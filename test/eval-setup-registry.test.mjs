@@ -29,7 +29,7 @@ async function fixture({ initialActor } = {}) {
   tasks = await new HumanTaskService(options).open();
   const calls = [];
   const runtime = vi.fn(async (config) => { calls.push({ config, beforeDispatch: tasks.list().length }); return {}; });
-  const actors = new TaskActorService({ tasks, setupRegistry: registry, resolveRuntime: runtime, openBrowser: async () => ({ observe: async () => ({ controls: [{ name: "visible", options: undefined }], text: "visible" }), close: async () => {} }),
+  const actors = new TaskActorService({ tasks, setupRegistry: registry, resolveRuntime: runtime, openBrowser: async (id, signal, observationContract) => { calls.push({ browserObservationContract: observationContract }); return ({ observe: async () => ({ controls: [{ name: "visible", options: undefined }], text: "visible" }), close: async () => {} }); },
     createActor: async ({ prompt, config, outputSchema }) => ({ close: async () => {}, decide: async (observation) => {
       calls.push({ prompt, config, outputSchema, observation });
       return { action: { kind: "finish", ref: "", value: "", reason: "satisfied", satisfaction: 3, comment: "Enough", endpointStatus: "incomplete", remainingWork: "Bookings" }, usage: null };
@@ -251,12 +251,14 @@ it("recovers an interrupted first-open registry without rewriting the saved acto
   expect((await new SetupRegistry({ stateFile }).open()).catalog().revisions).toEqual(reopened.catalog().revisions);
 });
 
-it("pins historical v2 through a promotion during discovery, while explicit v5 executes its own template", async () => {
+it("pins historical v2 through a promotion during discovery, while explicit v6 executes its own template", async () => {
   const legacy = { ...defaultActorSetup(), promptVersion: "task-actor-v2", promptTemplate: defaultActorSetup().promptTemplate.replace("a visibly displayed option label", "an option value") };
   const f = await fixture({ initialActor: legacy });
   // Reopen a sealed pre-v4 record, rather than publishing an obsolete contract today.
   const persisted = JSON.parse(await readFile(f.stateFile, "utf8"));
   const historical = persisted.revisions.find(item => item.kind === "actor");
+  historical.behaviorContract.id = "task-actor-v2";
+  delete historical.behaviorContract.observationContract;
   historical.behaviorContract.actionSchema.properties.reason = { type: "string" };
   const { digest: previousDigest, ...historicalRecord } = historical;
   historical.digest = setupDigest(historicalRecord);
@@ -264,6 +266,8 @@ it("pins historical v2 through a promotion during discovery, while explicit v5 e
   await f.registry.open();
   const original = await f.start(); await f.tasks.grade(original.id, { satisfaction: 2, comment: "Use visible option labels" });
   const old = f.registry.selected("actor");
+  const legacyEdit = await f.registry.publish({ ...old, name: "Historical prompt edit", predecessorId: old.id, feedback: [{ sessionId: original.id, gradeIndex: 0 }] });
+  expect(legacyEdit.behaviorContract).toEqual(old.behaviorContract);
   const next = await f.registry.publish({ ...old, name: "Edited historical actor", promptVersion: defaultActorSetup().promptVersion, promptTemplate: defaultActorSetup().promptTemplate, predecessorId: old.id, feedback: [{ sessionId: original.id, gradeIndex: 0 }] });
   const reopened = await new SetupRegistry({ stateFile: f.stateFile }).open();
   f.actors.setupRegistry = reopened; f.tasks.setupRegistry = reopened;
@@ -271,17 +275,21 @@ it("pins historical v2 through a promotion during discovery, while explicit v5 e
   f.actors.resolveRuntime = async () => { entered(); await new Promise(resolve => { release = resolve; }); return {}; };
   const pending = f.actors.create({ mode: "simulated", maxCompletions: 1, endpoint: "Agreement" });
   await discovering;
-  await reopened.promote({ revisionId: next.id, comment: "Human explicitly promotes v5" }, f.tasks.annotator);
+  await reopened.promote({ revisionId: next.id, comment: "Human explicitly promotes v6" }, f.tasks.annotator);
   release(); const task = await pending; await f.actors.running.get(task.id).done;
   expect(f.tasks.get(task.id).actorSetup).toEqual(old);
   expect(f.calls.at(-1).config.promptVersion).toBe("task-actor-v2");
+  expect(f.calls.filter(call => "browserObservationContract" in call).at(-1).browserObservationContract).toBeNull();
   expect(f.calls.at(-1).outputSchema).toEqual(old.behaviorContract.actionSchema);
   expect(f.calls.at(-1).prompt).toContain("select uses an option value");
   f.actors.resolveRuntime = f.runtime;
   const revised = await f.start(next.id);
   expect(revised.actorSetup).toEqual(next);
   expect(old.behaviorContract.actionSchema).not.toEqual(next.behaviorContract.actionSchema);
-  expect(f.calls.at(-1).config.promptVersion).toBe("task-actor-v5");
+  expect(f.calls.at(-1).config.promptVersion).toBe("task-actor-v6");
+  expect(next.behaviorContract.observationContract).toEqual({ id: "task-actor-observation-v2", optionObservation: "opened-native-select-accessibility" });
+  expect(f.calls.filter(call => "browserObservationContract" in call).at(-1).browserObservationContract).toEqual(next.behaviorContract.observationContract);
+  expect(f.calls.at(-1).prompt).toContain("Never guess an option or use a hidden value");
   expect(f.calls.at(-1).outputSchema).toEqual(next.behaviorContract.actionSchema);
   expect(f.calls.at(-1).prompt).toContain("select uses a visibly displayed option label");
   expect(reopened.get(old.id)).toEqual(old);

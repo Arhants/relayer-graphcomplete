@@ -290,7 +290,7 @@ async function start() {
   }).open();
   taskActors = new TaskActorService({ tasks: humanTasks, setupRegistry,
     resolveRuntime: (config, options) => providerSetup.resolveCodexJudgeRuntime(config, options),
-    openBrowser: async (sessionId, signal) => openTaskActorBrowser({ tasks: humanTasks, sessionId, productSession, signal, browser: await judgeBrowser.get() }),
+    openBrowser: async (sessionId, signal, observationContract) => openTaskActorBrowser({ tasks: humanTasks, sessionId, productSession, signal, observationContract, browser: await judgeBrowser.get() }),
   });
   calibration = await new CalibrationService({ stateFile: join(dirname(evalStateFile), "calibration.json"), setups: setupRegistry,
     tasks: humanTasks, evalService, author: humanTasks.annotator }).open();

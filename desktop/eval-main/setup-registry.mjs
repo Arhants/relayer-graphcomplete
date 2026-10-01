@@ -5,7 +5,7 @@ import { readFileSync, readdirSync, lstatSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parseDocument } from "yaml";
 import { GRAPH_PRESENTATION_RUBRIC_V11 } from "@relayer/eval-runner";
-import { actorConfiguration, ACTOR_PROMPT_TEMPLATE, ACTOR_ACTION_SCHEMA, ACTOR_PROMPT_VERSION } from "./task-actor.mjs";
+import { actorConfiguration, ACTOR_PROMPT_TEMPLATE, ACTOR_ACTION_SCHEMA, ACTOR_OBSERVATION_CONTRACT, ACTOR_PROMPT_VERSION } from "./task-actor.mjs";
 
 const copy = (value) => structuredClone(value);
 const fail = (message) => { throw Object.assign(new Error(message), { status: 400 }); };
@@ -46,7 +46,7 @@ function judgeConfigurations(directory) {
 }
 export function defaultActorSetup() {
   return { kind: "actor", name: "Low-effort user", promptVersion: ACTOR_PROMPT_VERSION, promptTemplate: ACTOR_PROMPT_TEMPLATE,
-    settings: actorConfiguration(), behaviorContract: { id: "task-actor-v2", actionSchema: copy(ACTOR_ACTION_SCHEMA) } };
+    settings: actorConfiguration(), behaviorContract: { id: "task-actor-v3", actionSchema: copy(ACTOR_ACTION_SCHEMA), observationContract: copy(ACTOR_OBSERVATION_CONTRACT) } };
 }
 export function defaultJudgeSetup() {
   const config = judgeConfigurations(defaultJudgeDirectory)[0];
@@ -59,13 +59,14 @@ function normalize(input) {
   if (typeof input.promptVersion !== "string" || !input.promptVersion.trim() || input.promptVersion.length > 100) fail("Name the prompt version.");
   if (input.kind === "actor") {
     const behaviorContract = defaultActorSetup().behaviorContract;
-    const legacyContract = copy(behaviorContract);
+    const priorContract = { id: "task-actor-v2", actionSchema: copy(ACTOR_ACTION_SCHEMA) };
+    const legacyContract = copy(priorContract);
     legacyContract.actionSchema.properties.reason = { type: "string" };
     // Publication may upgrade a known historical contract; stored revisions stay immutable.
-    if (![behaviorContract, legacyContract].some(contract => JSON.stringify(input.behaviorContract) === JSON.stringify(contract))) fail("Actor behavior authority contract is not editable.");
+    if (![behaviorContract, priorContract, legacyContract].some(contract => JSON.stringify(input.behaviorContract) === JSON.stringify(contract))) fail("Actor behavior authority contract is not editable.");
     return { kind: input.kind, name: input.name.trim(), promptVersion: input.promptVersion,
       promptTemplate: template(input.promptTemplate, ["request", "endpoint", "privateBrief", "exploration", "meticulousness"]),
-      settings: actorConfiguration(input.settings), behaviorContract };
+      settings: actorConfiguration(input.settings), behaviorContract: input.promptVersion === ACTOR_PROMPT_VERSION ? behaviorContract : copy(input.behaviorContract) };
   }
   const settings = { model: input.settings?.model, modelReasoningEffort: input.settings?.modelReasoningEffort, shellAccess: false };
   if (!/^[a-zA-Z0-9._-]{1,100}$/.test(settings.model ?? "") || !["low", "medium", "high"].includes(settings.modelReasoningEffort)) fail("Invalid judge model/settings.");

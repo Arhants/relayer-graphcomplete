@@ -112,6 +112,15 @@ files, or judge topology. A dedicated native Codex thread has no shell, search,
 filesystem tools, or MCP servers. This user interaction loop does not schedule
 GraphComplete agents or change provider-owned recursion.
 
+The user approved a narrow native-dropdown observation exception on 2026-10-01.
+After the actor opens a visible native dropdown, its option names may enter the
+next observation even when headless screenshots omit the native popup. Closed
+and unopened menus remain hidden. This grant belongs to the exact opened control
+and ends on closure, replacement, or navigation scope change. It exposes neither
+option values nor unrelated hidden content. Selection must match an offered
+enabled option; unsupported selection is rejected before dispatch. PRD 13.2.3
+owns the product contract and its evidence mapping.
+
 The actor capability projects only task display context, disables annotations,
 and rejects grading operations. Humans watch and grade through a separate
 read-only review capability. Actor satisfaction is distinct from human grades.

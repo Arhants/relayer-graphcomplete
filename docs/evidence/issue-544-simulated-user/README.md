@@ -349,3 +349,55 @@ Reviewed executable/test digest: `ec5989f55ba8d2105a48bb37cf0abca98cfdca58ea2e7d
 The reviewer inspected source and real-browser regression coverage; heavy gates were executed separately.
 A uniform final ten-case live cohort will use this repair and one pinned actor revision.
 Prior attempts remain diagnostic history; they will not replace failures within that cohort.
+
+
+### Opened native dropdown observation (approved 2026-10-01)
+
+The final uniform cohort's workspace case selected an invented label from a
+closed Budget dropdown and interrupted on the exact-label browser timeout.
+Diagnostic headless Chromium screenshots omitted native popup options even
+while the native control reported open. The user then explicitly authorized
+reading option names after opening that dropdown; closed choices remain hidden.
+This decision does not retroactively repair or replace the preserved cohort.
+
+Changed seams to verify are browser observation projection, opened-control
+lifetime, selection admission and ordinary input event dispatch. Existing scoped
+surface authority, actor action/deadline accounting, persistence, and bounded
+pre-dispatch recovery remain authoritative. No keyboard or new action-schema
+capability is implied by this decision.
+
+Required checkpoints (results recorded below):
+
+| Boundary | Smallest production-seam proof |
+|---|---|
+| Closed native menu reveals no choices | Actor browser chapter in `scripts/test-eval-web.mjs`: inspect production observation before opening; hidden option-name and raw-value sentinels absent. |
+| Explicit opening reveals only its menu | Same browser chapter: click the observed native select, observe its option names, and reject an unowned opening. Raw values and unrelated hidden content stay absent. |
+| Exposure has a bounded lifetime | Same browser chapter: close, replace, or navigate away from the opened control; previous option names disappear. Reopening requires a new observation of the current control. |
+| Ordinary selection remains scoped | Same browser chapter: choose an offered enabled option and observe normal input/change events in the production actor controller. Unknown, ambiguous, disabled or stale choices must not dispatch. |
+| Invalid selection is safely recoverable | Browser proof checks the typed pre-dispatch rejection and absence of an input/change effect. `test/eval-task-actor.test.mjs` covers fresh observation/new decision, retained failed intent, and existing bounded recovery without write replay. |
+| Evidence preserves the decision | Existing actor/session export tests and the browser chapter retain the observation/action sequence. The final evidence must distinguish menu observation from screenshot pixels and must preserve the earlier interrupted cohort. |
+
+The focused actor tests and actual browser chapter are required alongside
+`npm run check` and `npm run build`. Independent authority review must cover
+closed-menu nondisclosure, exact-control lifetime, selection admission and the
+checkpoint mapping. Implementation, test names, and this plan alone establish
+no pass. Record exact tested source and observed results after verification.
+
+The native browser proof uses a native select fixture inside the production
+workspace and actor controller. It verifies actual input/change events, popup
+closure, and the next ordinary click. Existing authored-field proof separately
+covers product persistence; this is not a native-select-specific persistence claim.
+
+Version 6 pins observation contract `task-actor-observation-v2`. Historical setup
+revisions retain their old observation authority. Registry/service tests cover
+reopen, promotion during discovery, explicit version upgrade, and exact forwarding.
+
+Verification on this change: the initial browser regression rejected closed-menu
+selection only after the implementation changed. The final browser run passed
+all chapters, including native-menu closure and next-click assertions. One earlier
+final attempt failed because a test asserted closure after deliberately opening
+an unowned menu; that assertion was corrected without weakening selection proof.
+Logs: `/tmp/actor-select-red.log`, `/tmp/actor-v6-browser.log`, and
+`/tmp/actor-v6-browser-repair.log`. Full check/build and final review receipts
+are recorded with the exact source in the pull request. The real v6 follow-up
+remains separate from the preserved original ten-case cohort.
