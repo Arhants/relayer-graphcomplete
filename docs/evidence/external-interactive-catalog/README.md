@@ -71,3 +71,15 @@ identity or browser-test-subsumption findings in source snapshot
 records final commit-scoped review. No inference, comparative score, current
 research correctness, or rendered first-graph timing is certified.
 
+
+## Merge-readiness follow-up
+
+CI on the initial head found the preserved design prototype's forced exit could
+truncate piped stdout (170 of 282 expected comparison rows). The design test now
+captures its unchanged checker through a regular file descriptor; the same exit
+status and all 282 comparisons remain required. This is a test transport change,
+not a palette or product-rule change. The smallest checkpoint is the existing
+`test/design-config.test.mjs` integration comparison; all nine focused tests pass.
+Adversarial review by `/root/eval_facts` found no assertion weakening or resource
+cleanup gaps in diff SHA-256
+`b935cb2f952f632172990ab63c727efba6a619605163d3158a144c36bc3d0393`.
