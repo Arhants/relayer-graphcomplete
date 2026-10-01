@@ -7,6 +7,7 @@ pub(crate) const OPENROUTER_DEFAULT_FAMILY_POLICY_ID: &str = "openrouter-default
 pub(crate) const VERCEL_AI_ROUTER_DEFAULT_FAMILY_POLICY_ID: &str =
     "vercel-ai-router-default-family";
 pub(crate) const PRIME_DEFAULT_FAMILY_POLICY_ID: &str = "prime-default-family";
+const CODEX_DEFAULT_FAMILY_V4_MODELS: [&str; 3] = ["gpt-6.1-sol", "gpt-6-astra", "gpt-6-luna"];
 const CODEX_DEFAULT_FAMILY_V3_MODELS: [&str; 3] = ["gpt-6-sol", "gpt-6-astra", "gpt-6-luna"];
 const PRIME_DEFAULT_FAMILY_V1_MODELS: [&str; 5] = [
     "qwen/qwen3.8-max",
@@ -98,11 +99,11 @@ pub(crate) fn derive_managed_family_members(
                 })
                 .collect())
         }
-        (CODEX_DEFAULT_FAMILY_POLICY_ID, 2 | 3) => {
-            let preferences = if policy.version == 3 {
-                CODEX_DEFAULT_FAMILY_V3_MODELS
-            } else {
-                CODEX_DEFAULT_FAMILY_V2_MODELS
+        (CODEX_DEFAULT_FAMILY_POLICY_ID, 2..=4) => {
+            let preferences = match policy.version {
+                4 => CODEX_DEFAULT_FAMILY_V4_MODELS,
+                3 => CODEX_DEFAULT_FAMILY_V3_MODELS,
+                _ => CODEX_DEFAULT_FAMILY_V2_MODELS,
             };
             let mut models = preferences
                 .iter()
@@ -330,6 +331,55 @@ mod tests {
         }
         assert!(!applies_to_adapter(&prime, "openai-api"));
         assert!(!applies_to_adapter(&prime, "codex-subscription"));
+    }
+
+    #[test]
+    fn codex_policy_v4_prefers_6_1_sol_without_inventing_catalog_members() {
+        let policy = FamilyPolicyReference {
+            id: CODEX_DEFAULT_FAMILY_POLICY_ID.into(),
+            version: 4,
+        };
+        for (sol_visible, expected) in [
+            (
+                true,
+                vec!["gpt-6.1-sol", "gpt-6-astra", "gpt-6-luna", "gpt-6-sol"],
+            ),
+            (false, vec!["gpt-6-astra", "gpt-6-luna", "gpt-6-sol"]),
+        ] {
+            let members = derive_managed_family_members(
+                &policy,
+                &snapshot(vec![
+                    model("gpt-6-sol", 0, true, true),
+                    model("gpt-6-astra", 1, true, true),
+                    model("gpt-6-luna", 2, true, false),
+                    model("gpt-6.1-sol", 3, sol_visible, false),
+                ]),
+            )
+            .unwrap();
+            assert_eq!(
+                members
+                    .iter()
+                    .map(|m| m.model_id.as_str())
+                    .collect::<Vec<_>>(),
+                expected
+            );
+            assert_eq!(
+                members.iter().map(|m| m.position).collect::<Vec<_>>(),
+                (0..members.len()).collect::<Vec<_>>()
+            );
+        }
+        let members = derive_managed_family_members(
+            &policy,
+            &snapshot(vec![model("gpt-6-astra", 0, true, true)]),
+        )
+        .unwrap();
+        assert_eq!(
+            members
+                .iter()
+                .map(|m| m.model_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["gpt-6-astra"]
+        );
     }
 
     #[test]

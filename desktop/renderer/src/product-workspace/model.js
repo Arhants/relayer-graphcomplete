@@ -114,7 +114,7 @@ export function rootLayerPath(interaction) {
   const layerId = interaction?.completionOutput?.rootLayer?.layer?.id;
   return layerId == null ? [] : [{
     layerId,
-    label: "Response",
+    label: interaction?.completionOutput?.rootAction?.label || "Response",
     icon: interaction?.completionOutput?.rootAction?.icon || "messages-square",
     actionId: null,
     sourceNodeId: interaction?.graphNodeId ?? interaction?.id ?? null,
@@ -153,13 +153,19 @@ export async function restoreLayerPath(interaction, navigationPath, loadLayer) {
 
 export function layerPathForVisibleLayer(path, interaction, layer) {
   const layerId = layer?.layer?.id;
-  if (layerId != null && sameId(path?.at(-1)?.layerId, layerId)) return [...path];
   const rootPath = rootLayerPath(interaction);
+  if (layerId != null && sameId(path?.at(-1)?.layerId, layerId)) {
+    // Current can be displayed before terminal output supplies its authored
+    // presentation. Refresh that root entry while retaining navigated ancestry,
+    // including reference paths which return to the root itself.
+    return path.map((entry, index) => index === 0 && sameId(entry.layerId, rootPath[0]?.layerId)
+      ? rootPath[0] : entry);
+  }
   if (layerId == null || sameId(rootPath[0]?.layerId, layerId)) return rootPath;
   return [{
     layerId,
-    label: "Layer",
-    icon: null,
+    label: "Response",
+    icon: "messages-square",
     actionId: null,
     sourceNodeId: null,
   }];

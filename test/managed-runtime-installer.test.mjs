@@ -155,9 +155,9 @@ describe("managed runtime installer", () => {
       }),
     });
     try {
-      await expect(installer.prepare("claude@0.3.250")).rejects.toThrow(/integrity verification failed/i);
+      await expect(installer.prepare("claude@0.3.286")).rejects.toThrow(/integrity verification failed/i);
       expect(requested).toEqual([
-        "https://registry.npmjs.org/@anthropic-ai/claude-agent-sdk/-/claude-agent-sdk-0.3.250.tgz",
+        "https://registry.npmjs.org/@anthropic-ai/claude-agent-sdk/-/claude-agent-sdk-0.3.286.tgz",
       ]);
       expect(requested.every((url) => !url.includes("/latest"))).toBe(true);
     } finally {
@@ -403,7 +403,7 @@ describe("managed runtime installer", () => {
     const real = createExactManagedRuntimeInstaller({
       root: join(tmpdir(), "relayer-recipe-identity-real"), platform: "win32", architecture: "x64",
     });
-    expect(real.recipeIdentity("codex@0.147.0")).toMatch(/^codex@0\.147\.0#[a-f0-9]{64}$/);
+    expect(real.recipeIdentity("codex@0.159.3")).toMatch(/^codex@0\.159\.3#[a-f0-9]{64}$/);
     expect(() => real.recipeIdentity("prime@0.8.1")).toThrow(expect.objectContaining({
       code: "managed_runtime_unsupported_target",
     }));
@@ -527,12 +527,12 @@ describe("managed runtime installer", () => {
 
   it("prepares the exact reviewed artifact closure for every supported runtime target", async () => {
     const cases = [
-      { platform: "darwin", architecture: "arm64", target: "macos-arm64", recipeId: "codex@0.147.0", nativeVersion: "0.147.0-darwin-arm64", nativeIntegrity: "sha512-BEUVkiOW7kLcRyrMLfAr/h9wF8sRVJyZDy6OHtVn6QGDXiv3BvAZVTY1Pu9xF7KdIdkYXbp4uayN0aDQQaAUJw==" },
-      { platform: "darwin", architecture: "x64", target: "macos-x64", recipeId: "codex@0.147.0", nativeVersion: "0.147.0-darwin-x64", nativeIntegrity: "sha512-Tb8McE5SvJIH0Vs5R6sq7u+quiC931yan2KOOl6km1OdZ82+Wi7eF5XrSFPs5CF7xCgoIK4Vs+byMbT5hN+ZUw==" },
-      { platform: "win32", architecture: "x64", target: "windows-x64", recipeId: "codex@0.147.0", nativeVersion: "0.147.0-win32-x64", nativeIntegrity: "sha512-oT7Ss5fAPf2fiWE9QNURqZcQGAAawSVxmIUdgPzckq4KFZAM+pRz9JbM4Rr498CjtbNgTOjWvDJ+DXvIBSfOPA==" },
-      { platform: "darwin", architecture: "arm64", target: "macos-arm64", recipeId: "claude@0.3.250", nativePackage: "@anthropic-ai/claude-agent-sdk-darwin-arm64", nativeIntegrity: "sha512-tcekW4gR2UH0Q3COBaNPQIdud2lKEbs0HfG2yNKC18hXFPpgbuLCdjq0ndS1lcvC1q8ncPW3oQPUutQt3StICQ==" },
-      { platform: "darwin", architecture: "x64", target: "macos-x64", recipeId: "claude@0.3.250", nativePackage: "@anthropic-ai/claude-agent-sdk-darwin-x64", nativeIntegrity: "sha512-8Yxmmi76oVEIam+oRgxcL2RtqEkKX9Gp4rh500HmMltjX3Tk/ryjCoJEHoaUdU/LU6vWvfQU5W+dB/SJCQQb2A==" },
-      { platform: "win32", architecture: "x64", target: "windows-x64", recipeId: "claude@0.3.250", nativePackage: "@anthropic-ai/claude-agent-sdk-win32-x64", nativeIntegrity: "sha512-PjJRbJwDHccSUWls5gTiuXMgERit1WrrMQzzRqhhBHGzrlQueHVodrpg7HaN5gtirADJzfINcc7azq8j3qcEYw==" },
+      { platform: "darwin", architecture: "arm64", target: "macos-arm64", recipeId: "codex@0.159.3", nativeVersion: "0.159.3-darwin-arm64", nativeIntegrity: "sha512-aI4UY14YURYxJxnRK+AE4QU+aek0mgtyyo7Rw9rNbCQUYETRQ0NYdJzU9ytljERGpPlht3dHHI1u4NhqHoDJDQ==" },
+      { platform: "darwin", architecture: "x64", target: "macos-x64", recipeId: "codex@0.159.3", nativeVersion: "0.159.3-darwin-x64", nativeIntegrity: "sha512-KTOQOD184DMXpR3TqnDUnLsgad14WJn+x3XmjBaXRHchKYGttjREwqrwzC61xQYFeh6VkogAceybR+SMbbgvYQ==" },
+      { platform: "win32", architecture: "x64", target: "windows-x64", recipeId: "codex@0.159.3", nativeVersion: "0.159.3-win32-x64", nativeIntegrity: "sha512-h8w5nslfQyoYbonZaRlLwvPKFS9Mcxz5vUeCeoHKF5SsZUP9jSBH7hxUdc8RWJffJtfbV2qxdnImVAj9zy2fwA==" },
+      { platform: "darwin", architecture: "arm64", target: "macos-arm64", recipeId: "claude@0.3.286", nativePackage: "@anthropic-ai/claude-agent-sdk-darwin-arm64", nativeIntegrity: "sha512-gkxWcJ+Z23UxwghI1V3dL09PkELIZmB2vPelR8XsdfhS+yP1KvoW7FThvRLojcxXb3fj0ddYawjQSQYIkXFbxw==" },
+      { platform: "darwin", architecture: "x64", target: "macos-x64", recipeId: "claude@0.3.286", nativePackage: "@anthropic-ai/claude-agent-sdk-darwin-x64", nativeIntegrity: "sha512-eMdni7sy1ud2IISI4QSsfVBCxotzSe62zCGdXISejL9MxDIwcRgEGZpO5OV+j7t8mNGMTe6Opl1t/3Z/1RUJaQ==" },
+      { platform: "win32", architecture: "x64", target: "windows-x64", recipeId: "claude@0.3.286", nativePackage: "@anthropic-ai/claude-agent-sdk-win32-x64", nativeIntegrity: "sha512-pg35GRPBKyviod0i8Z3EVMzDnTiiiucuWUbyH1bVIFFN0UWCQQ+PRUJ15qrPKjL6+vlFxOX2ei9FfsWYjGYZwA==" },
     ];
     for (const candidate of cases) {
       const root = await mkdtemp(join(tmpdir(), "relayer-managed-runtime-"));
@@ -565,10 +565,10 @@ describe("managed runtime installer", () => {
         } else {
           expect(artifacts).toEqual([
             expect.objectContaining({
-              package: "@anthropic-ai/claude-agent-sdk", version: "0.3.250",
-              integrity: "sha512-qT/1cBZs0+xPsQfqVOnwIk6pNW8XBkTpQS5RAXKHYb2XYCKqYc0UmOaeiYU2WeI6HEZKORa5iCaAZyKWGluShw==",
+              package: "@anthropic-ai/claude-agent-sdk", version: "0.3.286",
+              integrity: "sha512-InL/UNmRGSwBM/81PME0J0TZDsDBBlweWqRZgq2XSViSIg2hBi8nIL8j9Hm6MHRH85wgDJQE5n6Vo/r9hIO0NQ==",
             }),
-            expect.objectContaining({ package: candidate.nativePackage, version: "0.3.250", integrity: candidate.nativeIntegrity }),
+            expect.objectContaining({ package: candidate.nativePackage, version: "0.3.286", integrity: candidate.nativeIntegrity }),
           ]);
         }
       } finally {

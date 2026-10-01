@@ -3994,8 +3994,135 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn codex_v4_upgrade_selects_6_1_sol_and_preserves_custom_families() {
+        let (_directory, _, storage, service) = managed_policy_service(3).await;
+        let (definition, mut snapshot) = staged_codex_catalog();
+        for (order, id) in ["gpt-6-astra", "gpt-6-sol", "gpt-6.1-sol", "gpt-6-luna"]
+            .into_iter()
+            .enumerate()
+        {
+            snapshot.models.push(CatalogModelSnapshot {
+                id: id.into(),
+                label: id.into(),
+                order: order + 2,
+                visible: true,
+                available: true,
+                unavailable_reason: None,
+                provider_default: id == "gpt-6-astra",
+                replacement_model_id: None,
+                metadata: serde_json::json!({}),
+            });
+        }
+        service
+            .create_provider_with_catalog(definition, snapshot.clone())
+            .await
+            .unwrap();
+        let permissions = HashSet::from(["codex-basic".to_owned()]);
+        service
+            .complete_default_provider_onboarding(
+                &snapshot.provider_id,
+                "codex-basic",
+                &permissions,
+            )
+            .await
+            .unwrap();
+        let prior = service
+            .first_available_model("codex-basic")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(prior.model_id, "gpt-6-sol");
+        let custom = service
+            .create_model_family(CreateModelFamilyCommand {
+                name: "Saved models".into(),
+                enabled: true,
+                members: vec![ModelFamilyMember {
+                    provider_id: snapshot.provider_id.clone(),
+                    model_id: "gpt-6-sol".into(),
+                    position: 0,
+                }],
+            })
+            .await
+            .unwrap();
+
+        storage
+            .initialize_model_catalog("codex-basic", &managed_runtime_harnesses(4))
+            .await
+            .unwrap();
+        service
+            .publish_provider_catalog(
+                snapshot.clone(),
+                crate::product::ProviderConnectionStamp::refresh(1),
+            )
+            .await
+            .unwrap();
+        let selected = service
+            .first_available_model("codex-basic")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(selected.model_id, "gpt-6.1-sol");
+        assert_eq!(selected.provider_id, prior.provider_id);
+        assert_ne!(selected.family_id, prior.family_id);
+        let settings = service.model_settings().await.unwrap();
+        let retained = settings
+            .families
+            .iter()
+            .find(|family| family.id == custom.id)
+            .unwrap();
+        assert_eq!(retained.revision, custom.revision);
+        assert_eq!(retained.members, custom.members);
+        assert!(
+            !settings
+                .families
+                .iter()
+                .any(|family| family.id == prior.family_id)
+        );
+        let error = service
+            .resolve_model_selection(ValidateModelSelectionCommand {
+                harness_id: "codex-basic".into(),
+                family_id: prior.family_id,
+                provider_id: prior.provider_id,
+                model_id: prior.model_id,
+            })
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(error, ProductError::Storage(crate::storage::StorageError::Catalog(ref error)) if error.code() == "model_family_removed")
+        );
+
+        // Availability remains native-catalog authority even for the preferred model.
+        let sol = snapshot
+            .models
+            .iter_mut()
+            .find(|m| m.id == "gpt-6.1-sol")
+            .unwrap();
+        sol.available = false;
+        sol.unavailable_reason = Some(UnavailableReason {
+            code: "model_unavailable".into(),
+            message: "Model unavailable for this account.".into(),
+        });
+        service
+            .publish_provider_catalog(
+                snapshot,
+                crate::product::ProviderConnectionStamp::refresh(1),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            service
+                .first_available_model("codex-basic")
+                .await
+                .unwrap()
+                .unwrap()
+                .model_id,
+            "gpt-6-astra"
+        );
+    }
+
+    #[tokio::test]
     async fn policy_version_change_never_replaces_a_custom_default() {
-        let (_directory, _, storage, service) = managed_policy_service(1).await;
+        let (_directory, _, storage, service) = managed_policy_service(3).await;
         let (definition, snapshot) = staged_codex_catalog();
         service
             .create_provider_with_catalog(definition, snapshot.clone())
@@ -4036,7 +4163,7 @@ mod tests {
             .await
             .unwrap();
         storage
-            .initialize_model_catalog("codex-basic", &managed_runtime_harnesses(2))
+            .initialize_model_catalog("codex-basic", &managed_runtime_harnesses(4))
             .await
             .unwrap();
         service

@@ -112,6 +112,41 @@ describe("workspace navigation integration", () => {
     }
   });
 
+  it.each(["columns-3", undefined])("refreshes an annotation-only follow-up breadcrumb on acceptance (icon %s)", async (icon) => {
+    const root = rootLayer(201, 21);
+    const turn = { ...interaction(2, 10, null, 2), graphNodeId: 902, text: "",
+      completionStatus: "running", completionOutput: null,
+      contexts: [{ target: { id: 11 }, annotations: ["and what do you prefer a chat or a graph"] }] };
+    const state = productState([{ id: 10, title: "Chat or graph" }], [turn]);
+    state.currentProjection = { cursor: 1, hasMore: false, events: [], states: [{
+      completionId: 902, headRevision: 1, lifecycle: "active", currentLayerId: 201,
+      finalLayerId: null, safeReason: null, temporalFeatures: { projectionUi: true },
+    }] };
+    requestImplementation = vi.fn(async (path) => {
+      if (path.startsWith("/api/state?threadId=10")) return state;
+      if (path.endsWith("/layers/201")) return root;
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    const controller = await loadModules();
+    await controller.loadThread(10);
+    expect(controller.viewState.layerPath[0]).toMatchObject({ label: "Response", icon: "messages-square" });
+    controller.replaceCurrentSelection(21);
+    const historyBefore = controller.getNavigationHistory();
+
+    turn.completionStatus = "accepted";
+    turn.completionOutput = { rootLayer: root, rootAction: { label: "Chat or graph?", icon } };
+    Object.assign(state.currentProjection.states[0], { headRevision: 2, lifecycle: "succeeded", finalLayerId: 201 });
+    state.currentProjection.cursor = 2;
+    await controller.refreshState(10);
+
+    expect(controller.viewState.layerPath[0]).toMatchObject({
+      layerId: 201, label: "Chat or graph?", icon: icon ?? "messages-square",
+    });
+    expect(controller.viewState.selectedNodeId).toBe(21);
+    expect(controller.getNavigationHistory().canGoBack).toBe(historyBefore.canGoBack);
+    expect(controller.getNavigationHistory().canGoForward).toBe(historyBefore.canGoForward);
+  });
+
   it("keeps accepted product status while rendering its succeeded temporal current", async () => {
     const root = rootLayer(101, 11);
     const turn = { ...interaction(1, 10, root), graphNodeId: 901 };
