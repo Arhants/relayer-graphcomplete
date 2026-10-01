@@ -143,8 +143,12 @@ export async function driveElectronUpdateCanary({
 } = {}) {
   const client = await connect(port, timeoutMs);
   try {
-    await waitForUpdater(client, () => true, timeoutMs);
-    await client.evaluate("window.relayerDesktop.updater.setChannel('preview')");
+    // Native canary profiles save Preview before launch. Let startup discovery
+    // finish before driving a manual check: older seeds can otherwise overwrite
+    // a ready download with their delayed startup check's available event.
+    await waitForUpdater(client, (state) => (
+      state.phase === "available" && state.availableVersion === targetVersion && state.channel === "preview"
+    ), timeoutMs);
     await client.evaluate("window.relayerDesktop.updater.check()");
     await waitForUpdater(client, (state) => (
       state.phase === "available" && state.availableVersion === targetVersion && state.channel === "preview"
@@ -191,6 +195,8 @@ export async function captureInstalledUpdateState({ port, outputPath, targetVers
       state.phase === "idle" && state.version === targetVersion && state.channel === "preview" && state.error == null
     ), timeoutMs);
     await waitForRendererState(client, `(() => {
+      // Updater IPC can be ready while the relaunched page is still navigating.
+      if (!document.body) return null;
       const auth = document.querySelector("#authScreen");
       const shell = document.querySelector("#appShell");
       const settings = document.querySelector("#settingsView");
