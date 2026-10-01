@@ -250,3 +250,45 @@ failure in an outdated fake project response; its correction creates the fixture
 folder and returns the real API's path field. The corrected 28-test suite and the
 subsequent complete check both passed. Earlier failed logs remain diagnostic
 history, not passing proof. Replacement live runs remain separate evidence.
+
+
+## Pre-dispatch control recovery (2026-10-01)
+
+The isolated v5 community trajectory observed “Open pilot runbook” after one
+successful node click, then ended with `unavailable_control` in the action phase.
+This proves rejection at the browser's availability check, not whether the cause
+was DOM replacement, visibility, an overlay, or disabled state. The saved failed
+trajectory remains unchanged.
+
+Changed seams: the browser marks only stale/missing and unavailable-control
+checks before click/fill/select as `actionDispatched: false`. The actor service
+requires that marker and exact error categories before permitting one new AI
+decision after a fresh observation. Fixed feedback describes unavailable UI, not
+evaluator judgment. The old intent is never replayed. An `actor_action_failed`
+event links to its original action/usage and records retry permission; no action
+completion is invented. A successful action clears the consecutive-failure
+limit. Existing action/deadline budgets bound every decision. Unknown browser or
+product-write outcomes remain terminal.
+
+Checkpoint mapping: `test/eval-task-actor.test.mjs` drives the production service
+through both eligible categories, fresh observation and an independent finish;
+repeated failures, the last action slot, and an unconfirmed error remain terminal.
+Existing ambiguous-product-write coverage remains distinct and retained. The
+focused regression was red before the fix (four failures, one passing denial).
+The actor/registry/safe-error suite then passed 58 tests. Existing real-browser
+negative-control checks now require the explicit pre-dispatch marker as well.
+No inference, runtime restart, package build, or live replay was performed for
+this change. The browser's pre-dispatch marker boundary and final full gates
+remain due on the integrated snapshot; active live runs keep their loaded code.
+
+### Integrated control-recovery verification, 2026-10-01
+
+Rebased onto main `ffad82fe10707c7af546d5a6fbe9e9daecb1ad16`, including the runtime policy and authored response navigation updates.
+The full `npm run check` passed: 276 test files, 3,487 tests, plus two separate secret-boundary tests.
+`npm run build` and all 12 `npm run test:eval-web` chapters passed on the integrated executable snapshot.
+The real browser assertions verify that unavailable and forged controls carry the pre-dispatch marker.
+The social-preview capture workflow regenerated the merged renderer receipt and light/dark images; both images were visually inspected.
+Independent reviewer `/root/provider_backend` found no new authority, navigation, or pinned-route blocker.
+Its four-file executable/test digest is `02a0142090f4ddcf2ff1d10db5d5d29873654a85b351a7a3db180b80bd7c4ba9`, using sorted paths, NUL separators, and file bytes.
+That review inspected the mapping and source; it did not independently execute the heavy checks.
+The three interrupted clean runs remain preserved. Their replacement live results are separate evidence, not a deterministic test-suite claim.

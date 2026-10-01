@@ -134,7 +134,7 @@ export async function openTaskActorBrowser({ tasks, sessionId, productSession, b
             if (rebound) { await handle.dispose(); handles.set(action.ref, replacement); handle = rebound; }
             else await replacement.dispose();
           }
-          if (!handle) throw Object.assign(new Error("Actor control is stale or outside the observed workspace."), { code: "actor_control_stale" });
+          if (!handle) throw Object.assign(new Error("Actor control is stale or outside the observed workspace."), { code: "actor_control_stale", actionDispatched: false });
           if (!await handle.evaluate(async (element) => {
             const { isVisibleElement } = await import("/src/review-tools.js");
             let owner = element;
@@ -144,7 +144,7 @@ export async function openTaskActorBrowser({ tasks, sessionId, productSession, b
             const y = Math.max(0, r.top) + Math.min(r.height, window.innerHeight - Math.max(0, r.top)) / 2;
             const hit = element.getRootNode().elementFromPoint?.(x, y);
             return Boolean(owner && isVisibleElement(element) && (hit === element || element.contains(hit)) && !element.disabled && element.getAttribute("aria-disabled") !== "true");
-          })) throw Object.assign(new Error("Actor control is no longer visible or enabled."), { code: "actor_control_unavailable" });
+          })) throw Object.assign(new Error("Actor control is no longer visible or enabled."), { code: "actor_control_unavailable", actionDispatched: false });
           if (action.kind === "click") await handle.click({ timeout: 5000 });
           else if (action.kind === "fill") await handle.fill(action.value, { timeout: 5000 });
           else if (action.kind === "select") await handle.selectOption({ label: action.value }, { timeout: 5000 });

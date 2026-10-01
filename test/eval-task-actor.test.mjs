@@ -11,7 +11,7 @@ import { createHumanTaskSurface } from "../desktop/eval-main/web-host.mjs";
 const cleanups = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); });
 const action = (kind, extra = {}) => ({ kind, ref: "visible", value: "", reason: "", satisfaction: null, comment: "", endpointStatus: "incomplete", remainingWork: "Route undecided", ...extra });
-async function fixture({ decide, maxActions = 8, busy = false, failWrite = false, navigateOnly = false, retry = false, timeoutMs = 900000, planCount = 1, maxCompletions = 2 } = {}) {
+async function fixture({ decide, maxActions = 8, busy = false, failWrite = false, navigateOnly = false, retry = false, timeoutMs = 900000, planCount = 1, maxCompletions = 2, controlErrors = [] } = {}) {
   const directory = await mkdtemp(join(tmpdir(), "task-actor-test-"));
   cleanups.push(() => rm(directory, { recursive: true, force: true }));
   const turns = [{ id: 1, completionStatus: busy ? "running" : retry ? "not_started" : "accepted", ...(retry ? { latestAttempt: { id: 91, outcome: "model_failed" } } : {}) }];
@@ -40,7 +40,7 @@ async function fixture({ decide, maxActions = 8, busy = false, failWrite = false
   let browserSignal;
   const browser = {
     observe: vi.fn(async () => ({ text: turns.length > 1 ? "A trip plan based on your reply" : "Where do you want to go?", controls: [{ ref: "visible", name: "Send" }] })),
-    act: vi.fn(async () => { if (navigateOnly) return; await tasks.write(id, retry ? "/api/threads/1/interactions/1/retry" : "/api/threads/1/interactions", "POST", { text: "Somewhere warm", ...(retry ? { attemptId: 91 } : {}) }, { signal: browserSignal }); }),
+    act: vi.fn(async () => { const controlError = controlErrors.shift(); if (controlError) throw controlError; if (navigateOnly) return; await tasks.write(id, retry ? "/api/threads/1/interactions/1/retry" : "/api/threads/1/interactions", "POST", { text: "Somewhere warm", ...(retry ? { attemptId: 91 } : {}) }, { signal: browserSignal }); }),
     nextStep: vi.fn(),
     close: vi.fn(),
   };
@@ -382,5 +382,38 @@ it("preserves a contradictory finish at the last action slot without extending i
   expect(f.seen).toHaveLength(1);
   expect(task.status).toBe("interrupted");
   expect(task.events.find(event => event.kind === "actor_action_rejected")).toMatchObject({ retryAllowed: false, action: { remainingWork: "Unconfirmed stock" }, usage: { input_tokens: 10 } });
+  expect(f.dispatches).toEqual([]);
+});
+
+
+it.each(["actor_control_unavailable", "actor_control_stale"])("recaptures the workspace after confirmed pre-dispatch %s without replaying the intent", async code => {
+  let decisions = 0;
+  const f = await fixture({ controlErrors: [Object.assign(new Error("private browser details"), { code, actionDispatched: false })], decide: observation => {
+    decisions++;
+    if (decisions === 1) return action("click", { ref: "expired-runbook" });
+    expect(observation.previousActionError).toContain("not executed");
+    expect(observation.previousActionError).not.toContain("private browser details");
+    return action("finish", { reason: "abandoned", satisfaction: 2 });
+  } });
+  await f.done;
+  const task = f.tasks.get(f.id);
+  expect(task.status).toBe("completed");
+  expect(f.browser.observe).toHaveBeenCalledTimes(2);
+  expect(f.browser.act).toHaveBeenCalledTimes(1);
+  const intent = task.events.find(event => event.kind === "actor_action");
+  expect(task.events.find(event => event.kind === "actor_action_failed")).toMatchObject({ actionEventId: intent.id, actionDispatched: false, retryAllowed: true });
+  expect(task.events.some(event => event.kind === "actor_action_completed" && event.actionEventId === intent.id)).toBe(false);
+  expect(f.dispatches).toEqual([]);
+});
+
+it.each(["repeated", "last-slot", "unconfirmed"])("fails closed on %s control failure without extra decisions or product dispatch", async scenario => {
+  const error = () => Object.assign(new Error("private browser details"), { code: "actor_control_unavailable", ...(scenario === "unconfirmed" ? {} : { actionDispatched: false }) });
+  const f = await fixture({ maxActions: scenario === "last-slot" ? 1 : 8, controlErrors: [error(), error()], decide: () => action("click") });
+  await f.done;
+  const task = f.tasks.get(f.id);
+  expect(task.status).toBe("interrupted");
+  expect(f.seen).toHaveLength(scenario === "repeated" ? 2 : 1);
+  expect(task.events.filter(event => event.kind === "actor_action_failed").map(event => event.retryAllowed)).toEqual(scenario === "unconfirmed" ? [] : scenario === "repeated" ? [true, false] : [false]);
+  expect(task.events.filter(event => event.kind === "actor_action_completed")).toEqual([]);
   expect(f.dispatches).toEqual([]);
 });

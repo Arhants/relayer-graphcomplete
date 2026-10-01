@@ -504,7 +504,7 @@ async function proveTaskActor({ browser, service, productSession, data }) {
       const replacementNode = actorPage.locator('.graph-node').filter({ hasText: "Two-worker" });
       const originalLabel = await replacementNode.getAttribute("aria-label");
       await replacementNode.evaluate(element => element.setAttribute("aria-label", "Different meaning"));
-      await assert.rejects(controller.act({ kind: "click", ref: nodeChoice.ref }), /no longer visible/);
+      await assert.rejects(controller.act({ kind: "click", ref: nodeChoice.ref }), { code: "actor_control_unavailable", actionDispatched: false, message: /no longer visible/ });
       await replacementNode.evaluate((element, label) => element.setAttribute("aria-label", label), originalLabel);
       await replacementNode.evaluate(element => { const duplicate = element.cloneNode(true); duplicate.id = "actor-duplicate-node"; element.after(duplicate); });
       await assert.rejects(controller.act({ kind: "click", ref: nodeChoice.ref }), /no longer visible/);
@@ -552,7 +552,7 @@ async function proveTaskActor({ browser, service, productSession, data }) {
       assert.ok(first.controls.every((control) => !control.name.includes("HIDDEN EVALUATOR FEEDBACK")));
       await controller.observe();
       if (first.controls[0]) await assert.rejects(controller.act({ kind: "click", ref: first.controls[0].ref }), /stale/);
-      await assert.rejects(controller.act({ kind: "click", ref: "forged" }), /stale/);
+      await assert.rejects(controller.act({ kind: "click", ref: "forged" }), { code: "actor_control_stale", actionDispatched: false, message: /stale/ });
       await actorPage.locator("#actor-hidden-test").evaluate((element) => element.remove());
       return controller;
     },

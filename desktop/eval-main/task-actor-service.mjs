@@ -92,6 +92,7 @@ export class TaskActorService {
       browser = await this.openBrowser(id, signal);
       let observedSubmission;
       let finishRepairPending = false;
+      let controlRepairPending = false;
       for (let index = 0; index <= task.actor.maxActions; index++) {
         phase = "settle";
         const current = await this.settled(id, signal);
@@ -113,6 +114,7 @@ export class TaskActorService {
         }
         observation.availableActions = [...actionSchema.properties.kind.enum];
         if (finishRepairPending) observation.previousActionError = "Your previous finish decision was rejected before execution. Reconsider using the visible evidence. endpoint_reached requires endpointStatus reached and empty remainingWork. If work remains, report incomplete or uncertain with satisfied or abandoned. Do not erase unfinished work merely to satisfy the format.";
+        else if (controlRepairPending) observation.previousActionError = "Your previous control action was not executed because its observed control was no longer available. Choose a new action from this fresh workspace observation; do not reuse an old reference.";
         observedSubmission = submission?.id;
         const observed = await this.tasks.actorEvent(id, "actor_observation", { observation, actionSchema });
         signal.throwIfAborted();
@@ -150,7 +152,22 @@ export class TaskActorService {
         }
         phase = "act";
         if (action.kind === "next_step") { await this.tasks.nextStep(id, { signal }); signal.throwIfAborted(); await browser.nextStep(); }
-        else await browser.act(action);
+        else {
+          try { await browser.act(action); }
+          catch (error) {
+            // Only the browser's own checks before click/fill/select certify no
+            // dispatch. Playwright failures and product-write errors are ambiguous.
+            if (!["click", "fill", "select"].includes(action.kind) || error.actionDispatched !== false
+              || !["actor_control_stale", "actor_control_unavailable"].includes(error.code)) throw error;
+            const retryAllowed = !controlRepairPending && index + 1 < task.actor.maxActions;
+            await this.tasks.actorEvent(id, "actor_action_failed", { actionEventId: intent.id, actionDispatched: false,
+              category: actorFailure(error).category, retryAllowed, message: "Observed control unavailable before dispatch. No action was executed." });
+            if (!retryAllowed) throw error;
+            controlRepairPending = true;
+            continue;
+          }
+        }
+        controlRepairPending = false;
         await this.tasks.actorEvent(id, "actor_action_completed", { actionEventId: intent.id });
       }
 
