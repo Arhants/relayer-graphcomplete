@@ -16,10 +16,10 @@ describe("managed runtime requirements", () => {
       "codex.basic": { runtimeId: "codex", recipeId: RELEASE_MANAGED_RUNTIME_RECIPES.codex },
       "prime.agent": { runtimeId: "prime", recipeId: "prime@0.8.1" },
     });
-    expect(managedRuntimeRequirementForAdapter("anthropic-api")).toEqual({ runtimeId: "claude", recipeId: "claude@0.3.250" });
-    expect(managedRuntimeRequirementForAdapter("claude-subscription")).toEqual({ runtimeId: "claude", recipeId: "claude@0.3.250" });
+    expect(managedRuntimeRequirementForAdapter("anthropic-api")).toEqual({ runtimeId: "claude", recipeId: "claude@0.3.286" });
+    expect(managedRuntimeRequirementForAdapter("claude-subscription")).toEqual({ runtimeId: "claude", recipeId: "claude@0.3.286" });
     for (const adapterId of ["codex-subscription", "openai-api", "openrouter", "vercel-ai-router"]) {
-      expect(managedRuntimeRequirementForAdapter(adapterId)).toEqual({ runtimeId: "codex", recipeId: "codex@0.147.0" });
+      expect(managedRuntimeRequirementForAdapter(adapterId)).toEqual({ runtimeId: "codex", recipeId: "codex@0.159.3" });
     }
   });
 
@@ -30,8 +30,8 @@ describe("managed runtime requirements", () => {
       { adapterId: "anthropic-api", lifecycleState: "active" },
       { adapterId: "claude-subscription", lifecycleState: "tombstoned" },
     ])).toEqual([
-      { runtimeId: "claude", recipeId: "claude@0.3.250" },
-      { runtimeId: "codex", recipeId: "codex@0.147.0" },
+      { runtimeId: "claude", recipeId: "claude@0.3.286" },
+      { runtimeId: "codex", recipeId: "codex@0.159.3" },
     ]);
   });
 

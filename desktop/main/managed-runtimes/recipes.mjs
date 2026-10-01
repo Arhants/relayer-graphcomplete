@@ -6,51 +6,51 @@ import { PRIME_WHEEL_MANIFEST as PRIME_WHEELS } from "./prime-wheels.mjs";
 const CLAUDE_SDK = Object.freeze({
   role: "sdk",
   package: "@anthropic-ai/claude-agent-sdk",
-  version: "0.3.250",
-  tarball: "https://registry.npmjs.org/@anthropic-ai/claude-agent-sdk/-/claude-agent-sdk-0.3.250.tgz",
-  integrity: "sha512-qT/1cBZs0+xPsQfqVOnwIk6pNW8XBkTpQS5RAXKHYb2XYCKqYc0UmOaeiYU2WeI6HEZKORa5iCaAZyKWGluShw==",
+  version: "0.3.286",
+  tarball: "https://registry.npmjs.org/@anthropic-ai/claude-agent-sdk/-/claude-agent-sdk-0.3.286.tgz",
+  integrity: "sha512-InL/UNmRGSwBM/81PME0J0TZDsDBBlweWqRZgq2XSViSIg2hBi8nIL8j9Hm6MHRH85wgDJQE5n6Vo/r9hIO0NQ==",
 });
 
 const CLAUDE_NATIVE = Object.freeze({
   "macos-arm64": Object.freeze({
     package: "@anthropic-ai/claude-agent-sdk-darwin-arm64",
-    tarball: "https://registry.npmjs.org/@anthropic-ai/claude-agent-sdk-darwin-arm64/-/claude-agent-sdk-darwin-arm64-0.3.250.tgz",
-    integrity: "sha512-tcekW4gR2UH0Q3COBaNPQIdud2lKEbs0HfG2yNKC18hXFPpgbuLCdjq0ndS1lcvC1q8ncPW3oQPUutQt3StICQ==",
+    tarball: "https://registry.npmjs.org/@anthropic-ai/claude-agent-sdk-darwin-arm64/-/claude-agent-sdk-darwin-arm64-0.3.286.tgz",
+    integrity: "sha512-gkxWcJ+Z23UxwghI1V3dL09PkELIZmB2vPelR8XsdfhS+yP1KvoW7FThvRLojcxXb3fj0ddYawjQSQYIkXFbxw==",
     executable: "claude",
   }),
   "macos-x64": Object.freeze({
     package: "@anthropic-ai/claude-agent-sdk-darwin-x64",
-    tarball: "https://registry.npmjs.org/@anthropic-ai/claude-agent-sdk-darwin-x64/-/claude-agent-sdk-darwin-x64-0.3.250.tgz",
-    integrity: "sha512-8Yxmmi76oVEIam+oRgxcL2RtqEkKX9Gp4rh500HmMltjX3Tk/ryjCoJEHoaUdU/LU6vWvfQU5W+dB/SJCQQb2A==",
+    tarball: "https://registry.npmjs.org/@anthropic-ai/claude-agent-sdk-darwin-x64/-/claude-agent-sdk-darwin-x64-0.3.286.tgz",
+    integrity: "sha512-eMdni7sy1ud2IISI4QSsfVBCxotzSe62zCGdXISejL9MxDIwcRgEGZpO5OV+j7t8mNGMTe6Opl1t/3Z/1RUJaQ==",
     executable: "claude",
   }),
   "windows-x64": Object.freeze({
     package: "@anthropic-ai/claude-agent-sdk-win32-x64",
-    tarball: "https://registry.npmjs.org/@anthropic-ai/claude-agent-sdk-win32-x64/-/claude-agent-sdk-win32-x64-0.3.250.tgz",
-    integrity: "sha512-PjJRbJwDHccSUWls5gTiuXMgERit1WrrMQzzRqhhBHGzrlQueHVodrpg7HaN5gtirADJzfINcc7azq8j3qcEYw==",
+    tarball: "https://registry.npmjs.org/@anthropic-ai/claude-agent-sdk-win32-x64/-/claude-agent-sdk-win32-x64-0.3.286.tgz",
+    integrity: "sha512-pg35GRPBKyviod0i8Z3EVMzDnTiiiucuWUbyH1bVIFFN0UWCQQ+PRUJ15qrPKjL6+vlFxOX2ei9FfsWYjGYZwA==",
     executable: "claude.exe",
   }),
 });
 
 const CODEX_NATIVE = Object.freeze({
   "macos-arm64": Object.freeze({
-    version: "0.147.0-darwin-arm64",
-    tarball: "https://registry.npmjs.org/@openai/codex/-/codex-0.147.0-darwin-arm64.tgz",
-    integrity: "sha512-BEUVkiOW7kLcRyrMLfAr/h9wF8sRVJyZDy6OHtVn6QGDXiv3BvAZVTY1Pu9xF7KdIdkYXbp4uayN0aDQQaAUJw==",
+    version: "0.159.3-darwin-arm64",
+    tarball: "https://registry.npmjs.org/@openai/codex/-/codex-0.159.3-darwin-arm64.tgz",
+    integrity: "sha512-aI4UY14YURYxJxnRK+AE4QU+aek0mgtyyo7Rw9rNbCQUYETRQ0NYdJzU9ytljERGpPlht3dHHI1u4NhqHoDJDQ==",
     vendor: "aarch64-apple-darwin",
     executable: "codex",
   }),
   "macos-x64": Object.freeze({
-    version: "0.147.0-darwin-x64",
-    tarball: "https://registry.npmjs.org/@openai/codex/-/codex-0.147.0-darwin-x64.tgz",
-    integrity: "sha512-Tb8McE5SvJIH0Vs5R6sq7u+quiC931yan2KOOl6km1OdZ82+Wi7eF5XrSFPs5CF7xCgoIK4Vs+byMbT5hN+ZUw==",
+    version: "0.159.3-darwin-x64",
+    tarball: "https://registry.npmjs.org/@openai/codex/-/codex-0.159.3-darwin-x64.tgz",
+    integrity: "sha512-KTOQOD184DMXpR3TqnDUnLsgad14WJn+x3XmjBaXRHchKYGttjREwqrwzC61xQYFeh6VkogAceybR+SMbbgvYQ==",
     vendor: "x86_64-apple-darwin",
     executable: "codex",
   }),
   "windows-x64": Object.freeze({
-    version: "0.147.0-win32-x64",
-    tarball: "https://registry.npmjs.org/@openai/codex/-/codex-0.147.0-win32-x64.tgz",
-    integrity: "sha512-oT7Ss5fAPf2fiWE9QNURqZcQGAAawSVxmIUdgPzckq4KFZAM+pRz9JbM4Rr498CjtbNgTOjWvDJ+DXvIBSfOPA==",
+    version: "0.159.3-win32-x64",
+    tarball: "https://registry.npmjs.org/@openai/codex/-/codex-0.159.3-win32-x64.tgz",
+    integrity: "sha512-h8w5nslfQyoYbonZaRlLwvPKFS9Mcxz5vUeCeoHKF5SsZUP9jSBH7hxUdc8RWJffJtfbV2qxdnImVAj9zy2fwA==",
     vendor: "x86_64-pc-windows-msvc",
     executable: "codex.exe",
   }),
@@ -70,9 +70,9 @@ function claudeRecipe(target) {
   if (!native) return null;
   return seal({
     schemaVersion: 1,
-    recipeId: "claude@0.3.250",
+    recipeId: "claude@0.3.286",
     runtimeId: "claude",
-    version: "0.3.250",
+    version: "0.3.286",
     target,
     assembler: "npm-archives-v1",
     readinessContractVersion: 1,
@@ -81,7 +81,7 @@ function claudeRecipe(target) {
     artifacts: [CLAUDE_SDK, {
       role: "native",
       package: native.package,
-      version: "0.3.250",
+      version: "0.3.286",
       tarball: native.tarball,
       integrity: native.integrity,
     }],
@@ -93,9 +93,9 @@ function codexRecipe(target) {
   if (!native) return null;
   return seal({
     schemaVersion: 1,
-    recipeId: "codex@0.147.0",
+    recipeId: "codex@0.159.3",
     runtimeId: "codex",
-    version: "0.147.0",
+    version: "0.159.3",
     target,
     assembler: "npm-archives-v1",
     readinessContractVersion: 1,
@@ -189,9 +189,9 @@ function primeRecipe(target) {
 }
 
 export function resolveManagedRuntimeRecipe(recipeId, target) {
-  const recipe = recipeId === "claude@0.3.250"
+  const recipe = recipeId === "claude@0.3.286"
     ? claudeRecipe(target)
-    : recipeId === "codex@0.147.0"
+    : recipeId === "codex@0.159.3"
       ? codexRecipe(target)
       : recipeId === "prime@0.8.1"
         ? primeRecipe(target)
