@@ -275,8 +275,12 @@ acceleration, never evidence.
 
 Vitest worker policy lives in `vitest.config.js`, not in the chapter
 runner: the isolated project runs with file-level workers and the
-process-bound files run one at a time after it. The chapter must not pin
-`--maxWorkers`, and a deterministic test enforces that. The same file sets
+process-bound files run one at a time after it.
+Native Mach-O closure sealing and calibration Git/npm verifier journeys belong
+to that process-bound group: their existing test bounds pass when isolated but
+can expire under portfolio-wide subprocess contention. Their assertions and
+timeout bounds remain unchanged. The chapter must not pin `--maxWorkers`, and a
+deterministic test enforces that. The same file sets
 the portfolio-wide 15 s per-test timeout: tests that spawn the Rust runtime
 or a harness host regularly exceed Vitest's 5 s default once three workers
 share the 4-vCPU runner, and a test that needs longer still sets its own. Sharding the

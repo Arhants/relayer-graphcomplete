@@ -14,6 +14,10 @@ import { registerComposerDraftIpc, registerLayerSelectionIpc, registerWorktreeIp
 import { createWorktreeService } from "../desktop/main/services/worktree-service.mjs";
 import { createWindowFactory } from "../desktop/main/window.mjs";
 
+import { createProjectSidebarDemoVideo } from "./project-sidebar-demo-video.mjs";
+
+const demoVideo = process.env.RELAYER_PROJECT_SIDEBAR_VIDEO ? createProjectSidebarDemoVideo(resolve(process.env.RELAYER_PROJECT_SIDEBAR_VIDEO)) : null;
+
 const repositoryRoot = resolve(import.meta.dirname, "..");
 const dataDirectory = mkdtempSync(join(tmpdir(), "relayer-project-new-thread-"));
 const evidenceDirectory = process.env.RELAYER_PROJECT_NEW_THREAD_EVIDENCE_DIR
@@ -502,9 +506,20 @@ async function run() {
   await waitFor("keyboard project collapse", () => evaluate(`document.querySelector('[data-project-toggle="${project.id}"]')?.getAttribute('aria-expanded') === 'false'`));
   if (!await evaluate(`import('./src/state.js').then(m => String(m.viewState.currentThreadId) === '${firstThread.id}' && !document.querySelector('#threadView').classList.contains('hidden') && !document.querySelector('#project-threads-${project.id}').checkVisibility())`)) throw new Error("Collapsing the active project changed its open chat or left the chat list visible.");
   evidence.collapsedProject = await captureEvidence("04-collapsed-project");
+  if (demoVideo) {
+    await demoVideo.scene(webContents, "Collapse a project; the current chat stays open");
+    await demoVideo.scene(webContents, "Expand the project to reveal its chats", () => click(`[data-project-toggle="${project.id}"]`));
+    await demoVideo.scene(webContents, "Collapse it again without leaving the chat", () => click(`[data-project-toggle="${project.id}"]`));
+  }
   await clickProjectAction(project.id);
   await waitFor("real compose action expands collapsed project", () => evaluate(`document.querySelector('[data-project-toggle="${project.id}"]')?.getAttribute('aria-expanded') === 'true' && !document.querySelector('#newThreadView').classList.contains('hidden')`));
+  if (demoVideo) await demoVideo.scene(webContents, "Compose independently: New Thread opens in this project");
   await click(`[data-thread="${firstThread.id}"]`);
+  if (demoVideo) {
+    await demoVideo.scene(webContents, "The whole sidebar can still collapse into its icon rail", () => click("#collapseSidebar"));
+    await demoVideo.scene(webContents, "Select a project icon to reopen the sidebar", () => click(`[data-project-toggle="${project.id}"]`));
+    if (await evaluate("document.body.classList.contains('sidebar-collapsed')")) throw new Error("Demo rail project selection did not expand the sidebar.");
+  }
 
   const followupPrompt = "Keep this unsent follow-up with the saved thread.";
   await waitFor("the saved-thread composer", () => evaluate(`(
@@ -598,9 +613,11 @@ async function run() {
       && document.querySelector('#scopeLabel')?.textContent === ${JSON.stringify(project.name)}
   )`));
   await waitFor("collapsed project after changed-origin restart", () => evaluate(`document.querySelector('[data-project-toggle="${project.id}"]')?.getAttribute('aria-expanded') === 'false'`));
+  if (demoVideo) await demoVideo.scene(webContents, "Collapsed preference survives renderer and server restart");
   // Explicit load uses the real navigation seam even while its sidebar entry is hidden.
   await evaluate(`import('./src/threads.js').then(m => m.loadThread(${JSON.stringify(firstThread.id)}))`);
   await waitFor("explicit navigation expands restored project", () => evaluate(`document.querySelector('[data-project-toggle="${project.id}"]')?.getAttribute('aria-expanded') === 'true'`));
+  if (demoVideo) await demoVideo.scene(webContents, "Explicit chat navigation expands its project again");
   await waitFor("the remembered detail after restart on a different origin", () => evaluate(`(
     document.querySelector('.graph-node.selected')?.dataset.node === ${JSON.stringify(rememberedNodeId)}
       && !document.querySelector('#inspector')?.classList.contains('hidden')
@@ -731,6 +748,7 @@ async function run() {
     throw new Error("A restored pending draft was replaced by automatic onboarding.");
   }
 
+  if (demoVideo) await demoVideo.finish();
   process.stdout.write(`RELAYER_PROJECT_NEW_THREAD ${JSON.stringify({
     passed: true,
     projectId: project.id,

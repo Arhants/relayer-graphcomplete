@@ -1,3 +1,5 @@
+import { Window } from "happy-dom";
+import { designCss } from "../scripts/design/build.mjs";
 import { readFile } from "node:fs/promises";
 import { describe, expect, it, vi } from "vitest";
 import { initializeSidebar } from "../desktop/renderer/src/sidebar.js";
@@ -69,6 +71,26 @@ describe("responsive sidebar", () => {
     expect(css).toContain(".new-thread-view{grid-template-columns:minmax(0,1fr)}");
     expect(css).toContain(".new-thread-center{width:min(720px,calc(100% - 48px));max-width:none}");
     expect(css).not.toContain(".shell-navigation");
+    // ACC-008: render the real colour-token generator with the production layout
+    // stylesheet. Light mode's more specific palette selector must not replace width.
+    const design = JSON.parse(await readFile(new URL("../designs/h-sticker-cocoa.json", import.meta.url), "utf8"));
+    const layout = css.replace('@import url("./design/design.css");', "");
+    for (const theme of ["dark", "light"]) {
+      for (const [width, expanded] of [[1280, "244px"]]) {
+        const owner = new Window({ width });
+        owner.document.documentElement.dataset.theme = theme;
+        owner.document.head.innerHTML = `<style>${designCss(design, "sidebar-regression")}${layout}</style>`;
+        owner.document.body.innerHTML = '<aside class="sidebar"></aside>';
+        const sidebar = owner.document.querySelector(".sidebar");
+        expect(owner.getComputedStyle(sidebar).width).toBe(expanded);
+        owner.document.body.classList.add("sidebar-collapsed");
+        expect(owner.getComputedStyle(sidebar).width).toBe("58px");
+        owner.happyDOM.abort();
+      }
+    }
+    // Popups consume the same dimension, keeping controls beside the sidebar.
+    expect(css).toContain("left:calc(var(--sidebar-width) + 8px)");
+    expect(css).toContain("max-width:calc(100vw - var(--sidebar-width) - 16px)");
     expect(main).toContain("initializeSidebar({");
     expect(account).not.toContain("additionalAccountButtons");
   });
