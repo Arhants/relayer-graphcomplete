@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "sourceCommit": "b3bede6c216c079deee7e5e9118d7c820e7ddfca",
+  "sourceCommit": "b010d7204f95ba10c86cf341497435a93dec8532",
   "sourceFiles": {
     "desktop/renderer/index.html": "775e004390131b7a1115813ed9f01cedbe9f463e37d0d2248bea08636b114cc1",
     "desktop/renderer/styles.css": "5c4cced34bfef9e730b02b9171ddfcc0e325d8e4fc71dc83bf29347753def754",
@@ -20,8 +20,8 @@
     "scripts/capture-thread-archive-evidence.mjs": "270ced5d2c71a8d580ca281157254c1776258d0d4038cd636b52c5c62bf16d6c"
   },
   "workspaceDigest": "5e2478f88d18f66752777a1467bac142c618d9f8d62f8b60df4bf844c7aa9988",
-  "binarySha256": "c62b655969fd6f84ebb976d11b2ad113704fac9edacc43fe44b3df4cd6c4ea9b",
-  "videoSha256": "a4406ab40de57ff40ea4b48ad0add9e594f351925f25e9c77423462a1ec52e7e",
+  "binarySha256": "34978013267304b0dbb150ac94b36ec06622e3c9bb22ae509c786e08e9bd2ae4",
+  "videoSha256": "55a6a5f229b96c0d99430b05f3cec54df3d10679c578fd4fb47ba98a6e948158",
   "checkpoints": [
     {
       "name": "direct-rightmost-trashcan",

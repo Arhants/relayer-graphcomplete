@@ -7,7 +7,7 @@
     "sha256": "b05db96cb2d008e213b3bc6e3398b958f4670ed919547329a607be8f0dc7d865"
   },
   "source": {
-    "commit": "b3bede6c216c079deee7e5e9118d7c820e7ddfca",
+    "commit": "b010d7204f95ba10c86cf341497435a93dec8532",
     "dirty": true,
     "sourceFiles": {
       "desktop/renderer/assets/relayer-logo.svg": {
@@ -151,8 +151,8 @@
         "sha256": "c6f03f10e2c73fd0b1f99f17ea2aad98cda452403fab0ef8357e83dd0a588db0"
       },
       "desktop/renderer/src/public-share-viewer/snapshot.js": {
-        "bytes": 55244,
-        "sha256": "9cd3d5d15d051f6c5012ffeb0043cd39a5f600867211cdab290927512502fd71"
+        "bytes": 55251,
+        "sha256": "13e2816d8eef3e5d1c7d9aabcc80d14b62f12ca39ce00d98c3358fb987065930"
       },
       "desktop/renderer/src/public-share-viewer/template.js": {
         "bytes": 7258,
@@ -190,7 +190,7 @@
   },
   "browser": {
     "electron": "43.0.0",
-    "origin": "http://127.0.0.1:57768",
+    "origin": "http://127.0.0.1:58274",
     "networkRequests": [],
     "unchangedUrl": true,
     "paidInferenceCalls": 0,

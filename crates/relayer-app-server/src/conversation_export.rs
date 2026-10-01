@@ -2549,10 +2549,9 @@ fn validate_accepted_view(
                     ));
                 }
                 let relation = action.relation.expect("validated navigate relation");
-                let root_backlink = export_version == EXPORT_VERSION_V3
-                    && target == view.root_layer_id
-                    && relation == ExportNavigateRelation::Reference;
-                if !root_backlink
+                // V3 resolves accepted invocations across completions. A later
+                // completion can reference any layer expanded by an earlier one.
+                if export_version != EXPORT_VERSION_V3
                     && let Some(existing) = target_relations.insert(target, relation)
                     && existing != relation
                 {
@@ -2579,7 +2578,11 @@ fn validate_accepted_view(
             ),
         ));
     }
-    if has_cycle(view.root_layer_id.as_str(), &expand_adjacency) {
+    if has_cycle(
+        view.root_layer_id.as_str(),
+        &expand_adjacency,
+        export_version == EXPORT_VERSION_V3,
+    ) {
         return Err(ExportValidationError::new(
             "expand_cycle",
             format!("{path}.layers"),
@@ -3059,7 +3062,11 @@ fn is_connected(node_ids: &[String], edges: &[ExportEdge]) -> bool {
     visited.len() == node_ids.len()
 }
 
-fn has_cycle<'a>(root: &'a str, adjacency: &HashMap<&'a str, Vec<&'a str>>) -> bool {
+fn has_cycle<'a>(
+    root: &'a str,
+    adjacency: &HashMap<&'a str, Vec<&'a str>>,
+    all_components: bool,
+) -> bool {
     fn visit<'a>(
         node: &'a str,
         adjacency: &HashMap<&'a str, Vec<&'a str>>,
@@ -3081,5 +3088,11 @@ fn has_cycle<'a>(root: &'a str, adjacency: &HashMap<&'a str, Vec<&'a str>>) -> b
         visiting.remove(node);
         cyclic
     }
-    visit(root, adjacency, &mut HashSet::new(), &mut HashSet::new())
+    let mut visiting = HashSet::new();
+    let mut visited = HashSet::new();
+    visit(root, adjacency, &mut visiting, &mut visited)
+        || (all_components
+            && adjacency
+                .keys()
+                .any(|node| visit(node, adjacency, &mut visiting, &mut visited)))
 }
