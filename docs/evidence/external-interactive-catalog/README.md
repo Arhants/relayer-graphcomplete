@@ -83,3 +83,65 @@ not a palette or product-rule change. The smallest checkpoint is the existing
 Adversarial review by `/root/eval_facts` found no assertion weakening or resource
 cleanup gaps in diff SHA-256
 `b935cb2f952f632172990ab63c727efba6a619605163d3158a144c36bc3d0393`.
+
+## Whole-stack integration gate (2026-09-30)
+
+The stack is rebased on main `fa9ecb01`, with actor repairs and refreshed renderer
+capture evidence from #608 and immutable calibration repairs from #628.
+The design-check transport fix now lives in the actor dependency.
+
+Additional changed seams and checkpoints:
+
+| Seam | Product promise / failure boundary | Deterministic checkpoint |
+| --- | --- | --- |
+| External human preparation | Cancellation during credential/catalog/materialization work permits no late product dispatch | eval-service-live-authorization stalled callback scenarios |
+| External thread/grading callbacks | Stop releases noncooperative callbacks; late results cannot launch a thread or capture a grade | eval-service-live-authorization thread and grade cancellation scenarios |
+| Follow-up admission | A stalled catalog check does not hold the session queue or consume a completion after cancellation | eval-human-task stopped catalog-check scenario |
+| Frozen external calibration | Different catalog code cannot stand in for the frozen catalog despite identical case/harness/model descriptors | eval-setup-registry new and legacy frozen-set reopen, pre-dispatch rejection and observation rejection |
+| Legacy evidence | Missing identity projection is recovered from sealed evidence without rewriting frozen sets | Same legacy-set reopen scenario |
+
+Actor startup cancellation, v3 visible-label selection, screenshot artifacts,
+terminal observations and endpoint-at-budget tests remain in the inherited
+portfolio. Human-create form retains startup cancellation, revision selection
+and case-bound subscription consent. Inference is not used by these tests.
+
+Reviewer `/root/slice1_authority` reviewed HEAD
+`ca3cbe4421ddc1bd189c567bab4ebbb17d13ec1f` plus six dirty files:
+`desktop/eval-main/calibration-service.mjs`, `desktop/eval-main/eval-service.mjs`,
+`desktop/eval-main/human-task-service.mjs`, `test/eval-human-task.test.mjs`,
+`test/eval-service-live-authorization.test.mjs`, and
+`test/eval-setup-registry.test.mjs`.
+Sorted path + NUL + hexadecimal SHA256 + LF manifest SHA256:
+`818d86f0652f500e292890697254aef85788c12aa0f17533b5e9d1f3741d2bcf`.
+Verdict: catalog provenance blocker resolved; no remaining finding in the
+reviewed cancellation, subscription consent, frozen identity and model-route
+scope. Reviewer independently ran 14 setup/calibration tests. This does not
+certify the separate full-stack gates or live inference.
+
+The earlier focused run passed 64 tests. The two new provenance tests initially
+expected the raw service error through the actor's intentional error redaction;
+they now observe the actual task-admission seam and exact raw rejection.
+All fourteen setup tests then passed. The final full `npm run check` passed:
+3,459 Vitest tests, two secret-boundary tests, 66 Python tests, native workspace
+and crash-recovery suites, type checks, receipts and PRD readability. Three
+Vitest tests and one file remain skipped by the existing portfolio. Build passed.
+All twelve browser chapters passed, including the integrated external human
+lifecycle and retained actor/calibration flows. All four compiled-runtime tests
+passed. These gates ran against the reviewed source bytes above; only this
+result report changed afterward. No merge is authorized until the user's
+whole-stack human gate is complete.
+
+The human gate uses private copies of the successfully built native binaries:
+app-server SHA256 `c333eea7da8a14151b9eac3d3c5143bc70f378e128b157eafdd742bf3ce9efeb`,
+graph-server SHA256 `d8e03edcdda070914c0bdb53b8fd9c8d8cad45abf5cbc0ff95be7eac09d4a559`.
+The existing profile's databases and Eval records were backed up after graceful
+shutdown. Authentication, historical setup revisions and trajectories are kept.
+The gate starts no paid inference and performs no setup promotion.
+
+Independent restack reviewer `/root/eval_facts` found no remaining blocker in
+SDK privacy projections, matrix denial, startup Cancel/revision/consent UI,
+external callback cancellation, late materializer dispatch and frozen catalog
+identity. Same HEAD and six-file scope; its sorted path + NUL + raw SHA256
+manifest digest is `c5eb8cdba95e2a53d7bb38525a9f87cf8e556c5d4b50fb6489678980c178dcc3`.
+The different digest format identifies the same reviewed bytes. This was a
+source review, not an independent browser or live-inference run.

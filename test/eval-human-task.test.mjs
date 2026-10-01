@@ -439,3 +439,19 @@ it("rejects external catalog drift before admitting a follow-up completion", asy
   expect(tasks.get(session.id).completions).toBe(before);
   expect(calls.some(call => call.method === "POST" && call.path.endsWith("/interactions"))).toBe(false);
 });
+
+it("Stop releases a stalled external catalog check before follow-up admission", async () => {
+  const f = await fixture();
+  let entered, release;
+  const started = new Promise(resolve => { entered = resolve; });
+  f.tasks.evalService.assertHumanTaskCatalog = () => { entered(); return new Promise(resolve => { release = resolve; }); };
+  const controller = new AbortController();
+  const before = f.tasks.get(f.session.id).completions;
+  const pending = f.tasks.write(f.session.id, "/api/threads/1/interactions", "POST", { text: "Refine" }, { signal: controller.signal });
+  const rejected = expect(pending).rejects.toMatchObject({ name: "AbortError" });
+  await started; controller.abort(); await rejected;
+  await f.tasks.grade(f.session.id, { satisfaction: 2, comment: "Queue released" });
+  release(); await new Promise(resolve => setImmediate(resolve));
+  expect(f.tasks.get(f.session.id).completions).toBe(before);
+  expect(f.calls.some(call => call.method === "POST")).toBe(false);
+});

@@ -2462,7 +2462,8 @@ export class EvalService {
     return { ...executed, threadDefinition: null, workspaceChecks: new Map() };
   }
 
-  async prepareHumanTask({ testCaseId, harnessConfigurationName, sessionId, maxCompletions, endpoint, mode = "human", liveAuthorization }) {
+  async prepareHumanTask({ testCaseId, harnessConfigurationName, sessionId, maxCompletions, endpoint, mode = "human", liveAuthorization }, { signal } = {}) {
+    signal?.throwIfAborted();
     const external = this.externalCases.get(testCaseId);
     const definition = this.cases.find((item) => item.id === testCaseId);
     const configuration = this.configurations.get(harnessConfigurationName);
@@ -2472,7 +2473,7 @@ export class EvalService {
     }
     const interactive = external?.boundCase.snapshot.interactive;
     if (external) {
-      await this.externalCatalog.assertUnchanged();
+      await abortable(signal, () => this.externalCatalog.assertUnchanged());
       if (!external.available) throw new Error(external.unavailableReason || "External case unavailable.");
       if (interactive && (endpoint !== interactive.endpoint || maxCompletions > interactive.maxCompletions)) throw new Error("Interactive task endpoint or completion limit differs from its case contract.");
     }
@@ -2496,7 +2497,7 @@ export class EvalService {
       }
       if (live) {
         if (typeof this.validateLiveCredential !== "function") throw new Error("External interactive task has no trusted credential validator.");
-        const route = await this.validateLiveCredential(configuration, "connected-product-provider");
+        const route = await abortable(signal, () => this.validateLiveCredential(configuration, "connected-product-provider"));
         if (route?.providerAdapterId !== "codex-subscription") throw new Error("External interactive tasks currently require the Codex subscription; API spending is not authorized.");
         const selected = route.selectedModel;
         const productRoute = route.productModelSelection === true
@@ -2506,7 +2507,7 @@ export class EvalService {
           && configuration.implementation === "codex.basic"
           && typeof configuration.settings?.model === "string" && configuration.settings.model.trim() !== ""
           && route.configurationModel === configuration.settings.model.trim()
-          && harnessUsesConfigurationModel(await this.#productRequest("/api/model-settings"), harnessConfigurationName);
+          && harnessUsesConfigurationModel(await abortable(signal, () => this.#productRequest("/api/model-settings", { signal })), harnessConfigurationName);
         if (!productRoute && !configuredRoute) throw new Error("External interactive task did not resolve an exact provider model route.");
         execution.pinnedModelResolution = copy(route);
       }
@@ -2514,7 +2515,7 @@ export class EvalService {
     let plan;
     if (this.projectCaseIds.has(testCaseId)) {
       if (!external && this.platform !== "darwin") throw new Error("Pinned project cases are local Mac only.");
-      await this.#prepareProjectFixture(execution, definition);
+      await abortable(signal, () => this.#prepareProjectFixture(execution, definition, { signal }));
       plan = definition.threads.map((item) => ({
         ...copy(item), permissionProfileId: resolveH3PermissionProfile(configuration, item.permissionProfileId).effectiveProfileId,
       }));
@@ -2535,7 +2536,7 @@ export class EvalService {
   }
 
   async createHumanTaskThread(prepared, step, { signal } = {}) {
-    await this.assertHumanTaskCatalog(prepared);
+    await abortable(signal, () => this.assertHumanTaskCatalog(prepared));
     const item = prepared.plan[step];
     if (!item) throw new Error("Unknown case step.");
     // A session's first route owns every case thread, including persisted sessions
@@ -2577,7 +2578,8 @@ export class EvalService {
     }
   }
 
-  async #prepareProjectFixture(execution, definition) {
+  async #prepareProjectFixture(execution, definition, { signal } = {}) {
+    signal?.throwIfAborted();
     const executionDirectory = join(
       dirname(this.stateFile),
       "runs",
@@ -2588,7 +2590,7 @@ export class EvalService {
     const workspaceDirectory = join(executionDirectory, "workspace");
     const external = this.externalCases.get(definition.id);
     if (external) {
-      await this.externalCatalog.assertUnchanged();
+      await abortable(signal, () => this.externalCatalog.assertUnchanged());
       if (canonicalJson(execution.catalogIdentity) !== canonicalJson(this.externalCatalog.identity)) {
         throw new Error("External Eval catalog identity changed after run creation.");
       }
@@ -2619,8 +2621,10 @@ export class EvalService {
         workspaceDirectory,
         platform: this.platform,
       });
+    signal?.throwIfAborted();
     validateFixtureAgainstCaseSnapshot(execution, fixture);
     const project = await this.#productRequest("/api/projects", {
+      signal,
       method: "POST",
       body: {
         name: `${definition.name} · ${execution.id.slice(0, 8)}`,

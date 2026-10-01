@@ -137,7 +137,8 @@ export class HumanTaskService {
         if (selection.calibrationCandidate) {
           const expected = selection.calibrationCandidate.identity;
           const execution = session.prepared.execution;
-          if (expected.endpoint !== session.endpoint || expected.maxCompletions !== session.maxCompletions
+          if (!isDeepStrictEqual(expected.catalogIdentity ?? null, execution.catalogIdentity ?? null)
+            || expected.endpoint !== session.endpoint || expected.maxCompletions !== session.maxCompletions
             || expected.testCaseId !== execution.testCaseId || expected.casePlanDigest !== session.prepared.casePlanDigest
             || expected.harnessConfigurationDigest !== execution.harnessConfigurationDigest) throw failure("Calibration case or harness changed. Freeze a new comparison before starting inference.");
           const routeIdentity = ({ selectedModel = null, productModelSelection, configurationModel }) => ({ selectedModel, productModelSelection, configurationModel });
@@ -234,7 +235,7 @@ export class HumanTaskService {
       const previousCompletions = session.completions;
       const previousEventCount = session.events.length;
       if (starts) {
-        await this.evalService.assertHumanTaskCatalog?.(session.prepared);
+        await abortable(signal, () => this.evalService.assertHumanTaskCatalog?.(session.prepared));
         if (session.completions >= session.maxCompletions) throw failure("Completion limit reached. Finish this task session.", 409);
         if (route === "/interactions" || retries) {
           const selection = session.prepared.execution.modelResolution;

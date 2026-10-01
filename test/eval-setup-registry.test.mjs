@@ -4,7 +4,7 @@ import { stringify, parse } from "yaml";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
-import { SetupRegistry, defaultActorSetup } from "../desktop/eval-main/setup-registry.mjs";
+import { SetupRegistry, defaultActorSetup, setupDigest } from "../desktop/eval-main/setup-registry.mjs";
 import { HumanTaskService } from "../desktop/eval-main/human-task-service.mjs";
 import { TaskActorService } from "../desktop/eval-main/task-actor-service.mjs";
 import { createEvalDashboard, createHumanTaskSurface } from "../desktop/eval-main/web-host.mjs";
@@ -157,6 +157,9 @@ it("compares actor realism with separate human scores bound to pinned task revis
   f.tasks.find(revised.id).maxCompletions++;
   await expect(f.calibration.observe(mismatch)).rejects.toThrow("pinned case");
   f.tasks.find(revised.id).maxCompletions--;
+  f.tasks.find(revised.id).prepared.execution.catalogIdentity = { commit: "different-catalog", tree: "different-tree" };
+  await expect(f.calibration.observe(mismatch)).rejects.toThrow("pinned case");
+  delete f.tasks.find(revised.id).prepared.execution.catalogIdentity;
   const observation = { comparisonId: report.comparison.id, memberId: set.members[0].id, labelId: set.members[0].labels[0].id, comment: "Human independently reviewed the recorded actor" };
   await expect(f.calibration.observe({ ...observation, revisionId: candidate.id, taskId: original.id, value: 4 })).rejects.toThrow("pinned to this actor revision");
   await f.calibration.observe({ ...observation, revisionId: baseline.id, taskId: original.id, value: 2 });
@@ -293,11 +296,12 @@ it("preflights frozen calibration identity and pins its candidate route before d
   };
   const task = await f.actors.create(selection); await f.actors.running.get(task.id).done;
   expect(create.mock.calls[0][0].execution.pinnedModelResolution).toEqual({ ...route, providerAdapterId: "codex-subscription" });
-  for (const alteration of ["case", "authorized-route"]) {
+  for (const alteration of ["case", "authorized-route", "catalog"]) {
     create.mockClear();
     f.options.evalService.prepareHumanTask = async () => {
       const prepared = await prepare();
       if (alteration === "case") prepared.casePlanDigest = "changed";
+      else if (alteration === "catalog") prepared.execution.catalogIdentity = { commit: "changed", tree: "changed" };
       else prepared.execution.pinnedModelResolution = { ...route, selectedModel: { ...route.selectedModel, modelId: "other" } };
       return prepared;
     };
@@ -311,4 +315,35 @@ it("preflights frozen calibration identity and pins its candidate route before d
   expect((await post({ calibrationCandidate: selection.calibrationCandidate })).status).toBe(400);
   const response = await post({ calibrationRef: ref, endpoint: "easier", maxCompletions: 100 });
   expect(await response.json()).toMatchObject({ endpoint: "Agreement", maxCompletions: 1, calibrationCandidate: { modelResolution: route } });
+});
+
+
+it.each([false, true])("retains frozen external catalog provenance after reopen (legacy set: %s)", async legacy => {
+  const f = await fixture(); const original = await f.start();
+  const identity = { commit: "a".repeat(40), tree: "b".repeat(40), entrypointSha256: "c".repeat(64) };
+  f.tasks.find(original.id).prepared.execution.catalogIdentity = identity;
+  await f.tasks.grade(original.id, { satisfaction: 2, comment: "Review catalog-bound actor" });
+  const baseline = f.registry.selected("actor");
+  const candidate = await f.registry.publish({ ...baseline, predecessorId: baseline.id, feedback: [{ sessionId: original.id, gradeIndex: 0 }] });
+  const set = await f.calibration.freeze({ name: "Catalog identity", members: [{ source: { kind: "task", id: original.id }, membership: "tuning", labels: [{ dimension: "actor-realism", scale: "human-actor-realism-1-4", value: 2, subject: { kind: "event", id: original.events.find(event => event.kind === "actor_action").id }, comment: "Frozen actor trajectory" }] }] });
+  const stateFile = join(f.directory, "calibration.json");
+  if (legacy) {
+    const state = JSON.parse(await readFile(stateFile, "utf8"));
+    const saved = state.sets.find(item => item.id === set.id);
+    delete saved.members[0].caseIdentity.catalogIdentity;
+    const { digest, ...record } = saved; saved.digest = setupDigest(record);
+    await writeFile(stateFile, JSON.stringify(state));
+  }
+  const reopened = await new CalibrationService({ stateFile, setups: f.registry, tasks: f.tasks, evalService: f.options.evalService, author: f.tasks.annotator }).open();
+  const { comparison } = await reopened.compare({ baselineRevisionId: baseline.id, candidateRevisionId: candidate.id, calibrationSetId: set.id });
+  const selection = reopened.actorSelection({ comparisonId: comparison.id, memberId: set.members[0].id, revisionId: candidate.id });
+  expect(selection.calibrationCandidate.identity.catalogIdentity).toEqual(identity);
+  const prepare = f.options.evalService.prepareHumanTask;
+  f.options.evalService.prepareHumanTask = async () => { const prepared = await prepare(); prepared.execution.catalogIdentity = { ...identity, commit: "d".repeat(40) }; return prepared; };
+  const create = vi.spyOn(f.options.evalService, "createHumanTaskThread");
+  await expect(f.tasks.create(selection)).rejects.toThrow("Calibration case or harness changed");
+  expect(create).not.toHaveBeenCalled();
+  expect(f.tasks.list()[0].completions).toBe(0);
+  const revised = await f.start(candidate.id);
+  await expect(reopened.observe({ comparisonId: comparison.id, memberId: set.members[0].id, labelId: set.members[0].labels[0].id, revisionId: candidate.id, taskId: revised.id, value: 3, comment: "Different catalog despite same case descriptor" })).rejects.toThrow("pinned case");
 });

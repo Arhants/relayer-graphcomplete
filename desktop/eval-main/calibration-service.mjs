@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile, rename } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -7,6 +8,8 @@ const fail = (message) => { throw Object.assign(new Error(message), { status: 40
 // Persisted evidence uses JSON semantics, including omitted optional control fields.
 const seal = (record) => { const snapshot = JSON.parse(JSON.stringify(record)); return { ...snapshot, digest: setupDigest(snapshot) }; };
 const verify = ({ digest, ...record }) => { if (setupDigest(record) !== digest) fail("Calibration evidence integrity check failed."); };
+// Older frozen sets retain catalog provenance in their sealed evidence.
+const catalogIdentity = member => member.evidence.session?.prepared.execution.catalogIdentity ?? null;
 const scaleFor = (dimension) => dimension === "actor-realism" ? "human-actor-realism-1-4" : "graph-presentation-v11-1-8";
 
 // Frozen evidence and manual assessment only. No provider or actor execution
@@ -49,7 +52,7 @@ export class CalibrationService {
       if (bundle.conversationEvidence !== "frozen-at-finish") fail("Calibration requires a finished, frozen task trajectory.");
       return { source: { kind: "task", id: bundle.session.id }, evidence: bundle, evidenceDigest: setupDigest(bundle),
         caseIdentity: { endpoint: bundle.session.endpoint, maxCompletions: bundle.session.maxCompletions, testCaseId: bundle.session.prepared.execution.testCaseId, casePlanDigest: bundle.session.prepared.casePlanDigest,
-          harnessConfigurationDigest: bundle.session.prepared.execution.harnessConfigurationDigest, selectedModel: bundle.session.prepared.execution.modelResolution?.selectedModel ?? null },
+          catalogIdentity: copy(bundle.session.prepared.execution.catalogIdentity ?? null), harnessConfigurationDigest: bundle.session.prepared.execution.harnessConfigurationDigest, selectedModel: bundle.session.prepared.execution.modelResolution?.selectedModel ?? null },
         subjects: bundle.session.events.map((event) => ({ kind: "event", id: event.id })) };
     }
     if (ref?.kind === "execution") return this.evalService.calibrationEvidence(ref.id);
@@ -127,7 +130,7 @@ export class CalibrationService {
     return { mode: "simulated", testCaseId: original.prepared.execution.testCaseId,
       harnessConfigurationName: original.prepared.execution.harnessConfigurationName,
       endpoint: original.endpoint, maxCompletions: original.maxCompletions, actorSetupRevisionId: revisionId,
-      calibrationCandidate: { identity: copy(member.caseIdentity), modelResolution: copy(original.prepared.execution.modelResolution ?? { selectedModel: null, productModelSelection: false }) } };
+      calibrationCandidate: { identity: { ...copy(member.caseIdentity), catalogIdentity: copy(catalogIdentity(member)) }, modelResolution: copy(original.prepared.execution.modelResolution ?? { selectedModel: null, productModelSelection: false }) } };
   }
   observe(input) {
     return this.serial(async () => {
@@ -141,7 +144,7 @@ export class CalibrationService {
         const task = this.tasks.get(input.taskId);
         if (task.status !== "completed" || task.actorSetup?.id !== revision.id || task.mode !== "simulated") fail("Choose a finished task pinned to this actor revision.");
         const expected = member.caseIdentity;
-        if (expected.endpoint !== task.endpoint || expected.maxCompletions !== task.maxCompletions || JSON.stringify(expected.selectedModel) !== JSON.stringify(task.prepared.execution.modelResolution?.selectedModel ?? null) || expected.testCaseId !== task.prepared.execution.testCaseId || expected.casePlanDigest !== task.prepared.casePlanDigest || expected.harnessConfigurationDigest !== task.prepared.execution.harnessConfigurationDigest) fail("Actor comparison requires the pinned case, profile and candidate harness.");
+        if (!isDeepStrictEqual(catalogIdentity(member), task.prepared.execution.catalogIdentity ?? null) || expected.endpoint !== task.endpoint || expected.maxCompletions !== task.maxCompletions || JSON.stringify(expected.selectedModel) !== JSON.stringify(task.prepared.execution.modelResolution?.selectedModel ?? null) || expected.testCaseId !== task.prepared.execution.testCaseId || expected.casePlanDigest !== task.prepared.casePlanDigest || expected.harnessConfigurationDigest !== task.prepared.execution.harnessConfigurationDigest) fail("Actor comparison requires the pinned case, profile and candidate harness.");
         if (!Number.isInteger(input.value) || input.value < 1 || input.value > 4 || typeof input.comment !== "string" || !input.comment.trim() || input.comment.length > 8000) fail("Record a human realism rating and evidence-based comment on its native 1–4 scale.");
         const exported = await this.tasks.export(task.id);
         result = { status: "completed", score: input.value, scale: label.scale, comment: input.comment.trim(), author: copy(this.author),

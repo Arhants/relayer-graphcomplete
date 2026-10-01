@@ -64,6 +64,35 @@ describe("EvalService live external authorization", () => {
     await expect(service.gradeHumanTaskStep(prepared, 0)).rejects.toThrow("catalog drift");
   });
 
+  it.each(["catalog", "credential", "materialize", "thread", "grade"])("cancels external %s work without late product dispatch", async (phase) => {
+    const route = { selectedModel: { providerId: "codex", modelId: "gpt-5.6-sol" }, productModelSelection: true, providerAdapterId: "codex-subscription" };
+    const { service, product } = await openService({ interactive: true, validateLiveCredential: vi.fn(async () => route) });
+    const selection = { testCaseId: externalCaseIds[0], harnessConfigurationName: "codex-basic", sessionId: "cancel-external", maxCompletions: 3, endpoint: "A verified change", mode: "human" };
+    selection.liveAuthorization = { ...selection, confirmed: true, billingMode: "subscription-only" };
+    let entered, release;
+    const started = new Promise(resolve => { entered = resolve; });
+    const stall = value => { entered(); return new Promise(resolve => { release = () => resolve(value); }); };
+    let prepared;
+    if (["thread", "grade"].includes(phase)) prepared = await service.prepareHumanTask(selection);
+    if (["catalog", "thread"].includes(phase)) service.externalCatalog.assertUnchanged = () => stall();
+    if (phase === "credential") service.validateLiveCredential = () => stall(route);
+    const external = service.externalCases.get(externalCaseIds[0]);
+    if (phase === "materialize") {
+      const materialize = external.materialize;
+      external.materialize = async input => stall(await materialize(input));
+    }
+    if (phase === "grade") external.grade = () => stall([]);
+    const before = product.mock.calls.length;
+    const controller = new AbortController();
+    const operation = phase === "thread" ? service.createHumanTaskThread(prepared, 0, { signal: controller.signal })
+      : phase === "grade" ? service.gradeHumanTaskStep(prepared, 0, { signal: controller.signal })
+      : service.prepareHumanTask(selection, { signal: controller.signal });
+    const rejected = expect(operation).rejects.toMatchObject({ name: "AbortError" });
+    await started; controller.abort(); await rejected;
+    release(); await new Promise(resolve => setImmediate(resolve));
+    expect(product.mock.calls.slice(before).filter(([, options]) => options?.method === "POST")).toEqual([]);
+  });
+
   it("rejects a subscription without an exact model before preparation", async () => {
     const { service } = await openService({ validateLiveCredential: vi.fn(async () => ({ providerAdapterId: "codex-subscription" })) });
     const selection = { testCaseId: externalCaseIds[0], harnessConfigurationName: "codex-basic", sessionId: "invalid-route", maxCompletions: 3, endpoint: "A verified change", mode: "human" };
