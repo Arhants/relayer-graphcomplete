@@ -2,6 +2,9 @@ import { expect } from "vitest";
 import { LAYER_EDGE_SHAPE_GUIDANCE } from "../src/implementations/layer-edge-shape-guidance.js";
 
 export function expectGraphPresentationGuidance(prompt: string): void {
+  expect(prompt).toContain("Give every interaction's root response action a concise task-specific label and a supported catalog icon");
+  expect(prompt).toContain("including follow-ups and annotation-only or input-only interactions");
+  expect(prompt).toContain("Do not edit the canonical interaction node");
   expect(prompt).toContain("register ALL actions");
   expect(prompt).toContain("It is not a draft preview");
   expect(prompt).toContain('"cssProperties":["align-content"');

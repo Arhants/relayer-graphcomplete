@@ -48,6 +48,11 @@ including cancellation and window/server cleanup. Both 1200×630 theme PNGs were
 visually inspected and their source-bound receipt regenerated. Final checks use
 the repository-pinned Node 22.23.2; the failed run is not a qualification pass.
 
+Concurrent main change #643 updated response presentation and the same preview
+evidence. The branch incorporates `ffad82fe10707c7af546d5a6fbe9e9daecb1ad16`,
+recaptures the actual renderer output, and repeats the required gates. The PR's
+final review and qualification must name that updated source state.
+
 Full checks, joined journey, adversarial review and final source identities are
 reported on the pull request. Local proof does not certify a deployed service,
 hosted viewer artifact, or installed desktop release.
