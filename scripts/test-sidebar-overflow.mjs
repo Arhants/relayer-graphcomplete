@@ -78,7 +78,7 @@ async function main() {
           assert.ok(wheelScrollTop > 0, `${name}: browser wheel scrolls the list`);
         } finally { window.webContents.debugger.detach(); }
         const reach = await evaluate(`(() => {
-          const target = document.querySelector(${JSON.stringify(collapsed ? '.project-list > div:last-child .project-button' : '.project-list > div:last-child .entry:last-child')});
+          const target = document.querySelector(${JSON.stringify(collapsed ? '.project-list > div:last-child .project-button' : '.project-list > div:last-child .thread-entry-row:last-child .entry')});
           target.focus();
           const r=target.getBoundingClientRect(), c=document.querySelector('#appSidebarContent').getBoundingClientRect();
           const marker=target.querySelector('i')?.getBoundingClientRect();
@@ -98,7 +98,7 @@ async function main() {
       const content=document.querySelector('#settingsSidebarContent'), footer=document.querySelector('.sidebar-footer');
       return { count:content.querySelectorAll('[role=tab]').length, bottom:content.getBoundingClientRect().bottom, footerTop:footer.getBoundingClientRect().top, back:document.querySelector('#settingsBackButton').checkVisibility() };
     })()`);
-    assert.equal(settings.count, 7);
+    assert.equal(settings.count, 8);
     assert.ok(settings.back && settings.bottom <= settings.footerTop);
     await evaluate(`(() => {
       sidebarFixture.setMainView('new');

@@ -40,6 +40,156 @@ const ANNOTATION_COOKIE: &str = "relayer_annotation";
 const INPUT_OPERATOR_COOKIE: &str = "relayer_input_operator";
 
 #[tokio::test]
+async fn thread_archive_http_authority_discovery_and_read_only_reopen() {
+    let temporary = tempfile::tempdir().unwrap();
+    let database = temporary.path().join("product.sqlite3");
+    let app = open_app(&database, temporary.path()).await;
+    let thread = response_json(
+        app.clone()
+            .oneshot(api_request(
+                "POST",
+                "/api/threads",
+                Some(json!({"initialMessage":"Archive retained work"})),
+                true,
+            ))
+            .await
+            .unwrap(),
+    )
+    .await;
+    let id = thread["id"].as_i64().unwrap();
+    let uri = format!("/api/threads/{id}/archive");
+    for (token, expected) in [
+        ("", StatusCode::UNAUTHORIZED),
+        ("review", StatusCode::FORBIDDEN),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(api_request_with_token(
+                "POST",
+                &uri,
+                Some(json!({"archived":true})),
+                token,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), expected);
+    }
+    let response = app
+        .clone()
+        .oneshot(api_request(
+            "POST",
+            &uri,
+            Some(json!({"archived":true})),
+            true,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    assert_eq!(response_json(response).await["code"], "thread_archive_busy");
+    let pool = sqlite_pool(&database).await;
+    sqlx::query("UPDATE interactions SET completion_status='failed',completion_error='Synthetic interrupted work' WHERE thread_id=?1").bind(id).execute(&pool).await.unwrap();
+    let archived = response_json(
+        app.clone()
+            .oneshot(api_request(
+                "POST",
+                &uri,
+                Some(json!({"archived":true})),
+                true,
+            ))
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert!(archived["archivedAt"].is_string());
+    assert_eq!(archived["updatedAt"], thread["updatedAt"]);
+    let listed = response_json(
+        app.clone()
+            .oneshot(api_request("GET", "/api/threads", None, true))
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert!(listed["threads"].as_array().unwrap().is_empty());
+    let settings = response_json(
+        app.clone()
+            .oneshot(api_request_with_token(
+                "GET",
+                "/api/threads/archived",
+                None,
+                "review",
+            ))
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(settings["threads"][0]["id"], id);
+    let state = response_json(
+        app.clone()
+            .oneshot(api_request(
+                "GET",
+                &format!("/api/state?threadId={id}"),
+                None,
+                true,
+            ))
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(state["threads"][0]["archivedAt"], archived["archivedAt"]);
+    assert_eq!(state["interactions"][0]["text"], "Archive retained work");
+    let followup = app
+        .clone()
+        .oneshot(api_request(
+            "POST",
+            &format!("/api/threads/{id}/interactions"),
+            Some(json!({"text":"Blocked while archived"})),
+            true,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(followup.status(), StatusCode::CONFLICT);
+    assert_eq!(response_json(followup).await["code"], "thread_archived");
+    pool.close().await;
+    drop(app);
+    let reopened = open_app(&database, temporary.path()).await;
+    let archived_after_read = response_json(
+        reopened
+            .clone()
+            .oneshot(api_request("GET", "/api/threads/archived", None, true))
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(
+        archived_after_read["threads"][0]["archivedAt"],
+        archived["archivedAt"]
+    );
+    let restored = response_json(
+        reopened
+            .clone()
+            .oneshot(api_request(
+                "POST",
+                &uri,
+                Some(json!({"archived":false})),
+                true,
+            ))
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert!(restored["archivedAt"].is_null());
+    assert_eq!(restored["updatedAt"], thread["updatedAt"]);
+    let listed = response_json(
+        reopened
+            .oneshot(api_request("GET", "/api/threads", None, true))
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(listed["threads"][0]["id"], id);
+}
+
+#[tokio::test]
 async fn interaction_post_rejects_input_draft_revision_without_input_id() {
     let temporary = tempfile::Builder::new()
         .prefix("relayer-input-revision-without-id-")
@@ -3283,6 +3433,62 @@ async fn conversation_export_uses_real_accepted_graph_and_rejects_read_only_auth
     );
     assert!(converted.interaction_text.is_none());
 
+    // Settle the fixture's unfinished third turn after proving running-turn export.
+    let pool = sqlite_pool(&product_database).await;
+    sqlx::query("UPDATE interactions SET completion_status='stopped' WHERE id=3")
+        .execute(&pool)
+        .await
+        .unwrap();
+    pool.close().await;
+    let before_archive = app
+        .clone()
+        .oneshot(api_request("GET", "/api/threads/1/export", None, true))
+        .await
+        .unwrap();
+    let bytes = to_bytes(before_archive.into_body(), 16 * 1024 * 1024)
+        .await
+        .unwrap();
+    // ARC-001: archive cannot change accepted graph records or export availability.
+    let archive_response = app
+        .clone()
+        .oneshot(api_request(
+            "POST",
+            "/api/threads/1/archive",
+            Some(json!({"archived":true})),
+            true,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(archive_response.status(), StatusCode::OK);
+    let archived_export = app
+        .clone()
+        .oneshot(api_request("GET", "/api/threads/1/export", None, true))
+        .await
+        .unwrap();
+    assert_eq!(archived_export.status(), StatusCode::OK);
+    let archived_bytes = to_bytes(archived_export.into_body(), 4 * 1024 * 1024)
+        .await
+        .unwrap();
+    // Export headers carry capture time; every graph/history record must stay byte-identical.
+    let history = |data: &[u8]| {
+        String::from_utf8_lossy(data)
+            .lines()
+            .skip(1)
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    assert_eq!(history(&archived_bytes), history(&bytes));
+    let restore_response = app
+        .clone()
+        .oneshot(api_request(
+            "POST",
+            "/api/threads/1/archive",
+            Some(json!({"archived":false})),
+            true,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(restore_response.status(), StatusCode::OK);
     let shared = app
         .oneshot(api_request(
             "POST",
@@ -6859,6 +7065,21 @@ async fn persists_project_thread_and_interaction_across_restart() {
     .execute(&partial_index_pool)
     .await
     .unwrap();
+    // Rebuild archive guards removed with the deliberately reconstructed tables,
+    // so this fixture isolates partial unique-index corruption.
+    sqlx::query("ALTER TABLE threads ADD COLUMN archived_at TEXT")
+        .execute(&partial_index_pool)
+        .await
+        .unwrap();
+    let archive_migration =
+        include_str!("../src/storage/sqlite/migrations/0042_thread_archive.sql");
+    let guards = &archive_migration[archive_migration
+        .find("CREATE TRIGGER thread_archive_busy")
+        .unwrap()..];
+    sqlx::raw_sql(&guards.replace("CREATE TRIGGER ", "CREATE TRIGGER IF NOT EXISTS "))
+        .execute(&partial_index_pool)
+        .await
+        .unwrap();
     sqlx::query("PRAGMA foreign_keys=ON")
         .execute(&partial_index_pool)
         .await

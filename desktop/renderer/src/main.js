@@ -1,4 +1,6 @@
 import { initializeProjectSidebar, setProjectCollapsed } from "./project-sidebar.js";
+import { bindArchiveActions, restoreArchivedForNavigation } from "./thread-archive.js";
+import { request } from "./api.js";
 import { initializeCheckout } from "./checkout.js";
 import { initializeHumanTaskGrading } from "./human-task-grading.js";
 import { observeHumanTaskPresentation } from "./human-task-observer.js";
@@ -467,6 +469,10 @@ async function boot() {
     });
   }
   updateCreateThreadAvailability();
+  bindArchiveActions();
+  if (viewState.currentThreadId && productApiAvailable && !viewState.evalContext) {
+    await restoreArchivedForNavigation((await request(`/api/threads/${encodeURIComponent(viewState.currentThreadId)}`)).thread);
+  }
   await refreshState(viewState.currentThreadId);
   const pendingDraft = pendingNewThreadDraft();
   if (pendingDraft?.text && !query.get("threadId")) {

@@ -1642,6 +1642,7 @@ export function createProductWorkspace({
   onSelectionChange = () => {},
   onOpenReadyResult = () => {},
   layerSelectionMemoryOwner = globalThis.window,
+  onArchiveThread = null,
   onExportConversation = null,
   shareApi = null,
   onSubmitInteraction = async () => {},
@@ -2120,6 +2121,17 @@ export function createProductWorkspace({
   const settingsButton = $("#conversationSettingsButton");
   const settingsMenu = $("#conversationSettingsMenu");
   const exportButton = $("#exportConversation");
+  const archiveButton = $("#archiveConversation");
+  const archiveAvailable = mode === "interactive" && typeof onArchiveThread === "function";
+  archiveButton.onclick = async () => {
+    const thread = getThread();
+    if (!thread || archiveButton.disabled) return;
+    closeSettingsMenu();
+    archiveButton.disabled = true;
+    try { await onArchiveThread(thread.id, !thread.archivedAt); }
+    catch (error) { toast(error.message); }
+    finally { renderExportControl(); }
+  };
   const shareAvailable = Boolean(
     shareApi
       && typeof shareApi?.account?.read === "function"
@@ -2140,19 +2152,24 @@ export function createProductWorkspace({
     settingsMenuOpen = true;
     settingsMenu.classList.remove("hidden");
     settingsButton.setAttribute("aria-expanded", "true");
-    (shareAvailable ? $("#shareConversationMenu") : exportButton).focus();
+    (archiveAvailable ? archiveButton : shareAvailable ? $("#shareConversationMenu") : exportButton).focus();
   };
   const renderExportControl = (thread = getThread()) => {
+    archiveButton.classList.toggle("hidden", !archiveAvailable);
+    archiveButton.textContent = thread?.archivedAt ? "Unarchive" : "Archive";
+    archiveButton.disabled = !thread || (!thread.archivedAt && (thread.archiveBlocked || ["running", "stopping", "needs_approval"].includes(thread.activity)));
+    archiveButton.title = archiveButton.disabled ? "Available when work finishes." : "";
+    $("#threadArchivedLabel").classList.toggle("hidden", !thread?.archivedAt);
     const available = capabilities.canExportConversation
       && typeof onExportConversation === "function";
-    settingsControl.classList.toggle("hidden", !available && !shareAvailable);
+    settingsControl.classList.toggle("hidden", !available && !shareAvailable && !archiveAvailable);
     exportButton.classList.toggle("hidden", !available);
     exportButton.disabled = !available || exportPending || thread?.id == null;
-    settingsButton.disabled = (!available && !shareAvailable) || exportPending;
+    settingsButton.disabled = (!available && !shareAvailable && !archiveAvailable) || exportPending;
     settingsButton.setAttribute("aria-busy", String(exportPending));
     exportButton.setAttribute("aria-busy", String(exportPending));
     exportButton.textContent = exportPending ? "Exporting…" : "Export conversation…";
-    if (!available && !shareAvailable) closeSettingsMenu();
+    if (!available && !shareAvailable && !archiveAvailable) closeSettingsMenu();
   };
   settingsButton.onclick = () => {
     if (settingsMenuOpen) closeSettingsMenu();
@@ -3677,7 +3694,7 @@ export function createProductWorkspace({
       && !prompt.disabled
       && (modelPicker?.isReady() ?? false)
       && !contextEditor;
-    send.disabled = threadHasInFlightSend(inFlightSendThreads, thread.id)
+    send.disabled = Boolean(thread.archivedAt) || threadHasInFlightSend(inFlightSendThreads, thread.id)
       || threadHasPendingInputMutation(pendingInputDetaches, thread.id)
       || !contextDraftsReady || !inputDraftsReady || (!replayReady && !composerSubmissionReady(
       prompt.value,
@@ -3692,6 +3709,7 @@ export function createProductWorkspace({
       modelSetup: modelPicker?.modelSetup() ?? null,
       readyTitle: "Send",
     });
+    if (thread.archivedAt) send.title = "Unarchive this chat before sending.";
   };
   const releaseSendAttempt = () => {
     sendAttempt = null;
