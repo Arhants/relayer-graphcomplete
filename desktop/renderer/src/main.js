@@ -1,3 +1,4 @@
+import { initializeProjectSidebar, setProjectCollapsed } from "./project-sidebar.js";
 import { initializeCheckout } from "./checkout.js";
 import { initializeHumanTaskGrading } from "./human-task-grading.js";
 import { observeHumanTaskPresentation } from "./human-task-observer.js";
@@ -210,6 +211,8 @@ function bindEvents() {
         String(candidate.id) === action.dataset.projectNewThread
       ));
       if (!project) return;
+      setProjectCollapsed(project.id, false);
+      renderSidebar();
       const request = projectComposerGate.begin();
       const guard = () => projectComposerGate.isCurrent(request);
       takeOverPendingAutomaticTutorial();
@@ -406,6 +409,7 @@ async function boot() {
     toggle: $("#collapseSidebar"),
     mediaQuery: window.matchMedia("(max-width: 760px)"),
   });
+  await initializeProjectSidebar();
   if (evalReview) viewState.evalContext = await evalReview.context();
   else if (window.relayerHumanTask) viewState.evalContext = await window.relayerHumanTask.context();
   applyPlatformCopy();

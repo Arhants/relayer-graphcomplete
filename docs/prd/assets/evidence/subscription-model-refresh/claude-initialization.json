@@ -1,0 +1,17 @@
+{
+  "sdk": "0.3.286",
+  "cli": "2.1.286",
+  "paidInferenceCalls": 0,
+  "models": [
+    {
+      "value": "opus",
+      "resolvedModel": "claude-opus-5-5",
+      "displayName": "Opus"
+    },
+    {
+      "value": "sonnet",
+      "resolvedModel": "claude-sonnet-5-5",
+      "displayName": "Sonnet"
+    }
+  ]
+}

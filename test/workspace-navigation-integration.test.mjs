@@ -112,6 +112,41 @@ describe("workspace navigation integration", () => {
     }
   });
 
+  it.each(["columns-3", undefined])("refreshes an annotation-only follow-up breadcrumb on acceptance (icon %s)", async (icon) => {
+    const root = rootLayer(201, 21);
+    const turn = { ...interaction(2, 10, null, 2), graphNodeId: 902, text: "",
+      completionStatus: "running", completionOutput: null,
+      contexts: [{ target: { id: 11 }, annotations: ["and what do you prefer a chat or a graph"] }] };
+    const state = productState([{ id: 10, title: "Chat or graph" }], [turn]);
+    state.currentProjection = { cursor: 1, hasMore: false, events: [], states: [{
+      completionId: 902, headRevision: 1, lifecycle: "active", currentLayerId: 201,
+      finalLayerId: null, safeReason: null, temporalFeatures: { projectionUi: true },
+    }] };
+    requestImplementation = vi.fn(async (path) => {
+      if (path.startsWith("/api/state?threadId=10")) return state;
+      if (path.endsWith("/layers/201")) return root;
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    const controller = await loadModules();
+    await controller.loadThread(10);
+    expect(controller.viewState.layerPath[0]).toMatchObject({ label: "Response", icon: "messages-square" });
+    controller.replaceCurrentSelection(21);
+    const historyBefore = controller.getNavigationHistory();
+
+    turn.completionStatus = "accepted";
+    turn.completionOutput = { rootLayer: root, rootAction: { label: "Chat or graph?", icon } };
+    Object.assign(state.currentProjection.states[0], { headRevision: 2, lifecycle: "succeeded", finalLayerId: 201 });
+    state.currentProjection.cursor = 2;
+    await controller.refreshState(10);
+
+    expect(controller.viewState.layerPath[0]).toMatchObject({
+      layerId: 201, label: "Chat or graph?", icon: icon ?? "messages-square",
+    });
+    expect(controller.viewState.selectedNodeId).toBe(21);
+    expect(controller.getNavigationHistory().canGoBack).toBe(historyBefore.canGoBack);
+    expect(controller.getNavigationHistory().canGoForward).toBe(historyBefore.canGoForward);
+  });
+
   it("keeps accepted product status while rendering its succeeded temporal current", async () => {
     const root = rootLayer(101, 11);
     const turn = { ...interaction(1, 10, root), graphNodeId: 901 };
@@ -172,8 +207,8 @@ describe("workspace navigation integration", () => {
     const layer2 = rootLayer(201, 21);
     const turn1 = interaction(1, 10, layer1);
     const turn2 = interaction(2, 20, layer2);
-    const state1 = productState([{ id: 10, title: "First" }, { id: 20, title: "Second" }], [turn1]);
-    const state2 = productState([{ id: 10, title: "First" }, { id: 20, title: "Second" }], [turn2]);
+    const state1 = productState([{ id: 10, title: "First", projectId: 7 }, { id: 20, title: "Second" }], [turn1]);
+    const state2 = productState([{ id: 10, title: "First", projectId: 7 }, { id: 20, title: "Second" }], [turn2]);
     requestImplementation = vi.fn(async (path) => {
       if (path.startsWith("/api/state?threadId=10")) return state1;
       if (path.startsWith("/api/state?threadId=20")) return state2;
@@ -184,10 +219,15 @@ describe("workspace navigation integration", () => {
     });
     const controller = await loadModules();
 
+    const preference = await import("../desktop/renderer/src/project-sidebar.js");
+    preference.setProjectCollapsed(7, true);
     await controller.loadThread(10);
+    expect(preference.projectCollapsed(7)).toBe(false);
     controller.replaceCurrentSelection(11);
     await controller.loadThread(20);
+    preference.setProjectCollapsed(7, true);
     await controller.navigateHistory(-1);
+    expect(preference.projectCollapsed(7)).toBe(false);
 
     expect(controller.viewState).toMatchObject({
       currentThreadId: 10,
@@ -334,8 +374,8 @@ describe("workspace navigation integration", () => {
     const turn1 = interaction(1, 10, layer1);
     const turn2a = interaction(2, 20, layer2, 1);
     const turn2b = interaction(3, 20, layer2, 2);
-    const state1 = productState([{ id: 10, title: "First" }, { id: 20, title: "Second" }], [turn1]);
-    const state2 = productState([{ id: 10, title: "First" }, { id: 20, title: "Second" }], [turn2a, turn2b]);
+    const state1 = productState([{ id: 10, title: "First", projectId: 7 }, { id: 20, title: "Second" }], [turn1]);
+    const state2 = productState([{ id: 10, title: "First", projectId: 7 }, { id: 20, title: "Second" }], [turn2a, turn2b]);
     const restore = deferred();
     requestImplementation = vi.fn(async (path) => {
       if (path.startsWith("/api/state?threadId=10")) return state1;
@@ -347,6 +387,8 @@ describe("workspace navigation integration", () => {
     await controller.loadThread(10);
     await controller.loadThread(20);
 
+    const preference = await import("../desktop/renderer/src/project-sidebar.js");
+    preference.setProjectCollapsed(7, true);
     const beforeCommit = vi.fn();
     const pending = controller.navigateHistory(-1, { beforeCommit });
     await vi.waitFor(() => expect(controller.getNavigationHistory().pendingDirection).toBe("back"));
@@ -355,6 +397,7 @@ describe("workspace navigation integration", () => {
     restore.resolve({ thread: state1.threads[0], interactions: [turn1], actionInvocations: [] });
 
     await expect(pending).rejects.toMatchObject({ code: "navigation_superseded" });
+    expect(preference.projectCollapsed(7)).toBe(true);
     expect(beforeCommit).not.toHaveBeenCalled();
     expect(controller.viewState).toMatchObject({ currentThreadId: 20, currentInteractionId: 2 });
   });
@@ -366,7 +409,7 @@ describe("workspace navigation integration", () => {
     const destinationLayer = rootLayer(201, 21);
     const source = interaction(1, 10, sourceLayer);
     const destination = interaction(2, 20, destinationLayer);
-    const sourceState = productState([{ id: 10, title: "Source" }, { id: 20, title: "Result" }], [source]);
+    const sourceState = productState([{ id: 10, title: "Source" }, { id: 20, title: "Result", projectId: 8 }], [source]);
     const runningInvocation = {
       sourceInteractionId: 1,
       actionId: 501,
@@ -392,7 +435,7 @@ describe("workspace navigation integration", () => {
       }
       if (path === "/api/threads/20") {
         return {
-          thread: { id: 20, title: "Result" },
+          thread: { id: 20, title: "Result", projectId: 8 },
           interactions: [destination],
           actionInvocations: [acceptedInvocation],
         };
@@ -408,11 +451,14 @@ describe("workspace navigation integration", () => {
     });
     const controller = await loadModules();
     await controller.loadThread(10);
+    const preference = await import("../desktop/renderer/src/project-sidebar.js");
+    preference.setProjectCollapsed(8, true);
     const beforeInvokeCommit = vi.fn();
 
     await expect(controller.navigateResolvedInvoke(action, {
       beforeCommit: beforeInvokeCommit,
     })).resolves.toBe(true);
+    expect(preference.projectCollapsed(8)).toBe(false);
     expect(beforeInvokeCommit).toHaveBeenCalledOnce();
     expect(controller.viewState).toMatchObject({
       currentThreadId: 20,
@@ -1620,7 +1666,7 @@ it("interaction graph selection reloads the current response root and retains Ba
 it("interaction graph cross-chat selection commits only a loaded response and preserves Back", async () => {
   const source = interaction(1, 10, rootLayer(101, 11));
   const target = interaction(2, 20, rootLayer(201, 21));
-  const threads = [{ id: 10, title: "Source" }, { id: 20, title: "Owner" }];
+  const threads = [{ id: 10, title: "Source" }, { id: 20, title: "Owner", projectId: 8 }];
   let fail = true;
   requestImplementation = vi.fn(async (path) => {
     if (path.startsWith("/api/state?threadId=10")) return productState(threads, [source]);
@@ -1635,8 +1681,11 @@ it("interaction graph cross-chat selection commits only a loaded response and pr
   const controller = await loadModules();
   try {
     await controller.loadThread(10);
+    const preference = await import("../desktop/renderer/src/project-sidebar.js");
+    preference.setProjectCollapsed(8, true);
     const url = location.href;
     await expect(controller.selectTurnById(2, { responseRoot: true, threadId: 20 })).rejects.toThrow("owner unavailable");
+    expect(preference.projectCollapsed(8)).toBe(true);
     expect(controller.viewState.currentThreadId).toBe(10);
     expect(controller.viewState.currentInteractionId).toBe(1);
     expect(controller.appState.visibleLayer.layer.id).toBe(101);
@@ -1652,6 +1701,7 @@ it("interaction graph cross-chat selection commits only a loaded response and pr
     target.completionStatus = "accepted";
     target.completionOutput = acceptedOutput;
     await controller.selectTurnById(2, { responseRoot: true, threadId: 20 });
+    expect(preference.projectCollapsed(8)).toBe(false);
     expect(controller.viewState.currentThreadId).toBe(20);
     expect(controller.appState.visibleLayer.layer.id).toBe(201);
     await controller.navigateHistory(-1);

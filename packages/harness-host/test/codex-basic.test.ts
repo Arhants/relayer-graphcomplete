@@ -506,7 +506,8 @@ describe("CodexBasicHarness", () => {
     expect(submitted?.prompt).toContain("pass the program through standard input");
     expect(submitted?.prompt).toContain("never place authored graph code in a --eval argument");
     expect(submitted?.prompt).toContain("do not create a script in either the project checkout or a temporary directory");
-    expect(submitted?.prompt).toContain('kind: "navigate", relation: "expand", label: "Response"');
+    expect(submitted?.prompt).toContain('kind: "navigate", relation: "expand", label: "Key findings", icon: "search"');
+    expect(submitted?.prompt).toContain("including follow-ups and annotation-only or input-only interactions");
     expect(submitted?.prompt).toContain("Node and action icons accept supported symbol names or registered image references");
     expect(submitted?.prompt).toContain("exactly one NodePlacementObject(node, x, y) per layer node");
     expect(submitted?.prompt).toContain("Place a one-node layer at (0.5, 0.5)");

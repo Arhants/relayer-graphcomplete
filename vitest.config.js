@@ -4,13 +4,17 @@ const exclude = ["**/node_modules/**", "**/.git/**", "**/.relayer/**"];
 
 // Files that drive real processes whose readiness is timing-sensitive: the
 // headless-browser evidence capture paints blank frames when starved of CPU,
-// and the desktop shell's shutdown tests observe signal ordering. They run one
-// at a time after the isolated group so they never share the machine with
-// other workers. Every other file owns its temporary state and runs with the
+// and the desktop shell's shutdown tests observe signal ordering.
+// Native Mach-O closure sealing and calibration Git/npm verifier journeys also
+// exceed their individual bounds under portfolio-wide subprocess contention.
+// These files run one at a time after the isolated group so they never share
+// the machine with other workers. Every other file owns its temporary state and runs with the
 // default file-level workers.
 const processBound = [
   "test/desktop-shell.test.mjs",
   "test/provider-electron-evidence.test.mjs",
+  "test/evidence-capture-integrity.test.mjs",
+  "packages/eval-runner/test/calibration-autonomous-cases.test.ts",
 ];
 
 // Tests that spawn the Rust runtime or a harness host take two to five

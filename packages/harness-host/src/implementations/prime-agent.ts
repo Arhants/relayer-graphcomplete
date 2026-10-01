@@ -1199,7 +1199,7 @@ Navigation has two meanings:
 The interaction node must have one root navigate action with relation="expand" and no source_layer. Every action on a response node must include source_layer: the LayerObject in which you are authoring that action. Expansion layers may author expand, reference, or invoke actions. A layer reached as a reference may author only reference actions. Do not create both expand and reference actions to the same new target layer.
 
 Examples:
-await graph.add_navigate_action(${interaction.id}, "Response", root_layer, relation="expand", client_key="root-response")
+await graph.add_navigate_action(${interaction.id}, "Key findings", root_layer, relation="expand", client_key="root-response", icon="search")
 await graph.add_navigate_action(node, "Explain further", detail_layer, relation="expand", source_layer=root_layer, client_key="node-detail")
 await graph.add_navigate_action(node, "View evidence", evidence_layer, relation="reference", source_layer=root_layer, client_key="node-evidence")
 await graph.add_invoke_action(node, "Follow up", "Ask a useful follow-up", source_layer=root_layer, client_key="node-follow-up")

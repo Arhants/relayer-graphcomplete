@@ -97,8 +97,10 @@ describe("authoritative provider adapter registry", () => {
       "managed-runtime@1", "managed-runtime@1", "secret@1", "secret@1", "secret@1", "secret@1",
     ]);
     expect(productionProviderAdapterRegistry.get("claude-subscription").catalog.source).toBe("code-manifest");
-    expect(CLAUDE_SUBSCRIPTION_MODELS.map(({ id }) => id)).toEqual([
-      "sonnet", "opus", "fable",
+    expect(CLAUDE_SUBSCRIPTION_MODELS.map(({ id, label, providerDefault }) => ({ id, label, providerDefault }))).toEqual([
+      { id: "sonnet", label: "Sonnet 5.5", providerDefault: true },
+      { id: "opus", label: "Opus 5.5", providerDefault: false },
+      { id: "fable", label: "Fable 5.1", providerDefault: false },
     ]);
     expect(() => productionProviderAdapterRegistry.get("future-provider")).toThrow("Unknown provider adapter");
   });

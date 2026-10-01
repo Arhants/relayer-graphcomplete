@@ -1,3 +1,4 @@
+import { expandThreadProject } from "./project-sidebar.js";
 import { checkoutController, setCheckoutSubmitting } from "./checkout.js";
 import { isResolvedInvokeAction } from "./product-workspace/node-detail-runtime.js";
 import { preferredLayerNode, rememberedLayerSelection, rememberLayerSelection } from "./product-workspace/layer-selection.js";
@@ -777,6 +778,10 @@ export async function loadThread(threadId) {
   url.searchParams.set("threadId", threadId);
   history.replaceState(null, "", url);
   await refreshState(threadId, { historyMode: "push" });
+  if (String(viewState.currentThreadId) === String(threadId)) {
+    expandThreadProject(appState.threads.find((thread) => String(thread.id) === String(threadId)));
+    renderSidebar();
+  }
 }
 
 export function hydrateWorkspace(
@@ -882,6 +887,8 @@ async function selectInteractionGraphSource(threadId, interactionId) {
     layerNavigationCoordinator.cancel();
     applyResolvedPresentation(resolved);
     recordCurrentNavigation("push");
+    expandThreadProject(appState.threads.find((thread) => String(thread.id) === String(resolved.thread.id)));
+    renderSidebar();
     schedulePendingRefresh(viewState.currentThreadId);
     return true;
   } finally {
@@ -1152,6 +1159,8 @@ export async function navigateResolvedInvoke(action, { beforeCommit } = {}) {
     applyResolvedPresentation(resolved);
     beforeCommit?.();
     recordCurrentNavigation("push");
+    expandThreadProject(appState.threads.find((thread) => String(thread.id) === String(resolved.thread.id)));
+    renderSidebar();
     schedulePendingRefresh(viewState.currentThreadId);
     return true;
   } finally {
@@ -1338,6 +1347,8 @@ export async function navigateHistory(deltaOrDirection, { beforeCommit } = {}) {
     beforeCommit?.();
     if (!navigationHistory.commit(transition)) throw navigationSupersededError();
     committed = true;
+    expandThreadProject(appState.threads.find((thread) => String(thread.id) === String(resolved.thread.id)));
+    renderSidebar();
     const restoredEntry = resolved.entry.temporalCurrent == null ? resolved.entry : {
       ...resolved.entry,
       temporalCurrent: { ...resolved.entry.temporalCurrent, mode: "pinned" },

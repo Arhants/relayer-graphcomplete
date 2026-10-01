@@ -1,6 +1,6 @@
 const REQUIREMENTS = Object.freeze({
-  claude: "0.3.250",
-  codex: "0.147.0",
+  claude: "0.3.286",
+  codex: "0.159.3",
 });
 
 const RELEASE_RECIPES = Object.freeze(Object.fromEntries(Object.entries(REQUIREMENTS)

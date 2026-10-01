@@ -38,3 +38,11 @@ export async function settleShutdownWithin({
   }
   return { timedOut };
 }
+
+// Install can fail after normal shutdown already flushed the logs. Give that
+// newly recorded failure a bounded chance to reach disk before the forced exit.
+export async function recoverAfterUpdateInstallFailure({ diagnostics, relaunch, exit, budgetMs = 1_000 }) {
+  await settleShutdownWithin({ shutdown: () => diagnostics.flush(), budgetMs });
+  relaunch();
+  exit(1);
+}

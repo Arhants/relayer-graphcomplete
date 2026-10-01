@@ -37,6 +37,8 @@ const handlers = {
   "share-create": () => { throw new Error("Native layout proof must not publish"); },
   "appearance-read": () => ({ appearance }),
   "appearance-set": (_, value) => ({ appearance: appearance = value }),
+  "project-sidebar-read": () => [],
+  "project-sidebar-set": (_, value) => value,
   "composer-drafts-read": () => drafts,
   "composer-drafts-write": (_, value) => drafts = value,
   "tutorial-read": () => tutorial,

@@ -147,6 +147,22 @@ export function registerWorkspaceLayoutIpc({ ipcMain, settings }) {
   });
 }
 
+function validCollapsedProjectIds(value) {
+  return Array.isArray(value) && value.every((id) => typeof id === "string" && /^[1-9]\d*$/.test(id));
+}
+
+export function registerProjectSidebarIpc({ ipcMain, settings }) {
+  ipcMain.handle("relayer:project-sidebar-read", async () => {
+    const value = (await settings.read()).collapsedProjectIds;
+    return validCollapsedProjectIds(value) ? [...new Set(value)] : [];
+  });
+  ipcMain.handle("relayer:project-sidebar-set", async (_event, value) => {
+    if (!validCollapsedProjectIds(value)) throw new TypeError("Invalid collapsed project IDs.");
+    const collapsedProjectIds = [...new Set(value)];
+    await settings.update((current) => ({ ...current, collapsedProjectIds }));
+  });
+}
+
 export function registerAppearanceIpc({ ipcMain, nativeTheme, settings, getWindow }) {
   ipcMain.handle("relayer:appearance-read", () => ({ appearance: nativeTheme.themeSource }));
   ipcMain.handle("relayer:appearance-set", async (_event, appearance) => {
@@ -381,6 +397,7 @@ export function registerDesktopIpc({
   registerComposerDraftIpc({ ipcMain, settings });
   registerLayerSelectionIpc({ ipcMain, settings });
   registerWorkspaceLayoutIpc({ ipcMain, settings });
+  registerProjectSidebarIpc({ ipcMain, settings });
   ipcMain.handle("relayer:tutorial-read", (_event, context) => tutorial.read(context));
   ipcMain.handle("relayer:tutorial-begin-automatic", (_event, context) => tutorial.beginAutomatic(context));
   ipcMain.handle("relayer:tutorial-begin-manual", () => tutorial.beginManual());

@@ -758,7 +758,7 @@ The required order is:
 2. await graph.submitNode(node) for each node;
 3. create a stable-keyed EdgeObject and await graph.createEdge(edge) for each visible undirected connection;
 4. create a version-1 LayerLayoutObject(placements, edgeShape, edgeRoutes?) with exactly one NodePlacementObject(node, x, y) per layer node, then await graph.submitLayer(new LayerObject(nodes, edges, layout, "response-layer"));
-5. await graph.addAction(${interactionNode.id}, { kind: "navigate", relation: "expand", label: "Response", target: layer, clientKey: "root-response" });
+5. await graph.addAction(${interactionNode.id}, { kind: "navigate", relation: "expand", label: "Key findings", icon: "search", target: layer, clientKey: "root-response" });
 6. await graph.submit(${interactionNode.id}).
 
 The visible layer must contain 1 to 8 nodes and must be connected. Layer edges are exactly what the user sees.
@@ -911,7 +911,7 @@ Navigation has two meanings:
 The interaction node must have one root navigate action with relation: "expand" and no sourceLayer. Every action on a response node must include sourceLayer: the LayerObject in which you are authoring that action. Expansion layers may author expand, reference, or invoke actions. A layer reached as a reference may author only reference actions. Do not create both expand and reference actions to the same new target layer.
 
 Examples:
-await graph.addAction(${interactionNode.id}, { kind: "navigate", relation: "expand", label: "Response", target: rootLayer, clientKey: "root-response" });
+await graph.addAction(${interactionNode.id}, { kind: "navigate", relation: "expand", label: "Key findings", icon: "search", target: rootLayer, clientKey: "root-response" });
 await graph.addAction(node, { kind: "navigate", relation: "expand", sourceLayer: rootLayer, label: "Explain further", target: detailLayer, clientKey: "node-detail" });
 await graph.addAction(node, { kind: "navigate", relation: "reference", sourceLayer: rootLayer, label: "View evidence", target: evidenceLayer, clientKey: "node-evidence" });
 await graph.addAction(node, { kind: "invoke", sourceLayer: rootLayer, label: "Follow up", interactionText: "Ask a useful follow-up", clientKey: "node-follow-up" });
