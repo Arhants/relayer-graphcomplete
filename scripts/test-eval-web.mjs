@@ -416,6 +416,7 @@ async function proveProductionSettings({ browser, product, productSession, runti
   const previousDiscoveryCount = discoveryCount;
   await page.locator("#refreshProviderCatalogs").click();
   await until(() => discoveryCount > previousDiscoveryCount, "provider refresh");
+  await until(async () => (await page.locator("#providerSettingsStatus").textContent()) === "Provider models refreshed.", "provider refresh UI settled before editing families");
   await page.locator('[data-settings-tab="models"]').click();
   await page.locator("#newModelFamily").click();
   await page.locator("#familyNameInput").fill("My eval models");

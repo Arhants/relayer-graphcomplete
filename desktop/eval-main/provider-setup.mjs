@@ -11,6 +11,24 @@ import { assemblePrimeManagedRuntime, checkPrimeManagedRuntime, createPrimeRevie
 import { PRIME_AGENT_ASSET_SHA256, selectPrimeAgentDependencyClosureSha256 } from "../main/services/prime-agent-runtime.mjs";
 import { HARNESS_MANAGED_RUNTIME_REQUIREMENTS, managedRuntimeRequirementForAdapter } from "../shared/managed-runtime-requirements.mjs";
 
+// Recognize only our auth setting and native Codex's generated project trust
+// entries. This is deliberately not a permissive TOML/configuration parser.
+function isIsolatedCodexConfig(text) {
+  const lines = text.split(/\r?\n/).map(line => line.trim()).filter(line => line && !line.startsWith("#"));
+  if (lines.shift() !== 'cli_auth_credentials_store = "file"') return false;
+  const projects = new Set();
+  while (lines.length) {
+    const match = /^\[projects\.("(?:[^"\\\x00-\x1f]|\\(?:["\\/bfnrt]|u[0-9a-fA-F]{4}))*")\]$/.exec(lines.shift());
+    if (!match) return false;
+    let path;
+    try { path = JSON.parse(match[1]); } catch { return false; }
+    if (!path || projects.has(path)) return false;
+    projects.add(path);
+    if (!/^trust_level = "(?:trusted|untrusted)"$/.test(lines.shift() ?? "")) return false;
+  }
+  return true;
+}
+
 // The host injects its secure credential store; tests may use an ephemeral store.
 // Native login adapters retain their own profile-scoped credential state.
 export function createEvalProviderSetup({ userDataDirectory, productServer, productSession,
@@ -88,10 +106,9 @@ export function createEvalProviderSetup({ userDataDirectory, productServer, prod
         try { await writeFile(configPath, isolatedConfig, { flag: "wx", mode: 0o600 }); }
         catch (error) {
           if (error.code !== "EEXIST") throw error;
-          // Only our known configuration proves this invariant without interpreting
-          // arbitrary TOML (including tables or multiline strings). Preserve any
-          // existing custom file and fail before constructing the native adapter.
-          if ((await readFile(configPath, "utf8")).trim() !== isolatedConfig.trim()) {
+          // Native Codex can append project trust entries after login/use. Preserve
+          // those bytes, but continue rejecting arbitrary execution configuration.
+          if (!isIsolatedCodexConfig(await readFile(configPath, "utf8"))) {
             throw Object.assign(new Error("Existing Codex config cannot prove file-backed authentication."), { code: "EVAL_CODEX_AUTH_CONFIG_UNSAFE" });
           }
         }
@@ -134,7 +151,7 @@ export function createEvalProviderSetup({ userDataDirectory, productServer, prod
       return result;
     } catch (error) {
       const storageMessages = {
-        EVAL_CODEX_AUTH_CONFIG_UNSAFE: 'Eval Codex requires its profile config.toml to contain only cli_auth_credentials_store = "file". Existing configuration was preserved; review and replace it before reconnecting.',
+        EVAL_CODEX_AUTH_CONFIG_UNSAFE: 'Eval Codex requires its profile config.toml to contain cli_auth_credentials_store = "file" and optional Codex project trust entries. Existing configuration was preserved; review and replace it before reconnecting.',
         EVAL_LOGIN_TIMEOUT: "Provider sign-in expired. Connect again to start a new sign-in.",
         EVAL_CREDENTIAL_UNSUPPORTED: "Persistent Eval API credentials currently require macOS Keychain. Native subscription connections are still available.",
         EVAL_CREDENTIAL_UNAVAILABLE: "Eval credential storage is unavailable. Unlock the macOS Keychain and try again.",

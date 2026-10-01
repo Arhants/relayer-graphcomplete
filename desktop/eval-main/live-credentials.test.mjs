@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
+import { readFile } from "node:fs/promises";
+import { parse } from "yaml";
+import { createHarnessReadinessCoordinator } from "../main/services/harness-readiness.mjs";
 
 import { createLiveCredentialValidator, createLiveModelRouteResolver } from "./live-credentials.mjs";
 
@@ -37,11 +40,27 @@ describe("live Eval credential validation", () => {
   });
 
   it("validates and preserves a configuration-owned Codex model instead of requiring a product family", async () => {
+    const configuration = parse(await readFile(new URL("../../harnesses/codex-layered-navigation-luna.yaml", import.meta.url), "utf8"));
     const settings = {
-      harnesses: [{ id: "codex-layered-navigation-luna", available: true, compatibleProviderIds: [], modelCompatibility: [] }],
+      harnesses: [{ id: "codex-layered-navigation-luna", available: false, compatibleProviderIds: [], modelCompatibility: [] }],
       providers: [],
       families: [],
     };
+    const readiness = createHarnessReadinessCoordinator({
+      configurations: new Map([[configuration.name, configuration]]),
+      digestConfiguration: () => "sha256:luna-fixture",
+      runtimeRequirements: { "codex.basic": { recipeId: "codex-test" } },
+      prepareRecipe: async () => ({ executable: "/managed/codex" }),
+      checkers: { "codex.basic": async () => ({ available: true }) },
+      publishAvailability: async (updates) => {
+        for (const update of updates) settings.harnesses[0].available = update.available;
+      },
+    });
+    await readiness.evaluate({
+      trigger: "connect",
+      providerDefinition: { id: "codex", adapterId: "codex-subscription", accessContract: "managed-runtime@1" },
+      models: [{ id: "gpt-5.6-luna", visible: true, availability: "available" }],
+    });
     const ensureCodexModelCatalog = vi.fn();
     const close = vi.fn(async () => {});
     const createCredentials = vi.fn(() => ({ account: async () => ({ status: "connected", account: { type: "chatgpt" } }), close }));
@@ -53,11 +72,7 @@ describe("live Eval credential validation", () => {
       resolveCodexRuntime: async () => ({ executable: "/managed/codex", environment: {} }),
       createCredentials,
     });
-    await expect(validate({
-      name: "codex-layered-navigation-luna",
-      implementation: "codex.basic",
-      settings: { model: "gpt-5.6-luna" },
-    }, reference)).resolves.toEqual({
+    await expect(validate(configuration, reference)).resolves.toEqual({
       selectedModel: null,
       productModelSelection: false,
       providerAdapterId: "codex-subscription",

@@ -118,6 +118,10 @@ describe("Eval production provider setup", () => {
     ['description = """\ncli_auth_credentials_store = "file"\n"""\n', false],
     ['', false],
     ['cli_auth_credentials_store = "file"\n', true],
+    ['cli_auth_credentials_store = "file"\n\n[projects."/fixture/repo"]\ntrust_level = "trusted"\n', true],
+    ['cli_auth_credentials_store = "file"\n[projects."/fixture/repo"]\ncli_auth_credentials_store = "keyring"\n', false],
+    ['[projects."/fixture/repo"]\ncli_auth_credentials_store = "file"\n', false],
+    ['cli_auth_credentials_store = "file"\n[mcp_servers.extra]\ncommand = "unexpected"\n', false],
   ])("validates existing Codex file auth before startup or reconnect: %s", async (config, safe) => {
     const fixture = await setup({ managed: true });
     fixture.seed([{ id: "codex", adapterId: "codex-subscription", label: "Codex", accessContract: "managed-runtime@1", endpoint: null, credentialReference: null, lifecycleState: "active", removedAt: null }]);
