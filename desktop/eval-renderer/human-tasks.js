@@ -42,12 +42,24 @@ export function initializeHumanTasks({ api, show, toast }) {
       <label>Satisfaction <select name="satisfaction"><option value="">Choose…</option><option value="1">1 · Bad</option><option value="2">2 · Needs work</option><option value="3">3 · Good</option><option value="4">4 · Great</option></select></label>
       <label>Feedback <textarea name="comment" maxlength="8000"></textarea></label><button type="button" id="humanSaveGrade" class="secondary">Save grade</button><button class="primary">Finish task</button></form>` : `<p>Termination: ${escape(task.termination?.reason || task.status)} · Satisfaction: ${escape(task.satisfaction?.value ?? "not recorded")}</p>`}
       <h3>Response timing</h3><pre>${escape(JSON.stringify(task.responseTimings || [], null, 2))}</pre><p>Only observations armed before a submission are suitable for response comparisons.</p><h3>Recorded trajectory</h3><p>Presentation records contain rendered text and navigation state, not a visual-quality verdict. Actor observations include captured screenshots.</p>
-      <ol class="human-timeline">${task.events.map((event) => `<li><details><summary>${event.sequence}. ${escape(event.kind)} · ${escape(event.at)}</summary><pre>${escape(JSON.stringify(event.observation?.screenshot ? { ...event, observation: { ...event.observation, screenshot: "PNG captured with this observation" } } : event, null, 2))}</pre>${event.observation?.screenshot ? `<img alt="Workspace observed by the simulated user" style="max-width:100%" src="data:image/png;base64,${escape(event.observation.screenshot)}">` : ""}</details>
+      <ol class="human-timeline">${task.events.map((event) => `<li><details ${event.observation?.screenshotArtifact ? `data-actor-image="${escape(event.id)}"` : ""}><summary>${event.sequence}. ${escape(event.kind)} · ${escape(event.at)}</summary><pre>${escape(JSON.stringify(event.observation?.screenshot ? { ...event, observation: { ...event.observation, screenshot: "PNG captured with this observation" } } : event, null, 2))}</pre>${event.observation?.screenshot ? `<img alt="Workspace observed by the simulated user" style="max-width:100%" src="data:image/png;base64,${escape(event.observation.screenshot)}">` : ""}</details>
       ${active || reviewable ? `<button class="secondary" data-annotate-event="${escape(event.id)}">Annotate this moment</button>` : ""}</li>`).join("")}</ol>
       <h3>Moment annotations</h3>${task.annotations.map((note) => `<p><b>${escape(note.eventId)}</b> ${escape(note.comment)}</p>`).join("")}
       <form id="humanAnnotation" class="hidden"><input name="eventId" type="hidden"><label>Comment on this moment<textarea name="comment" maxlength="8000" required></textarea></label><button class="primary">Save annotation</button></form>`;
     root.querySelector("#humanOpen").onclick = () => run(() => api.openHumanTask(id, !active || simulated));
     root.querySelector("#humanRefresh").onclick = () => run(() => inspect(id));
+    root.querySelectorAll("[data-actor-image]").forEach(details => {
+      details.ontoggle = () => {
+        if (!details.open || details.dataset.loaded) return;
+        details.dataset.loaded = "pending";
+        void run(async () => {
+          try {
+            const image = document.createElement("img"); image.alt = "Workspace observed by the simulated user"; image.style.maxWidth = "100%";
+            image.src = await api.actorScreenshot(id, details.dataset.actorImage); details.append(image); details.dataset.loaded = "yes";
+          } catch (error) { delete details.dataset.loaded; throw error; }
+        });
+      };
+    });
     const stopActor = root.querySelector("#actorStop");
     if (stopActor) stopActor.onclick = () => run(async () => { await api.stopTaskActor(id); await inspect(id); await list(); });
     const next = root.querySelector("#humanNext");
@@ -105,10 +117,14 @@ export function initializeHumanTasks({ api, show, toast }) {
   root.querySelector("#taskMode").onchange = (event) => root.querySelector("#actorSettings").classList.toggle("hidden", event.target.value !== "simulated");
   root.querySelector("#humanCreate").onsubmit = (event) => { event.preventDefault(); void run(async () => {
     const form = event.target; const button = form.querySelector("button"); button.disabled = true;
+    const startupId = crypto.randomUUID();
+    const cancel = document.createElement("button"); cancel.type = "button"; cancel.className = "secondary"; cancel.textContent = "Cancel starting user";
+    cancel.onclick = () => run(() => api.stopTaskActor(startupId));
+    if (new FormData(form).get("mode") === "simulated") button.after(cancel);
     try {
-      const data = Object.fromEntries(new FormData(form)); data.maxCompletions = Number(data.maxCompletions);
+      const data = Object.fromEntries(new FormData(form)); data.startupId = startupId; data.maxCompletions = Number(data.maxCompletions);
       if (data.mode === "simulated") data.actor = { model: data.actorModel, modelReasoningEffort: data.actorReasoning, exploration: data.exploration, meticulousness: data.meticulousness, maxActions: Number(data.maxActions) };
       const task = await api.createHumanTask(data); await list(); await inspect(task.id);
-    } finally { button.disabled = false; }
+    } finally { cancel.remove(); button.disabled = false; }
   }); };
 }

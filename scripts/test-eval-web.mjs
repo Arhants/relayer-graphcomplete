@@ -482,8 +482,27 @@ async function proveTaskActor({ browser, service, productSession, data }) {
         hidden.id = "actor-hidden-test"; hidden.style.cssText = "position:fixed;left:0;top:0;width:10px;height:10px;overflow:hidden";
         const button = document.createElement("button"); button.textContent = "HIDDEN EVALUATOR FEEDBACK"; button.style.cssText = "position:absolute;top:100px";
         hidden.append(button); root.append(hidden);
+        const fields = document.createElement("div"); fields.id = "actor-fields-test";
+        fields.style.cssText = "position:fixed;left:400px;top:200px;z-index:9999;background:white;color:black";
+        fields.innerHTML = '<label>Choice<select><option>Visible choice</option><option value="INTERNAL_OPTION">CLOSED_OPTION_SENTINEL</option></select></label><label>Note<textarea style="width:40px;height:20px">CLIPPED_VALUE_SENTINEL</textarea></label>';
+        root.append(fields);
       });
+      await actorPage.route("**/api/threads/1/interactions/1/actions/1/destination", async route => {
+        await new Promise(resolve => setTimeout(resolve, 350));
+        await route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+      });
+      await actorPage.evaluate(() => {
+        const button = document.createElement("button"); button.textContent = "Delayed navigation";
+        button.onclick = async () => { await fetch("/api/threads/1/interactions/1/actions/1/destination"); button.textContent = "Navigation settled"; };
+        document.querySelector("#actor-fields-test").append(button);
+      });
+      const navigation = await controller.observe();
+      await controller.act({ kind: "click", ref: navigation.controls.find(control => control.name === "Delayed navigation").ref });
+      assert.equal(await actorPage.getByRole("button", { name: "Navigation settled", exact: true }).count(), 1, "action waits for navigation GET completion");
       const first = await controller.observe();
+      assert.ok(first.controls.some(control => control.name === "Choice"));
+      assert.ok(!JSON.stringify(first.controls).match(/CLOSED_OPTION_SENTINEL|INTERNAL_OPTION|CLIPPED_VALUE_SENTINEL/));
+      await actorPage.locator("#actor-fields-test").evaluate(element => element.remove());
       assert.ok(first.controls.every((control) => !control.name.includes("HIDDEN EVALUATOR FEEDBACK")));
       await controller.observe();
       if (first.controls[0]) await assert.rejects(controller.act({ kind: "click", ref: first.controls[0].ref }), /stale/);
@@ -532,10 +551,10 @@ async function proveTaskActor({ browser, service, productSession, data }) {
       assert.ok(!JSON.stringify(observation.controls).includes("Review & grade"));
       const action = { kind: "finish", ref: "", value: "", reason: "satisfied", satisfaction: 3, comment: "The follow-up is good enough.", endpointStatus: "incomplete", remainingWork: "Further choices remain." };
       const find = (predicate) => { const control = observation.controls.find(predicate); assert.ok(control, JSON.stringify(observation.controls)); return control.ref; };
-      if (decision === 0) Object.assign(action, { kind: "click", ref: find((control) => control.kind === "node" && control.name.includes("Two-worker")) });
+      if (decision === 0) Object.assign(action, { kind: "click", ref: find((control) => control.name.includes("Two-worker")) });
       if (decision === 1) Object.assign(action, { kind: "fill", ref: find((control) => control.role === "textarea"), value: "Explain how the workers coordinate." });
-      if (decision === 2) Object.assign(action, { kind: "click", ref: find((control) => control.kind === "send") });
-      if (decision === 3) Object.assign(action, { kind: "click", ref: find((control) => control.kind === "node" && control.name.includes("Results store")) });
+      if (decision === 2) Object.assign(action, { kind: "click", ref: find((control) => ["Send", "↑"].includes(control.name)) });
+      if (decision === 3) Object.assign(action, { kind: "click", ref: find((control) => control.name.includes("Results store")) });
       if (decision === 4) Object.assign(action, { kind: "click", ref: find((control) => control.name.includes("Plan the next improvement")) });
       decision++;
       return { action, usage: null };
@@ -562,12 +581,18 @@ async function proveTaskActor({ browser, service, productSession, data }) {
     assert.equal(decision, 6);
     assert.ok(task.events.some((event) => event.kind === "submission" && event.path?.endsWith("/invoke")));
     const lastTurn = (await tasks.detail(task.currentThreadId)).interactions.at(-1);
-    assert.equal(String(snapshots.at(-1).presentation.turnId), String(lastTurn.id), "actor sees the latest completed response");
+    assert.equal(String(task.events.findLast(event => event.kind === "presentation").snapshot.turnId), String(lastTurn.id), "latest completed response is painted before actor finishes");
+    for (const snapshot of snapshots) {
+      assert.deepEqual(Object.keys(snapshot).sort(), ["controls", "screenshot", "text"]);
+      for (const control of snapshot.controls) assert.deepEqual(Object.keys(control).sort(), ["name", "ref", "role"]);
+    }
+    assert.ok(task.events.filter(event => event.kind === "actor_observation").every(event => !event.observation.screenshot && event.observation.screenshotArtifact));
     assert.equal(task.events.filter((event) => event.kind === "actor_satisfaction").length, 1);
     assert.equal(task.satisfaction.value, 1, "human grade saved during the active actor session stays separate from actor satisfaction");
     const exported = await tasks.export(task.id);
     assert.equal(exported.bundle.session.events.filter((event) => event.kind === "actor_observation").length, 6);
     assert.equal(exported.bundle.session.satisfaction.value, 1);
+    assert.equal(exported.bundle.actorScreenshots.length, 6);
     assert.equal(await page.locator("#actorSettings [name=actorModel]").inputValue(), "gpt-5.6-luna");
     assert.ok(snapshots.every((snapshot) => !JSON.stringify(snapshot).includes("Independent human feedback") && !JSON.stringify(snapshot).includes("Unnecessary exploration")));
   } finally { await actors.close(); await page.close(); }
@@ -771,7 +796,7 @@ async function proveTaskActorInputs({ browser, service, productSession, data }) 
         assert.ok(composer, "Visible composer after node input");
         Object.assign(action, { kind: "fill", ref: composer.ref, value: "Use my review note to refine this." }); stage++;
       } else if (stage === 2) {
-        const send = controls.find((control) => control.kind === "send"); assert.ok(send, "Send enabled after input commitment");
+        const send = controls.find((control) => ["Send", "↑"].includes(control.name)); assert.ok(send, "Send enabled after input commitment");
         Object.assign(action, { kind: "click", ref: send.ref }); stage++;
       } else if (stage === 3) { Object.assign(action, { kind: "finish", reason: "satisfied", satisfaction: 3 }); stage++; }
       return { action, usage: null };

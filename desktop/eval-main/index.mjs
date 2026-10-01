@@ -283,7 +283,7 @@ async function start() {
     annotationSnapshotLoader: (threadIds) => loadAnnotationSnapshots(productSession, threadIds),
   }).open();
   taskActors = new TaskActorService({ tasks: humanTasks,
-    resolveRuntime: (config) => providerSetup.resolveCodexJudgeRuntime(config),
+    resolveRuntime: (config, options) => providerSetup.resolveCodexJudgeRuntime(config, options),
     openBrowser: async (sessionId, signal) => openTaskActorBrowser({ tasks: humanTasks, sessionId, productSession, signal, browser: await judgeBrowser.get() }),
   });
   dashboard = await createEvalDashboard({
@@ -317,7 +317,7 @@ async function start() {
           grade: (input) => humanTasks.grade(sessionId, input),
           annotate: (input) => humanTasks.annotate(sessionId, input),
         },
-        reviewContext: () => ({ readOnly: true, selectedExecutionId: sessionId, harnessConfigurationName: task.prepared.execution.harnessConfigurationName, cases: [{ executionId: sessionId, name: task.prepared.name, status: task.status, threadIds: task.threadIds, threads: task.threadIds.map((id, index) => ({ id, name: task.prepared.plan[index]?.name || `Step ${index + 1}` })) }] }),
+        reviewContext: () => { const task = humanTasks.get(sessionId); return { readOnly: true, selectedExecutionId: sessionId, harnessConfigurationName: task.prepared.execution.harnessConfigurationName, cases: [{ executionId: sessionId, name: task.prepared.name, status: task.status, threadIds: task.threadIds, threads: task.threadIds.map((id, index) => ({ id, name: task.prepared.plan[index]?.name || `Step ${index + 1}` })) }] }; },
         registerAnnotations: (session, scope) => controlProductRequest(session, "/api/internal/annotation-sessions", {
           method: "POST", body: { ...scope, authorId: `local:${userInfo().username}`, authorDisplayName: userInfo().username },
         }),

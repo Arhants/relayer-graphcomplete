@@ -1,3 +1,4 @@
+import { abortable } from "./abortable.mjs";
 import { interactiveTripCase } from "./interactive-trip-case.mjs";
 import { evalSelectionRequiresLiveAuthorization, validateExternalLiveAuthorization } from "../eval-renderer/eval-live-authorization.js";
 import { createHash, randomUUID } from "node:crypto";
@@ -2473,16 +2474,18 @@ export class EvalService {
     return thread;
   }
 
-  async gradeHumanTaskStep(prepared, step) {
+  async gradeHumanTaskStep(prepared, step, { signal } = {}) {
+    signal?.throwIfAborted();
     const execution = prepared.execution;
     if (!execution.fixture) return { status: "not_run", reason: "Original scripted graph checks do not certify an adaptive human trajectory." };
     const workspaceDirectory = join(dirname(this.stateFile), "runs", encodeURIComponent(execution.testRunId), "executions", encodeURIComponent(execution.id), "workspace");
     const definition = evalCases.find((item) => item.id === execution.testCaseId);
-    const result = h3CaseIds.has(definition.id)
-      ? await this.workspaceGrader({ workspaceDirectory, grade: prepared.plan[step].workspaceGrade })
+    const result = await abortable(signal, async () => h3CaseIds.has(definition.id)
+      ? await this.workspaceGrader({ workspaceDirectory, grade: prepared.plan[step].workspaceGrade, signal })
       : calibrationAutonomousCaseIds.has(definition.id)
-        ? await this.calibrationWorkspaceGrader({ caseId: definition.id, workspaceDirectory, baseRevision: execution.fixture.seededCommit })
-        : await this.frontierWorkspaceGrader({ caseId: definition.id, workspaceDirectory });
+        ? await this.calibrationWorkspaceGrader({ caseId: definition.id, workspaceDirectory, baseRevision: execution.fixture.seededCommit, signal })
+        : await this.frontierWorkspaceGrader({ caseId: definition.id, workspaceDirectory, signal }));
+    signal?.throwIfAborted();
     try {
       const artifact = await captureTurnArtifactSnapshot(execution, workspaceDirectory, `human-step-${step + 1}-${randomUUID()}`);
       return { status: "recorded", result, artifact };

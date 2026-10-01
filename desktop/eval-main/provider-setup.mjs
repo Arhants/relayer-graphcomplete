@@ -1,3 +1,4 @@
+import { abortable } from "./abortable.mjs";
 import { join } from "node:path";
 import { mkdir, writeFile, readFile } from "node:fs/promises";
 import { createManagedRuntimeInstaller } from "../main/managed-runtimes/installer.mjs";
@@ -105,9 +106,9 @@ export function createEvalProviderSetup({ userDataDirectory, productServer, prod
     evaluateReadiness: (input) => readiness.evaluate(input),
     publishCatalog: (snapshot, options) => productServer.publishProviderCatalog(snapshot, options),
   });
-  async function request(path, { method = "GET", body } = {}) {
+  async function request(path, { method = "GET", body, signal } = {}) {
     const response = await fetchImpl(new URL(path, productSession.origin), {
-      method, headers: { "Content-Type": "application/json",
+      method, signal, headers: { "Content-Type": "application/json",
         Cookie: `${productSession.cookie.name}=${productSession.cookie.value}` },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
@@ -250,8 +251,9 @@ export function createEvalProviderSetup({ userDataDirectory, productServer, prod
       selections.set(harnessId, selection);
       return selection;
     },
-    async resolveCodexJudgeRuntime(config) {
-      const settings = await request("/api/model-settings");
+    async resolveCodexJudgeRuntime(config, { signal } = {}) {
+      signal?.throwIfAborted();
+      const settings = await request("/api/model-settings", { signal });
       const connected = (await definitions.list()).filter((definition) => (
         definition.adapterId === "codex-subscription" && definition.lifecycleState === "active" && definition.connected
       ));
@@ -265,21 +267,22 @@ export function createEvalProviderSetup({ userDataDirectory, productServer, prod
           // Discovery is read-only native model/list, never runtime installation or
           // inference. Hold this connection's lease through discovery and resolution.
           const requested = typeof config === "string" ? { model: config } : config;
-          const snapshot = await composition.modelCatalog.refresh(definition.id, "pre-inference");
+          const snapshot = await abortable(signal, () => composition.modelCatalog.refresh(definition.id, "pre-inference"));
           const model = snapshot?.provider?.status === "available" && snapshot.models?.find((candidate) => (
             (candidate.id === requested?.model || candidate.executionModel === requested?.model)
-            && candidate.visible !== false && candidate.availability === "available"
+            && candidate.visible !== false && candidate.availability === "available" && candidate.inputModalities?.includes("image")
           ));
           if (!model) throw Object.assign(new Error("The actor model is unavailable in this connection's discovered catalog."), { code: "actor_model_unsupported" });
           if (requested.modelReasoningEffort !== undefined && !model.supportedEfforts?.some(({ id }) => id === requested.modelReasoningEffort)) {
             throw Object.assign(new Error("The actor reasoning effort is unavailable for this model."), { code: "actor_effort_unsupported" });
           }
         }
-        const access = await lease.runtime.executionAccess();
+        signal?.throwIfAborted();
+        const access = await abortable(signal, () => lease.runtime.executionAccess());
         if (access.kind !== "managed-runtime" || access.runtimeId !== "codex") {
           throw new Error("The selected provider has no managed Codex execution access.");
         }
-        return Object.freeze({ ...await runtime(HARNESS_MANAGED_RUNTIME_REQUIREMENTS["codex.basic"].recipeId), environment: access.environment });
+        return Object.freeze({ ...await abortable(signal, () => runtime(HARNESS_MANAGED_RUNTIME_REQUIREMENTS["codex.basic"].recipeId)), environment: access.environment });
       } finally { await lease.release(); }
     },
     acquireExecution: (id) => definitions.acquireExecution(id),

@@ -99,12 +99,20 @@ async function workspaceLayoutPreference(request, response, presentationSettings
   throw fail(405, "Method not allowed.");
 }
 
-export async function createReviewSurface({ productSession, context, annotationToken, humanGrading, fetchImpl = fetch, presentationSettings = reviewPresentationSettings }) {
+export async function createReviewSurface({ productSession, context, annotationToken, humanGrading, refreshContext, fetchImpl = fetch, presentationSettings = reviewPresentationSettings }) {
   if (!productSession.readOnlyCookie) throw new Error("Review requires read-only authority.");
   const cookie = productSession.readOnlyCookie;
-  const allowedThreads = new Set(context.cases.flatMap((item) => item.threadIds).map(String));
+  let allowedThreads = new Set(context.cases.flatMap((item) => item.threadIds).map(String));
+  let refreshTail = Promise.resolve();
   let allowedProjects = new Set();
   return serveEvalSurface(async ({ request, response, url }) => {
+    if (refreshContext && (url.pathname.startsWith("/api/") || url.pathname.startsWith("/eval-api/"))) {
+      refreshTail = refreshTail.catch(() => {}).then(async () => {
+        context = await refreshContext();
+        allowedThreads = new Set(context.cases.flatMap(item => item.threadIds).map(String));
+      });
+      await refreshTail;
+    }
     if (url.pathname === "/eval-api/workspace-layout") return workspaceLayoutPreference(request, response, presentationSettings);
     if (url.pathname === "/eval-api/context" && request.method === "GET") return json(response, context);
     if (humanGrading && url.pathname === "/eval-api/task" && request.method === "GET") return json(response, { ...humanGrading.task(), workspaceGrading: 2 });
@@ -168,6 +176,7 @@ export async function createEvalDashboard({ service, rendererDirectory, refreshC
     openSettings: () => openSettings(),
     humanTasks: () => humanTasks.list(),
     humanTask: ([id]) => humanTasks.get(id),
+    actorScreenshot: ([id, eventId]) => humanTasks.actorScreenshot(id, eventId),
     createHumanTask: ([selection]) => selection?.mode === "simulated" ? taskActors.create(selection) : humanTasks.create(selection),
     stopTaskActor: ([id]) => taskActors.stop(id),
     nextHumanTaskStep: ([id]) => humanTasks.nextStep(id),
@@ -271,7 +280,7 @@ export async function createSettingsSurface({ productSession, providerSetup, isB
   return { ...surface, url: url.href };
 }
 
-// Snapshot a fresh roster on every opening; existing tabs keep their own scope.
+// Matrix reviews keep a snapshot; active human reviews refresh their owned roster.
 export async function openHumanReview({ executionId, reviewContext, productSession,
   registerAnnotations, assertRunning, humanGrading }) {
   assertRunning();
@@ -285,7 +294,19 @@ export async function openHumanReview({ executionId, reviewContext, productSessi
     threadIds: [...new Set(context.cases.flatMap((item) => item.threadIds || []))],
   });
   assertRunning();
-  const surface = await createReviewSurface({ productSession: session, context, annotationToken, humanGrading });
+  let registered = [...new Set(context.cases.flatMap(item => item.threadIds || []))].sort().join(",");
+  const refreshContext = humanGrading ? async () => {
+    assertRunning();
+    const next = reviewContext(executionId);
+    const threadIds = [...new Set(next.cases.flatMap(item => item.threadIds || []))];
+    const identity = [...threadIds].sort().join(",");
+    if (identity !== registered) {
+      await registerAnnotations(session, { token: annotationToken, threadIds });
+      registered = identity;
+    }
+    return next;
+  } : undefined;
+  const surface = await createReviewSurface({ productSession: session, context, annotationToken, humanGrading, refreshContext });
   const url = new URL(surface.url);
   url.search = new URLSearchParams({ threadId: String(threadId), review: "1", ...(humanGrading ? { humanGrading: "1" } : {}) });
   return { ...surface, url: url.href };
@@ -314,7 +335,7 @@ export async function createHumanTaskSurface({ tasks, sessionId, productSession,
     if (url.pathname === "/eval-api/task" && request.method === "GET") return json(response, actor
       ? { id: session.id, status: session.status, currentThreadId: session.currentThreadId, threadIds: session.threadIds, prepared: { name: session.prepared.name, plan: [], execution: { harnessConfigurationName: session.prepared.execution.harnessConfigurationName } }, workspaceGrading: 0 }
       : { ...session, workspaceGrading: 2 });
-    if (url.pathname === "/eval-api/observe" && request.method === "POST") return json(response, await tasks.observe(sessionId, JSON.parse((await body(request)).toString())));
+    if (url.pathname === "/eval-api/observe" && request.method === "POST") return json(response, await tasks.observe(sessionId, JSON.parse((await body(request)).toString()), { signal }));
     if (url.pathname === "/eval-api/grade" && request.method === "POST") return json(response, await tasks.grade(sessionId, JSON.parse((await body(request)).toString())));
     if (url.pathname === "/eval-api/finish" && request.method === "POST") return json(response, await tasks.finish(sessionId, JSON.parse((await body(request)).toString())));
     if (url.pathname === "/eval-api/annotate" && request.method === "POST") return json(response, await tasks.annotate(sessionId, JSON.parse((await body(request)).toString())));

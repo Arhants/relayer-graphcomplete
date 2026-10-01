@@ -7,7 +7,7 @@ import { createProviderAdapterRegistry } from "../desktop/main/providers/provide
 
 const cleanups = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); });
-async function setup({ managed = false, failing = false, credentialStore, now, accountStatus = "connected", closeFails = false, scheduleTimeout, cancelTimeout, updatesDue = [], modelRules = { allow: [], deny: [] } } = {}) {
+async function setup({ managed = false, failing = false, credentialStore, now, accountStatus = "connected", closeFails = false, scheduleTimeout, cancelTimeout, updatesDue = [], inputModalities = ["text", "image"], modelRules = { allow: [], deny: [] } } = {}) {
   const directory = await mkdtemp(join(tmpdir(), "eval-provider-setup-"));
   cleanups.push(() => rm(directory, { recursive: true, force: true }));
   let stored = [];
@@ -27,7 +27,7 @@ async function setup({ managed = false, failing = false, credentialStore, now, a
         if (failing) throw new Error(`Provider echoed ${deps.secrets?.["api-key"]}`);
         return { provider: { id: definition.id, label: definition.label, status: "available" },
           systemFamily: { id: definition.id, label: definition.label, modelIds: ["gpt-test"] },
-          models: [{ id: "gpt-test", executionModel: "gpt-test", label: "Test", availability: "available", visible: true, description: "", unavailableReason: null, availabilityNotice: null, isDefault: true, replacementModelId: null, upgradeInfo: null, supportedEfforts: [{ id: "low", description: "Low" }], defaultEffort: null, inputModalities: ["text"], supportsPersonality: false, serviceTiers: [], defaultServiceTier: null }],
+          models: [{ id: "gpt-test", executionModel: "gpt-test", label: "Test", availability: "available", visible: true, description: "", unavailableReason: null, availabilityNotice: null, isDefault: true, replacementModelId: null, upgradeInfo: null, supportedEfforts: [{ id: "low", description: "Low" }], defaultEffort: null, inputModalities, supportsPersonality: false, serviceTiers: [], defaultServiceTier: null }],
         };
       };
       return { providerId: definition.id, discover,
@@ -237,4 +237,10 @@ describe("Eval production provider setup", () => {
     await fixture.service.logout("chosen");
     await expect(fixture.service.resolveCodexJudgeRuntime()).rejects.toThrow("Choose a connected Codex subscription");
   });
+  it("rejects text-only actor models before candidate inference", async () => {
+    const fixture = await setup({ managed: true, inputModalities: ["text"] });
+    await fixture.service.start(); await fixture.connect(); await fixture.service.completeConnection("chosen");
+    await expect(fixture.service.resolveCodexJudgeRuntime({ model: "gpt-test", modelReasoningEffort: "low" })).rejects.toMatchObject({ code: "actor_model_unsupported" });
+  });
+
 });

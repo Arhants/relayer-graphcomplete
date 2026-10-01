@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { abortable } from "./abortable.mjs";
 import { setTimeout as delay } from "node:timers/promises";
 import { actorConfiguration, actorPrompt, createCodexTaskActor, validateActorAction } from "./task-actor.mjs";
 
@@ -28,27 +30,36 @@ function actorFailure(error, { cancelled = false, timedOut = false } = {}) {
 }
 
 export class TaskActorService {
-  constructor({ tasks, resolveRuntime, openBrowser, createActor = createCodexTaskActor, pollMs = 250 }) {
-    Object.assign(this, { tasks, resolveRuntime, openBrowser, createActor, pollMs });
+  constructor({ tasks, resolveRuntime, openBrowser, createActor = createCodexTaskActor, pollMs = 250, deadlineMs = 900000 }) {
+    Object.assign(this, { tasks, resolveRuntime, openBrowser, createActor, pollMs, deadlineMs });
     this.running = new Map();
   }
   async create(selection) {
     const config = actorConfiguration(selection.actor);
-    // Authenticate before the opening candidate completion can spend inference.
-    let runtime;
-    try { runtime = await this.resolveRuntime(config); }
-    catch (error) {
-      const safe = actorFailure(error);
-      throw Object.assign(new Error(safe.message), { code: safe.category });
-    }
-    const task = await this.tasks.create({ ...selection, mode: "simulated", actor: config });
+    const startupId = selection.startupId ?? randomUUID();
+    if (typeof startupId !== "string" || !/^[a-zA-Z0-9-]{1,80}$/.test(startupId) || this.running.has(startupId)) throw new Error("Invalid actor startup identity.");
     const controller = new AbortController();
-    const done = this.run(task.id, runtime, controller.signal).catch(async () => {
-      await this.tasks.interruptActor(task.id, controller.signal.aborted ? "actor_cancelled" : "actor_failed");
-    });
-    this.running.set(task.id, { controller, done });
-    void done.finally(() => this.running.delete(task.id)).catch(() => {});
-    return task;
+    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(this.deadlineMs)]);
+    let resolveStarted, rejectStarted, task;
+    const started = new Promise((resolve, reject) => { resolveStarted = resolve; rejectStarted = reject; });
+    const run = { controller, done: null };
+    this.running.set(startupId, run);
+    run.done = (async () => {
+      try {
+        // The same deadline covers discovery, preparation and all user actions.
+        const runtime = await abortable(signal, () => this.resolveRuntime(config, { signal }));
+        task = await this.tasks.create({ ...selection, mode: "simulated", actor: config }, { signal });
+        this.running.set(task.id, run);
+        this.running.delete(startupId);
+        resolveStarted(task);
+        await this.run(task.id, runtime, controller.signal, signal);
+      } catch (error) {
+        const safe = actorFailure(error, { cancelled: controller.signal.aborted, timedOut: signal.aborted && !controller.signal.aborted });
+        rejectStarted(Object.assign(new Error(safe.message), { code: safe.category }));
+        if (task) await this.tasks.interruptActor(task.id, controller.signal.aborted ? "actor_cancelled" : signal.aborted ? "actor_timeout" : "actor_failed");
+      } finally { this.running.delete(startupId); if (task) this.running.delete(task.id); }
+    })();
+    return started;
   }
   async settled(id, signal) {
     while (true) {
@@ -60,9 +71,9 @@ export class TaskActorService {
       await delay(this.pollMs, undefined, { signal });
     }
   }
-  async run(id, runtime, cancellation) {
+  async run(id, runtime, cancellation, deadlineSignal) {
     const task = this.tasks.get(id);
-    const signal = AbortSignal.any([cancellation, AbortSignal.timeout(task.actor.timeoutMs)]);
+    const signal = deadlineSignal ?? AbortSignal.any([cancellation, AbortSignal.timeout(this.deadlineMs)]);
     const prompt = actorPrompt({ config: task.actor, request: task.prepared.plan[0].prompts[0], endpoint: task.endpoint, privateBrief: task.prepared.humanBrief });
     let actor;
     let browser;
@@ -72,7 +83,7 @@ export class TaskActorService {
       signal.throwIfAborted();
       browser = await this.openBrowser(id, signal);
       let observedSubmission;
-      for (let index = 0; index < task.actor.maxActions; index++) {
+      for (let index = 0; index <= task.actor.maxActions; index++) {
         const current = await this.settled(id, signal);
         const submission = current.events.findLast((event) => event.kind === "submission" && event.interactionId != null && (event.outcome == null || event.outcome === "accepted"));
         let expected;
@@ -84,10 +95,15 @@ export class TaskActorService {
           if (submission.path?.endsWith("/retry") && attemptId == null) throw new Error("Retried interaction has no settled attempt identity.");
           expected = { threadId: submission.threadId, turnId: submission.interactionId, submittedAt: Date.parse(submission.at), ...(attemptId == null ? {} : { attemptId }) };
         }
-        const observation = { ...await browser.observe(expected), remainingCompletions: current.maxCompletions - current.completions, step: current.step + 1, stepCount: current.prepared.plan.length };
+        const observation = await browser.observe(expected);
         observedSubmission = submission?.id;
         const observed = await this.tasks.actorEvent(id, "actor_observation", { observation });
         signal.throwIfAborted();
+        if (index === task.actor.maxActions) {
+          await this.tasks.actorEvent(id, "actor_limit", { reason: "action_limit" });
+          await this.tasks.finish(id, { reason: "abandoned" }, { signal });
+          return;
+        }
         const { action, usage } = await actor.decide(observation, signal);
         validateActorAction(action);
         signal.throwIfAborted();
@@ -97,7 +113,7 @@ export class TaskActorService {
         signal.throwIfAborted();
         if (action.kind === "finish") {
           await this.tasks.actorEvent(id, "actor_satisfaction", { scale: "actor-1-4", value: action.satisfaction, comment: action.comment, endpointStatus: action.endpointStatus, remainingWork: action.remainingWork });
-          await this.tasks.finish(id, { reason: current.completions >= current.maxCompletions ? "budget_exhausted" : action.reason }, { signal });
+          await this.tasks.finish(id, { reason: action.reason, actorActionEventId: intent.id }, { signal });
           return;
         }
         if (current.completions >= current.maxCompletions && action.kind === "next_step") {
@@ -107,9 +123,7 @@ export class TaskActorService {
         else await browser.act(action);
         await this.tasks.actorEvent(id, "actor_action_completed", { actionEventId: intent.id });
       }
-      await this.settled(id, signal);
-      await this.tasks.actorEvent(id, "actor_limit", { reason: "action_limit" });
-      await this.tasks.finish(id, { reason: "abandoned" }, { signal });
+
     } catch (error) {
       if (this.tasks.get(id).status === "active") await this.tasks.actorEvent(id, "actor_error", actorFailure(error, { cancelled: cancellation.aborted, timedOut: signal.aborted && !cancellation.aborted }));
       await this.tasks.interruptActor(id, cancellation.aborted ? "actor_cancelled" : signal.aborted ? "actor_timeout" : "actor_failed");

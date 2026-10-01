@@ -9,7 +9,7 @@ export function initializeHumanTaskGrading(bridge) {
   panel.className = "human-task-grading";
   panel.innerHTML = `<summary>Review &amp; grade</summary>
     <p>Save a rating or comment on a graph moment without ending the task. Use the graph’s ✎ controls for comments on specific nodes when available.</p>
-    <button type="button" data-grade-refresh>Refresh session status</button><div data-grade-content></div><p role="status" aria-live="polite" data-grade-status></p>`;
+    <a data-current-step hidden>Open current step ↗</a><button type="button" data-grade-refresh>Refresh session status</button><div data-grade-content></div><p role="status" aria-live="polite" data-grade-status></p>`;
   document.body.append(panel);
   const content = panel.querySelector("[data-grade-content]");
   const status = panel.querySelector("[data-grade-status]");
@@ -29,7 +29,16 @@ export function initializeHumanTaskGrading(bridge) {
     }
     finally { busy = false; buttons.forEach((button) => { button.disabled = false; }); }
   };
+  function currentStep(task) {
+    const link = panel.querySelector("[data-current-step]");
+    const target = new URL(window.location.href);
+    link.hidden = task.mode !== "simulated" || task.currentThreadId == null || String(task.currentThreadId) === target.searchParams.get("threadId");
+    target.searchParams.set("threadId", String(task.currentThreadId));
+    for (const key of ["interactionId", "layerId", "nodeId"]) target.searchParams.delete(key);
+    link.href = target.href;
+  }
   function render(task) {
+    currentStep(task);
     renderedStatus = task.status;
     content.replaceChildren();
     if (task.prepared?.humanBrief) {
@@ -98,6 +107,7 @@ export function initializeHumanTaskGrading(bridge) {
   panel.querySelector("[data-grade-refresh]").onclick = () => {
     if (busy) return;
     void bridge.task().then((task) => {
+      currentStep(task);
       if (task.status !== renderedStatus || !content.childElementCount) render(task);
       const moments = content.querySelector('[name="eventId"]');
       if (task.status === "active" && moments) {

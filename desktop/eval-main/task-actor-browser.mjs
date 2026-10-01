@@ -26,7 +26,9 @@ export async function openTaskActorBrowser({ tasks, sessionId, productSession, b
       const writes = window.__taskActorWrites = { pending: 0, changedAt: 0 };
       window.fetch = async (input, options = {}) => {
         const method = options.method || (input instanceof Request ? input.method : "GET");
-        const mutation = method !== "GET" && new URL(input instanceof Request ? input.url : input, location.href).pathname.startsWith("/api/");
+        const path = new URL(input instanceof Request ? input.url : input, location.href).pathname;
+        const mutation = path.startsWith("/api/") && (method !== "GET"
+          || /\/interactions\/[0-9]+\/(?:layers\/|actions\/[^/]+\/destination|input-children)/.test(path));
         if (mutation) { writes.pending++; writes.changedAt = Date.now(); }
         try { return await nativeFetch(input, options); }
         finally { if (mutation) { writes.pending--; writes.changedAt = Date.now(); } }
@@ -64,12 +66,23 @@ export async function openTaskActorBrowser({ tasks, sessionId, productSession, b
           const hit = element.getRootNode().elementFromPoint?.(x, y);
           return hit === element || element.contains(hit);
         }
+        function actorControlName(element) {
+          if (!element.matches("input,textarea,select")) return accessibleControlName(element);
+          // Native field contents (including closed option lists and clipped
+          // values) belong to pixels, not the control-name side channel.
+          const labels = [...(element.labels || [])].map(label => {
+            const copy = label.cloneNode(true);
+            copy.querySelectorAll("input,textarea,select,[hidden],[aria-hidden=true]").forEach(child => child.remove());
+            return copy.textContent;
+          }).join(" ").trim();
+          return (element.getAttribute("aria-label") || labels || element.getAttribute("title") || element.getAttribute("placeholder") || "").replace(/\s+/g, " ").trim();
+        }
         const visible = elements.filter(visibleRect);
         const controls = visible.filter((element) => element.matches("button,input:not([type=hidden]):not([type=file]),textarea,select,[role=button],[role=tab],summary") && !element.disabled && element.getAttribute("aria-disabled") !== "true");
         // Pixels are the content observation. Accessible names identify controls;
         // never flatten full DOM paragraphs hidden under scroll/clipping.
         const text = "Use the attached screenshot and these currently visible controls.";
-        return { text, elements: controls, controls: controls.map((element) => ({ name: accessibleControlName(element), role: element.getAttribute("role") || element.tagName.toLowerCase(), kind: element.dataset.reviewKind || null, value: element.value ?? "", options: element.tagName === "SELECT" ? [...element.options].map((option) => ({ label: option.label, value: option.value, disabled: option.disabled })) : undefined })) };
+        return { text, elements: controls, controls: controls.map((element) => ({ name: actorControlName(element), role: element.getAttribute("role") || element.tagName.toLowerCase() })) };
       });
       try {
         const text = await (await snapshot.getProperty("text")).jsonValue();
@@ -82,8 +95,7 @@ export async function openTaskActorBrowser({ tasks, sessionId, productSession, b
         }
         await elements.dispose();
         const screenshot = (await page.screenshot({ type: "png" })).toString("base64");
-        const presentation = await page.evaluate(() => window.__taskActorPresentation ?? null);
-        return { text, controls, screenshot, presentation };
+        return { text, controls, screenshot };
       } finally { await snapshot.dispose(); }
     }
     return {
@@ -109,7 +121,7 @@ export async function openTaskActorBrowser({ tasks, sessionId, productSession, b
           })) throw new Error("Actor control is no longer visible or enabled.");
           if (action.kind === "click") await handle.click({ timeout: 5000 });
           else if (action.kind === "fill") await handle.fill(action.value, { timeout: 5000 });
-          else if (action.kind === "select") await handle.selectOption(action.value, { timeout: 5000 });
+          else if (action.kind === "select") await handle.selectOption({ label: action.value }, { timeout: 5000 });
           else throw new Error("Unknown actor browser action.");
         }
         await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
