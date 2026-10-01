@@ -49,6 +49,11 @@ it("marks live and failed threads in the thread list and refreshes background st
   expect(row(5).dataset.activity).toBeUndefined();
   expect(row(5).querySelector(".thread-activity").textContent).toBe("");
 
+  const { setProjectCollapsed } = await import("../desktop/renderer/src/project-sidebar.js");
+  setProjectCollapsed(7, true);
+  renderSidebar();
+  expect(document.querySelector('[data-project-toggle="7"]').getAttribute("aria-expanded")).toBe("false");
+
   // A background thread finishes: the next poll clears its symbol and polling stops once nothing is live.
   listed = { threads: [{ id: 1, title: "Build" }, { id: 2, title: "Deploy", activity: "stopping" }, { id: 3, title: "Review", activity: "needs_approval" }, { id: 4, title: "Migrate", activity: "failed" }, { id: 5, title: "Notes" }] };
   await vi.advanceTimersByTimeAsync(2000);
@@ -59,5 +64,7 @@ it("marks live and failed threads in the thread list and refreshes background st
   expect([1, 2, 3, 4].map(glyph)).toEqual([null, null, null, "OctagonX"]);
   await vi.advanceTimersByTimeAsync(10000);
   expect(fetch).toHaveBeenCalledTimes(2);
+  expect(document.querySelector('[data-project-toggle="7"]').getAttribute("aria-expanded")).toBe("false");
+  expect(document.querySelector("#project-threads-7").classList.contains("hidden")).toBe(true);
   browser.happyDOM.abort();
 });
