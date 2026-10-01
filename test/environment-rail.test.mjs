@@ -603,8 +603,9 @@ describe("desktop environment rail", () => {
 
     state.visibleLayer = { layer: { id: 999 }, nodes: [], edges: [], actions: [] };
     const fallbackItems = workspaceBreadcrumbItems(state, thread, { layerPath: rootPath });
-    expect(fallbackItems.map((item) => item.label)).toEqual(["Layer"]);
-    expect(workspaceBreadcrumbShouldRender(fallbackItems)).toBe(true);
-    expect(workspaceRootAnnotationShouldRender(fallbackItems, true)).toBe(false);
+    expect(fallbackItems.map((item) => item.label)).toEqual(["Response"]);
+    expect(fallbackItems[0].icon).toBe("messages-square");
+    expect(workspaceBreadcrumbShouldRender(fallbackItems)).toBe(false);
+    expect(workspaceRootAnnotationShouldRender(fallbackItems, true)).toBe(true);
   });
 });
