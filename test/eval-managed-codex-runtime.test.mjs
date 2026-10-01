@@ -59,8 +59,8 @@ describe("Eval managed Codex runtime", () => {
   it("caches one successful installation result for all Eval consumers", async () => {
     const prepare = vi.fn(async () => ({
       runtimeId: "codex",
-      recipeId: "codex@0.147.0",
-      version: "0.147.0",
+      recipeId: "codex@0.159.3",
+      version: "0.159.3",
       executable: "/managed/installations/current/vendor/target/bin/codex",
     }));
     const runtime = createEvalManagedCodexRuntime({
@@ -73,7 +73,7 @@ describe("Eval managed Codex runtime", () => {
     expect(first).toBe(second);
     expect(await runtime.resolve()).toBe(first);
     expect(prepare).toHaveBeenCalledOnce();
-    expect(prepare).toHaveBeenCalledWith("codex@0.147.0");
+    expect(prepare).toHaveBeenCalledWith("codex@0.159.3");
     expect(first.environment.PATH).toBe("/managed/installations/current/vendor/target/codex-path:/usr/bin");
   });
 

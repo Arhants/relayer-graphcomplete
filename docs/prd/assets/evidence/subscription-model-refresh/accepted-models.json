@@ -1,0 +1,19 @@
+{
+  "checkpoint": "accepted-model-receipts",
+  "interactionModels": [
+    {
+      "familyId": 1,
+      "providerId": "codex",
+      "modelId": "gpt-6.1-sol"
+    },
+    {
+      "familyId": 1,
+      "providerId": "codex",
+      "modelId": "gpt-6-astra"
+    }
+  ],
+  "paidInferenceCalls": 0,
+  "completion": "taskSystemFixtureFactory",
+  "fullWorkflowPassed": false,
+  "remainingCheckpoint": "rendered nth-turn model identity and enabled composer"
+}

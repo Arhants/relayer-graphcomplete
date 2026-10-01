@@ -3457,7 +3457,8 @@ describe("desktop skeleton", () => {
     expect(preparedManifest).toContain(`releases/${version}/${zip.name}`);
     expect(preparedManifest).toContain(`releases/${version}/${dmg.name}`);
     expect(preparedManifest).toContain("relayerManagedRuntimes:");
-    expect(preparedManifest).toContain("codex: 0.147.0");
+    expect(preparedManifest).toContain("codex: 0.159.3");
+    expect(preparedManifest).toContain("claude: 0.3.286");
     expect(createPreviewPublicationPlan({ version, evidence })).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: zip.name, key: `desktop/macos/arm64/releases/${version}/${zip.name}` }),
       expect.objectContaining({ name: dmg.name, key: `desktop/macos/arm64/releases/${version}/${dmg.name}` }),
