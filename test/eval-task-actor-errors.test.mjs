@@ -6,7 +6,7 @@ it("preflights the exact actor configuration before creating candidate work", as
   const resolveRuntime = vi.fn(async () => { throw Object.assign(new Error("unknown model private-secret"), { code: "actor_model_unsupported" }); });
   const service = new TaskActorService({ tasks, resolveRuntime });
   await expect(service.create({ actor: { model: "missing", modelReasoningEffort: "medium" } })).rejects.toThrow("Choose a model");
-  expect(resolveRuntime).toHaveBeenCalledWith(expect.objectContaining({ model: "missing", modelReasoningEffort: "medium" }));
+  expect(resolveRuntime).toHaveBeenCalledWith(expect.objectContaining({ model: "missing", modelReasoningEffort: "medium" }), { signal: expect.any(AbortSignal) });
   expect(tasks.create).not.toHaveBeenCalled();
 });
 

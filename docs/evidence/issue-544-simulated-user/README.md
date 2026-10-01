@@ -3,6 +3,8 @@
 This report records the original slice-2 snapshot. The subsequent user-approved
 calibration changes and their verification are in [actor v2](actor-v2.md).
 The original review digest below does not certify those later source changes.
+Current merge-readiness repairs and pending gates are recorded in
+[merge readiness](merge-readiness.md).
 
 Product authority: PRD §13.2.3 and ADR 0003. This is slice 2: an actor
 operating the production task workspace between settled responses. In-turn

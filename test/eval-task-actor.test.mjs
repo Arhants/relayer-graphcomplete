@@ -1,5 +1,5 @@
 import { taskActorPresentationReady } from "../desktop/eval-main/task-actor-browser.mjs";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
@@ -43,14 +43,14 @@ async function fixture({ decide, maxActions = 8, busy = false, failWrite = false
     act: vi.fn(async () => { if (navigateOnly) return; await tasks.write(id, retry ? "/api/threads/1/interactions/1/retry" : "/api/threads/1/interactions", "POST", { text: "Somewhere warm", ...(retry ? { attemptId: 91 } : {}) }, { signal: browserSignal }); }),
     close: vi.fn(),
   };
-  const actors = new TaskActorService({ tasks, pollMs: 1, resolveRuntime: async () => ({}), openBrowser: async (_id, signal) => { browserSignal = signal; return browser; },
+  const actors = new TaskActorService({ tasks, pollMs: 1, deadlineMs: timeoutMs, resolveRuntime: async () => ({}), openBrowser: async (_id, signal) => { browserSignal = signal; return browser; },
     createActor: async ({ prompt }) => ({ decide: async (observation, signal) => {
       seen.push({ prompt, observation });
       return { action: decide ? await decide(observation, signal) : turns.length === 1 ? action("click") : action("finish", { reason: "satisfied", satisfaction: 3, comment: "Good enough" }), usage: { input_tokens: 10, output_tokens: 5 } };
     }, close: vi.fn() }),
   });
   cleanups.push(() => actors.close());
-  const task = await actors.create({ maxCompletions: 2, endpoint: "A trip plan", actor: { maxActions, timeoutMs } }); id = task.id;
+  const task = await actors.create({ maxCompletions: 2, endpoint: "A trip plan", actor: { maxActions } }); id = task.id;
   const done = actors.running.get(id).done;
   return { tasks, actors, id, done, seen, browser, dispatches, turns, options };
 }
@@ -59,7 +59,7 @@ it("adapts to successive rendered states through session admission, then preserv
   const f = await fixture(); await f.done;
   const task = f.tasks.get(f.id);
   expect(f.dispatches).toEqual(["/api/threads/1/interactions"]);
-  expect(task).toMatchObject({ mode: "simulated", status: "completed", completions: 2, satisfaction: null, actor: { model: "gpt-5.6-luna", modelReasoningEffort: "low" }, termination: { reason: "budget_exhausted", success: null } });
+  expect(task).toMatchObject({ mode: "simulated", status: "completed", completions: 2, satisfaction: null, actor: { model: "gpt-5.6-luna", modelReasoningEffort: "low" }, termination: { reason: "satisfied", success: null } });
   expect(f.seen.map((v) => v.observation.text)).toEqual(["Where do you want to go?", "A trip plan based on your reply"]);
   expect(f.seen[0].prompt).toContain("PRIVATE BRIEF");
   expect(JSON.stringify(f.seen)).not.toMatch(/SECRET RUBRIC|frozen conversation/);
@@ -131,6 +131,8 @@ it("pins the actor runtime with no filesystem, shell, network or MCP tools and k
 it("ends bounded exploration without claiming endpoint success", async () => {
   const f = await fixture({ decide: () => action("click"), maxActions: 2, navigateOnly: true }); await f.done;
   expect(f.browser.act).toHaveBeenCalledTimes(2);
+  expect(f.browser.observe).toHaveBeenCalledTimes(3);
+  expect(f.seen).toHaveLength(2);
   expect(f.tasks.get(f.id)).toMatchObject({ status: "completed", completions: 1, termination: { reason: "abandoned", success: null } });
   expect(f.tasks.get(f.id).events.some((event) => event.kind === "actor_limit")).toBe(true);
 });
@@ -239,4 +241,65 @@ it("keeps satisfaction separate from unfinished work and rejects contradictory e
   expect(() => validateActorAction(action("finish", { reason: "endpoint_reached", satisfaction: 3, endpointStatus: "reached", remainingWork: "Pick route" }))).toThrow("invalid action");
   expect(() => validateActorAction(action("finish", { reason: "satisfied", satisfaction: 3, endpointStatus: "reached", remainingWork: "Pick route" }))).toThrow("invalid action");
   expect(validateActorAction(action("finish", { reason: "endpoint_reached", satisfaction: 3, endpointStatus: "reached", remainingWork: "" }))).toMatchObject({ endpointStatus: "reached" });
+});
+
+
+it("records endpoint attainment at the completion limit and links the successful finish intent", async () => {
+  let decisions = 0;
+  const f = await fixture({ decide: () => decisions++ === 0 ? action("click") : action("finish", { reason: "endpoint_reached", satisfaction: 4, endpointStatus: "reached", remainingWork: "" }) });
+  await f.done;
+  const task = f.tasks.get(f.id);
+  expect(task.completions).toBe(task.maxCompletions);
+  expect(task.termination).toMatchObject({ reason: "endpoint_reached", endpointAttainment: "actor_reported", success: null });
+  const finish = task.events.find(event => event.kind === "actor_action" && event.action.kind === "finish");
+  expect(task.events.filter(event => event.kind === "actor_action_completed" && event.actionEventId === finish.id)).toHaveLength(1);
+  for (const reason of ["satisfied", "abandoned"]) expect(() => validateActorAction(action("finish", { reason, satisfaction: 3, endpointStatus: "reached", remainingWork: "" }))).toThrow("invalid action");
+  expect(f.seen.every(({ observation }) => !["remainingCompletions", "step", "stepCount", "presentation"].some(key => key in observation))).toBe(true);
+});
+
+it.each(["cancel", "deadline"])("%s covers discovery before candidate creation", async (mode) => {
+  const create = vi.fn(); const resolveRuntime = vi.fn(() => new Promise(() => {}));
+  const actors = new TaskActorService({ tasks: { create }, resolveRuntime, deadlineMs: mode === "deadline" ? 25 : 900000 });
+  cleanups.push(() => actors.close());
+  const pending = actors.create({ startupId: "starting", actor: {} });
+  const rejected = expect(pending).rejects.toMatchObject({ code: mode === "cancel" ? "cancelled" : "timeout" });
+  await vi.waitFor(() => expect(resolveRuntime).toHaveBeenCalledOnce());
+  if (mode === "cancel") await actors.stop("starting");
+  await rejected;
+  expect(create).not.toHaveBeenCalled();
+  expect(actors.running.size).toBe(0);
+  expect(() => actorConfiguration({ timeoutMs: 3600000 })).toThrow("Invalid");
+});
+
+it("stores screenshots outside hot session state and verifies them on reopen and immutable export", async () => {
+  const f = await fixture({ busy: true });
+  const screenshot = Buffer.from("fixture screenshot bytes").toString("base64");
+  const event = await f.tasks.actorEvent(f.id, "actor_observation", { observation: { screenshot, text: "visible" } });
+  expect(event.observation).not.toHaveProperty("screenshot");
+  expect(await readFile(f.options.stateFile, "utf8")).not.toContain(screenshot);
+  await f.actors.stop(f.id);
+  const reopened = await new HumanTaskService(f.options).open();
+  expect(await reopened.actorScreenshot(f.id, event.id)).toBe(`data:image/png;base64,${screenshot}`);
+  const exported = await reopened.export(f.id);
+  expect(exported.bundle.actorScreenshots).toEqual([expect.objectContaining({ eventId: event.id, dataUrl: `data:image/png;base64,${screenshot}` })]);
+  const frozen = await readFile(exported.path, "utf8");
+  await writeFile(join(f.options.stateFile, "..", "actor-screenshots", `${event.observation.screenshotArtifact.sha256}.png`), "corrupted");
+  await expect(reopened.export(f.id)).rejects.toThrow("integrity");
+  expect(await readFile(exported.path, "utf8")).toBe(frozen);
+});
+
+it("Stop during task preparation releases admission and cannot create a candidate later", async () => {
+  const f = await fixture({ busy: true }); await f.actors.stop(f.id);
+  let entered, release;
+  const preparing = new Promise(resolve => { entered = resolve; });
+  const prepare = f.tasks.evalService.prepareHumanTask;
+  f.tasks.evalService.prepareHumanTask = () => { entered(); return new Promise(resolve => { release = async () => resolve(await prepare()); }); };
+  const createThread = vi.spyOn(f.tasks.evalService, "createHumanTaskThread");
+  const pending = f.actors.create({ startupId: "preparing", maxCompletions: 2, endpoint: "A plan" });
+  const rejected = expect(pending).rejects.toMatchObject({ code: "cancelled" });
+  await preparing; await f.actors.stop("preparing"); await rejected;
+  await release(); await new Promise(resolve => setImmediate(resolve));
+  expect(createThread).not.toHaveBeenCalled();
+  expect(f.tasks.list()[0]).toMatchObject({ completions: 0, termination: { reason: "actor_cancelled" } });
+  await f.tasks.grade(f.id, { satisfaction: 2, comment: "Queue released" });
 });
