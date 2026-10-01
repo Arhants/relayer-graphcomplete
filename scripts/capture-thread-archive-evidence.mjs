@@ -119,12 +119,15 @@ async function main() {
     console.log(`PASS ${name}`);
   };
   await evaluate(`const p=document.querySelector('#threadPrompt');p.value='Keep this unsent follow-up';p.dispatchEvent(new Event('input',{bubbles:true}));`);
+  for (const id of [standalone.id, projectThread.id]) {
+    assert.equal(await evaluate(`(() => {const b=document.querySelector('[data-archive-thread="${id}"]');return b.firstElementChild?.outerHTML === lucide.createElement(lucide.Trash2, {'aria-hidden':'true',focusable:'false'}).outerHTML && b.parentElement.lastElementChild === b && Math.abs(b.getBoundingClientRect().right-b.parentElement.getBoundingClientRect().right)<1;})()`), true);
+  }
+  checkpoints.push({ name: "direct-rightmost-trashcan", verdict: "passed" });
   await capture("01-before", "1. Saved project and standalone chats");
   const busyDisabled = await evaluate(`document.querySelector('[data-archive-thread="${busy.id}"]').disabled`); assert.equal(busyDisabled, true);
-  await click(`#projectList .thread-entry-row:has([data-thread="${projectThread.id}"]) summary`);
   await click(`[data-archive-thread="${projectThread.id}"]`);
   await waitFor("project archive hidden", `!document.querySelector('#projectList [data-thread="${projectThread.id}"]')`);
-  await capture("02-project-archived", "2. Archive removes a project chat; Undo is available");
+  await capture("02-project-archived", "2. The red trashcan archives a chat; Undo is available");
   await click("#toast button");
   await waitFor("undo restored project", `Boolean(document.querySelector('#projectList [data-thread="${projectThread.id}"]'))`);
   await capture("03-undo", "3. Undo restores the same project chat");

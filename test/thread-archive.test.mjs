@@ -23,7 +23,11 @@ it("archives the open chat without navigation, offers Undo, and exposes archived
     return Response.json({ threads: archived ? [{ ...thread, archivedAt: "2" }] : [] });
   });
   vi.stubGlobal("fetch", fetch); bindArchiveActions(); renderSidebar();
-  document.querySelector('[data-archive-thread="1"]').click();
+  const archiveButton = document.querySelector('[data-archive-thread="1"]');
+  expect(archiveButton.parentElement.lastElementChild).toBe(archiveButton);
+  expect(archiveButton.querySelector("svg")).not.toBeNull();
+  expect(document.querySelector("details")).toBeNull();
+  archiveButton.click();
   await vi.waitFor(() => expect(document.querySelector('[data-thread="1"]')).toBeNull());
   expect(viewState.mainView).toBe("thread"); expect(viewState.currentThreadId).toBe(1);
   expect(appState.threads[0].archivedAt).toBe("2");
@@ -47,15 +51,15 @@ it("archives the open chat without navigation, offers Undo, and exposes archived
 it("disables archive for every active state, including backend-only recursive activity", async () => {
   const browser = new Window({ url: "http://127.0.0.1/" });
   vi.stubGlobal("window", browser); vi.stubGlobal("document", browser.document); vi.stubGlobal("location", browser.location);
-  const { sidebarArchiveMenu } = await import("../desktop/renderer/src/thread-archive.js");
+  const { sidebarArchiveButton } = await import("../desktop/renderer/src/thread-archive.js");
   for (const state of [{ activity: "running" }, { activity: "stopping" }, { activity: "needs_approval" }, { archiveBlocked: true }]) {
-    document.body.innerHTML = sidebarArchiveMenu({ id: 1, title: "Busy", ...state });
+    document.body.innerHTML = sidebarArchiveButton({ id: 1, title: "Busy", ...state });
     expect(document.querySelector("button").disabled).toBe(true);
     expect(document.querySelector("button").title).toBe("Available when work finishes.");
   }
-  document.body.innerHTML = sidebarArchiveMenu({ id: 1, title: 'Failed chat', activity: "failed" });
+  document.body.innerHTML = sidebarArchiveButton({ id: 1, title: 'Failed chat', activity: "failed" });
   expect(document.querySelector("button").disabled).toBe(false);
-  expect(document.querySelector("summary").getAttribute("aria-label")).toBe("Chat menu for Failed chat");
+  expect(document.querySelector("button").getAttribute("aria-label")).toBe("Archive Failed chat");
 });
 
 it("restores only archived interactive navigation and preserves preview/read-only reads", async () => {

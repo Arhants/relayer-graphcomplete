@@ -13,8 +13,8 @@ export function archiveBlocked(thread) {
   return thread?.archiveBlocked === true || ["running", "stopping", "needs_approval"].includes(thread?.activity);
 }
 
-export function sidebarArchiveMenu(thread) {
-  return `<details class="thread-entry-menu"><summary aria-label="Chat menu for ${escapeHtmlAttribute(thread.title)}" title="Chat menu">•••</summary><div role="menu"><button type="button" role="menuitem" data-archive-thread="${escapeHtmlAttribute(thread.id)}" ${archiveBlocked(thread) ? 'disabled title="Available when work finishes."' : ""}>Archive</button></div></details>`;
+export function sidebarArchiveButton(thread) {
+  return `<button type="button" class="thread-archive-button" data-archive-thread="${escapeHtmlAttribute(thread.id)}" aria-label="Archive ${escapeHtmlAttribute(thread.title)}" title="${archiveBlocked(thread) ? "Available when work finishes." : "Archive chat"}" ${archiveBlocked(thread) ? "disabled" : ""}></button>`;
 }
 
 // Preview/review reads never acquire product write authority.
@@ -84,16 +84,9 @@ export function bindArchiveActions() {
     if ((archive ?? restore).disabled) return;
     const button = archive ?? restore;
     button.disabled = true;
-    button.closest("details")?.removeAttribute("open");
     void (async () => {
       if (archive) await archiveThread(archive.dataset.archiveThread);
       else { await setThreadArchived(restore.dataset.unarchiveThread, false); await loadArchivedChats(); }
     })().catch((error) => toast(error.message)).finally(() => { button.disabled = false; });
-  });
-  document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") document.querySelectorAll(".thread-entry-menu[open]").forEach((menu) => menu.removeAttribute("open"));
-  });
-  document.addEventListener("click", (event) => {
-    document.querySelectorAll(".thread-entry-menu[open]").forEach((menu) => { if (!menu.contains(event.target)) menu.removeAttribute("open"); });
   });
 }

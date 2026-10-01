@@ -1,12 +1,12 @@
 {
   "version": 1,
-  "sourceCommit": "d1d6098ee06d664072e3b83da9fa84a40110a510",
+  "sourceCommit": "3858752bc9a17d9004b169e5749944a981d360e9",
   "sourceFiles": {
     "desktop/renderer/index.html": "775e004390131b7a1115813ed9f01cedbe9f463e37d0d2248bea08636b114cc1",
-    "desktop/renderer/styles.css": "2ad218a947b5c1308f82560c9b248031cae85e729d726dad997f8520700a75e6",
+    "desktop/renderer/styles.css": "5c4cced34bfef9e730b02b9171ddfcc0e325d8e4fc71dc83bf29347753def754",
     "desktop/renderer/src/main.js": "171261f8dda1444b7892b5cc3888bf0318b7260d3dbae5864f3d68b04a4ff8ff",
-    "desktop/renderer/src/thread-archive.js": "6600a16c84e07e825d7732608b502d204f9c5b162c7b0a4167ae7e01a874a314",
-    "desktop/renderer/src/navigation.js": "c02f152e29379c24035e085bc36490b77a12740009fdb7063f166c6d41e1bf0b",
+    "desktop/renderer/src/thread-archive.js": "f88988a24e4f603e27dd85dedaccf3c806a147188125877a09752a0667cc3d32",
+    "desktop/renderer/src/navigation.js": "9d00cf7a8c9da6d3fab7f13abb3e84b2703d22b6444026cb1601d735dff815c8",
     "desktop/renderer/src/threads.js": "894e855f0968bf53544d5785870c655feeb77430aaef261a45c45cb1d12570ad",
     "desktop/renderer/src/ui.js": "e1cda9b0294e179091569d90e7c5b2877da0c6f220bdf20ab91a99166c0f57c8",
     "desktop/renderer/src/graph.js": "1f5f313da5af92ebacac3054f9be3ccb60a25fcbd71cc8d3139a81c63d39f8a5",
@@ -15,12 +15,16 @@
     "crates/relayer-app-server/src/api/threads.rs": "e6fa0b68164b4316a9855f0588f8728f6a2521ccc9d2f80d928b928a999f843d",
     "crates/relayer-app-server/src/storage/sqlite/threads.rs": "2caf70d98188b3d9f940b42f65862dbc3322028941c74a4bd25d2612e00ea605",
     "crates/relayer-app-server/src/storage/sqlite/migrations/0042_thread_archive.sql": "a4f3c656b728cf711967fcd41067509ca5c681a3b5ad30b3f019eeb1a26bedc8",
-    "scripts/capture-thread-archive-evidence.mjs": "d6274e1d30d480170155aa59893e669edfea606bb9ae28171986f75134bbe992"
+    "scripts/capture-thread-archive-evidence.mjs": "34f2323d185ad9014cb4866220302dcc021acf4a3143107eb7f473fd6db21c54"
   },
-  "workspaceDigest": "3d1bc2ee68634b18a00d5d69b09e7ad35e43369e5d3dee9d0d6652040aecabb2",
+  "workspaceDigest": "a7f70b3e7eb3433d1f6cbd3ab0707b9f2ad5a583db4838db26531447f8e9c29b",
   "binarySha256": "4748fd074da5cf41fb52f0ad07db1b1e7cee9407bef80f7b754e00801ba97805",
-  "videoSha256": "e740f90fc66283e07ac608c508a1ec3b9971c761009869bee2803674d30a6914",
+  "videoSha256": "5e4113e1da7bc2c8975e11bda1395861ed80deda781a15862ec8fd42efd4aa5c",
   "checkpoints": [
+    {
+      "name": "direct-rightmost-trashcan",
+      "verdict": "passed"
+    },
     {
       "name": "01-before",
       "verdict": "passed",
@@ -29,7 +33,7 @@
     {
       "name": "02-project-archived",
       "verdict": "passed",
-      "caption": "2. Archive removes a project chat; Undo is available"
+      "caption": "2. The red trashcan archives a chat; Undo is available"
     },
     {
       "name": "03-undo",

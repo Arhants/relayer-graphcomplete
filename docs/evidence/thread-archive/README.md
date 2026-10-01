@@ -13,7 +13,7 @@ used. The capture additionally checks a real app-server process restart,
 read-only write rejection, backend busy rejection, disabled Send, retained draft, selected node, breadcrumb,
 camera position and zoom, scroll position and list order.
 Its per-scenario results, source hashes and binary/video hashes are in
-[manifest.json](manifest.json). Screenshots show the [retained open
+[manifest.json](manifest.json). Screenshots show the [rightmost sidebar trashcan](sidebar.png), [retained open
 workspace](current-archived.png) and [Settings archive search](settings.png).
 Human acceptance remains pending; this is deterministic feature evidence.
 
@@ -22,11 +22,11 @@ Human acceptance remains pending; this is deterministic feature evidence.
 | Changed seam / promise | Deterministic observation | Heavy evidence |
 | --- | --- | --- |
 | Migration 0042, archive activity view and admission triggers; schema validation | `archive_authority_rejects_missing_or_weakened_objects_on_reopen`; existing migration/reopen tests now include 0042 | Real process reopen in capture |
-| Archive/restore transaction; list exclusion and direct selected-state lookup | `archive_round_trip_preserves_thread_history_scope_and_activity_order` covers both scopes, a stored node-context draft, saved working directory/checkout, idempotence and disk reopen | Project and standalone menus; Settings search and restore |
+| Archive/restore transaction; list exclusion and direct selected-state lookup | `archive_round_trip_preserves_thread_history_scope_and_activity_order` covers both scopes, a stored node-context draft, saved working directory/checkout, idempotence and disk reopen | Direct sidebar trashcan and thread menu; Settings search and restore |
 | Busy versus archived admission race; earlier recursive work/native unwind | `archive_serializes_both_admission_orders_and_checks_earlier_work` exercises production writes in both serialized orders | Busy UI disabled and API conflict |
 | HTTP write authority, read-only discovery, typed conflict and read/restore distinction | `thread_archive_http_authority_discovery_and_read_only_reopen` | Read-only write rejection; read leaves archive time intact |
 | Accepted graph and export retention | Existing real-graph `conversation_export_uses_real_accepted_graph_and_rejects_read_only_authority` exports the same accepted graph records while archived, after its running fixture turn settles | Accepted graph remains displayed while archived |
-| Sidebar and header menus; archived current-workspace projection; Send eligibility | `thread-archive.test.mjs` plus existing workspace/navigation portfolio | Full renderer capture verifies header action, retained workspace/draft/reading position, disabled Send and Undo |
+| Sidebar trashcan and header menu; archived current-workspace projection; Send eligibility | `thread-archive.test.mjs` plus existing workspace/navigation portfolio | Full renderer capture verifies header action, retained workspace/draft/reading position, disabled Send and Undo |
 | Explicit open, cross-thread references/history, startup versus preview reads | `workspace-navigation-integration.test.mjs` exercises archived invoke destinations and history; `thread-archive.test.mjs` checks preview and nonarchived read behavior | Settings Open runs production `loadThread` |
 | Settings archive list/search, project labels, unarchive and activity order | `thread-archive.test.mjs` | Settings search, explicit open and preserved API ordering |
 | Sealed telemetry module attribution | `desktop-telemetry-module-inventory.test.mjs` retains the exact packaged-module allowlist, adding only the new archive module | Existing telemetry evidence unchanged |

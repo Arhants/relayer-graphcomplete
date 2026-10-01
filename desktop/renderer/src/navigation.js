@@ -10,7 +10,7 @@ import { request } from "./api.js";
 import { createLucideIcon } from "./product-workspace/icons.js";
 import { THREAD_ACTIVITY } from "./product-workspace/run-state.js";
 
-import { sidebarArchiveMenu, loadArchivedChats } from "./thread-archive.js";
+import { sidebarArchiveButton, loadArchivedChats } from "./thread-archive.js";
 
 const settingsTabs = {
   archived: "Archived chats",
@@ -85,10 +85,13 @@ function threadEntry(thread) {
   const activity = THREAD_ACTIVITY[thread.activity];
   const name = activity ? `${thread.title}, ${activity.label}` : thread.title;
   const tooltip = activity ? `${thread.title} · ${activity.label}` : thread.title;
-  return `<div class="thread-entry-row"><button class="entry ${String(thread.id) === String(viewState.currentThreadId) ? "active" : ""}" data-thread="${escapeHtml(thread.id)}"${activity ? ` data-activity="${escapeHtmlAttribute(thread.activity)}"` : ""} data-review-ref="thread-${escapeHtml(thread.id)}" data-review-kind="thread" aria-label="${escapeHtmlAttribute(name)}" title="${escapeHtmlAttribute(tooltip)}"><span class="entry-icon thread-topic-icon" aria-hidden="true">${threadIconMarkup(thread.icon)}</span><span class="thread-entry-title">${escapeHtml(thread.title)}</span><span class="entry-icon thread-activity" aria-hidden="true"></span></button>${sidebarArchiveMenu(thread)}</div>`;
+  return `<div class="thread-entry-row"><button class="entry ${String(thread.id) === String(viewState.currentThreadId) ? "active" : ""}" data-thread="${escapeHtml(thread.id)}"${activity ? ` data-activity="${escapeHtmlAttribute(thread.activity)}"` : ""} data-review-ref="thread-${escapeHtml(thread.id)}" data-review-kind="thread" aria-label="${escapeHtmlAttribute(name)}" title="${escapeHtmlAttribute(tooltip)}"><span class="entry-icon thread-topic-icon" aria-hidden="true">${threadIconMarkup(thread.icon)}</span><span class="thread-entry-title">${escapeHtml(thread.title)}</span><span class="entry-icon thread-activity" aria-hidden="true"></span></button>${sidebarArchiveButton(thread)}</div>`;
 }
 
 function renderThreadActivity() {
+  $$(".thread-archive-button").forEach((button) => {
+    button.replaceChildren(createLucideIcon("Trash2", { "aria-hidden": "true" }));
+  });
   $$("[data-thread][data-activity]").forEach((entry) => {
     const activity = THREAD_ACTIVITY[entry.dataset.activity];
     entry.querySelector(".thread-activity")?.replaceChildren(createLucideIcon(activity.icon));
