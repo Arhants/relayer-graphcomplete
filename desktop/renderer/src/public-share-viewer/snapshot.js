@@ -575,14 +575,14 @@ function validateAcceptedView(view, path, exportVersion) {
     const resolved = layerMap.get(layerId);
     for (const action of resolved.actions) {
       if (action.id === rootAction.id) fail("root_action_repeated", `${path}.actions`, "The root action must not appear in a resolved layer.");
-      const rootBacklink = exportVersion === 3 && action.kind === "navigate"
-        && action.targetLayerId === rootLayerId && action.relation === "reference";
-      if (!rootBacklink && targetRelations.has(action.targetLayerId) && targetRelations.get(action.targetLayerId) !== action.relation) {
+      // V3 includes accepted invocation results across completions; later
+      // reference actions can revisit layers expanded by an earlier completion.
+      if (exportVersion !== 3 && targetRelations.has(action.targetLayerId) && targetRelations.get(action.targetLayerId) !== action.relation) {
         fail("mixed_target_relations", `${path}.actions`, "A layer cannot be targeted as both expand and reference.");
       }
       if (action.kind !== "navigate") continue;
       if (!layerMap.has(action.targetLayerId)) fail("navigate_target_unresolved", `${path}.actions`, `Navigate target ${action.targetLayerId} is absent.`);
-      if (!rootBacklink) targetRelations.set(action.targetLayerId, action.relation);
+      if (exportVersion !== 3) targetRelations.set(action.targetLayerId, action.relation);
       pending.push(action.targetLayerId);
       if (action.relation === "expand") {
         const targets = expandEdges.get(layerId) ?? [];

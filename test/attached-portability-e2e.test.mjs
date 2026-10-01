@@ -12,6 +12,7 @@ import { createDesktopGraphRuntime } from "../desktop/main/services/graphcomplet
 import { RelayerAppServerService } from "../desktop/main/services/relayer-app-server.mjs";
 import { EvalService } from "../desktop/eval-main/eval-service.mjs";
 import { parseConversationExportV1 } from "../desktop/renderer/src/public-share-viewer/snapshot.js";
+import { createPublicViewerAdapter } from "../desktop/renderer/src/public-share-viewer/adapter.js";
 import { createProductWorkspace } from "../desktop/renderer/src/product-workspace/workspace.js";
 import { mountCompiledNodeDetail } from "../desktop/renderer/src/product-workspace/node-detail-runtime.js";
 
@@ -93,6 +94,9 @@ it("preserves accepted attached navigation, converted invokes, rich controls and
   expect(converted).toMatchObject({ kind: "navigate", relation: "expand", targetLayerId: turns[1].acceptedView.rootLayerId });
   expect(added.targetLayerId).toBe(turns[2].acceptedView.rootLayerId);
   expect(added.sourceLayerId).toBeUndefined();
+  const attachedRoot = turns[2].acceptedView.layers.find((layer) => layer.layer.id === turns[2].acceptedView.rootLayerId);
+  expect(attachedRoot.actions.find((action) => action.label === "Reference invoked response"))
+    .toMatchObject({ relation: "reference", targetLayerId: converted.targetLayerId });
   expect(turns[1].origin).toMatchObject({ kind: "action", source_action_id: converted.id });
   expect(currentRoot.nodes[0].authoredDetail.components[0].html).toContain("Attached response");
   expect(currentRoot.nodes[0].authoredDetailAssets[0].digestSha256).toBe(content[0].digestSha256);
@@ -218,6 +222,13 @@ it("preserves accepted attached navigation, converted invokes, rich controls and
   const publicNode = publicRoot.nodes[0];
   expect(publicNode.authoredDetail).toBeTruthy();
   expect(publicRoot.actions.some((action) => action.convertedFromInvoke)).toBe(true);
+  const adapter = createPublicViewerAdapter(snapshot);
+  adapter.selectTurnById(snapshot.interactions[2].id, { responseRoot: true });
+  const backlink = adapter.state.actions.find((action) => action.label === "Reference invoked response");
+  await expect(adapter.navigateLayer(backlink.targetLayerId, { action: backlink, sourceNode: adapter.state.nodes[0] }))
+    .resolves.toBe(true);
+  expect(adapter.state.visibleLayer.layer.id).toBe(snapshot.interactions[1].completionOutput.rootLayer.layer.id);
+  expect(adapter.state.nodes[0].title).toBe("Invoked response");
   const window = new Window({ url: "https://share.example.test/t/fixture" });
   const host = window.document.createElement("div");
   window.document.body.append(host);
@@ -319,6 +330,7 @@ function fixtureFactory(state) {
       }
       await graph.submitNode(node);
       await graph.submitLayer(layer);
+      if (context.inputGraph.detail === "INVOKE") state.invokedLayer = layer;
       if (isSource && !isPure) await graph.addAction(node, invoke);
       await graph.addAction(context.inputGraph.id, { kind: "navigate", relation: "expand", label: "Response", target: layer, clientKey: "response" });
       if (context.inputGraph.detail.startsWith("ATTACH")) {
@@ -329,6 +341,12 @@ function fixtureFactory(state) {
         state.omittedResponseRejected = true;
         const addition = { kind: "navigate", relation: "reference", label: "Attached response", target: layer, clientKey: `${privateKey}-attached` };
         await graph.addAction(source.id, addition);
+        if (!isPure) {
+          // The source expands the accepted invoke result while this later
+          // completion references that same nonroot layer. Both are valid.
+          await graph.addAction(node, { kind: "navigate", relation: "reference", sourceLayer: layer,
+            label: "Reference invoked response", target: state.invokedLayer, clientKey: "invoked-reference" });
+        }
         const replacement = new NodeObject(source.icon, source.title, source.detail, before.node.kind, before.node.clientKey);
         if (isPure) {
           replacement.detailAuthoring.setComponent("card", html`<article><button gc=${detailCapability.reference("attached", addition)}>Attached response</button></article>`, css`article { border-radius: 1rem; padding: 1rem; }`);
