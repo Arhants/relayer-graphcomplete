@@ -2608,7 +2608,7 @@ settings:
 <ul>
 <li>The response view contains the first layer of the accepted subgraph, including edges among those response nodes.</li>
 <li>Edges are visually undirected. They carry no arrowheads or other direction marks, and each edge&#39;s path is the same whichever endpoint it is drawn from. Each layer draws all its edges in the shape its agent chose. <code>default</code> uses the design&#39;s default shape, which is arcs in H. A layer conveys reading order through the order and positions of its authored placements. Keyboard and screen-reader order follow the placement order, and an elbow shape follows the reading axis. Layers accepted before edge shapes existed draw with the design&#39;s default. An agent may give any edge its own shape and the side of each node where it attaches. It may also add up to four waypoints the edge passes through. The edge&#39;s shape styles the path between waypoints. Straight edges run in straight segments, arcs in one smooth curve, and elbows in right-angle segments. Elbows and arcs leave a chosen side at a right angle. When a user drags a node, waypoints move with that node&#39;s edges. Edges without a route draw in the layer&#39;s shape.</li>
-<li>The interaction/parent node is not repeated inside its child layer. Its breadcrumb entry includes its icon and title.</li>
+<li>The interaction/parent node is not repeated inside its child layer. The response root breadcrumb uses the root navigate action's Complete-authored topic label and icon. Every interaction, including follow-ups and annotation-only or input-only turns, receives guidance to author both before publishing. The canonical interaction node and its input remain immutable. A current response awaiting terminal output uses a neutral <strong>Response</strong> label and message icon. Acceptance refreshes that entry from the authored action without resetting selection or navigation. Legacy actions without an icon retain the message fallback. Descendant entries retain their source node's title and icon, including reference paths back to the root.</li>
 <li>The interaction query and breadcrumb share the same left edge above the canvas.</li>
 <li>Breadcrumbs use readable 13px labels, 16px icons, and 34px navigation controls. Long paths remain horizontally scrollable.</li>
 <li>The breadcrumb contains only the accepted parent-child path established by navigate actions. Project, Eval case, thread, turn, and selected-node context stay in their existing controls.</li>
@@ -2624,6 +2624,14 @@ settings:
 <li>Product and Eval use the same renderer-owned history controller and controls. Eval remains read-only and does not maintain a second history stack.</li>
 <li>The renderer shows the immutable accepted snapshot for that turn even if later turns update shared nodes.</li>
 </ul>
+<p>Response presentation checkpoints:</p>
+<ul>
+<li><code>RESP-001</code>: Constructed Codex, Claude and Prime prompt tests verify root label/icon guidance for follow-ups and empty root messages.</li>
+<li><code>RESP-002</code>: <code>test/workspace-navigation-integration.test.mjs</code> verifies running-to-accepted same-layer refresh, annotation-only input, legacy missing icons, and retained selection/history.</li>
+<li><code>RESP-003</code>: <code>test/workspace-breadcrumb.test.mjs</code> verifies descendant ancestry and reference-to-root preservation. <code>test/public-share-viewer.test.mjs</code> verifies portable authored presentation.</li>
+</ul>
+<p>These deterministic checks observe prompt delivery and rendering state. Model choice of an appropriate topic and icon remains a live-inference checkpoint.</p>
+
 <h4>Stable topic icons for normal threads</h4>
 <p><strong>Product decision (issue #622):</strong> New normal threads start with the current <code>◌</code> icon. During ordinary graph authoring, the agent proposes a semantic topic icon using the same curated library, selection guidance, and validation as graph nodes. There is no separate icon-selection inference or raster generation.</p>
 <p>The first valid proposal becomes permanent only when its carrying completion is accepted. Draft, failed, or stopped work and a model turn ending cannot commit it. Once saved, later completions, title changes, and reopen preserve that icon. Missing, invalid, or failed selection leaves the default visible and allows later executions to retry; selection failure cannot reject otherwise valid graph work.</p>

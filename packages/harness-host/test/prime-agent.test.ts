@@ -1870,6 +1870,7 @@ describe("PrimeAgentHarness", () => {
     expect(prompt).toContain('NodeObject("info", "Summary", "...", client_key="summary-node")');
     expect(prompt).not.toContain('NodeObject("lightbulb"');
     expect(prompt).toContain('client_key="root-response"');
+    expect(prompt).toContain('"Key findings", root_layer, relation="expand", client_key="root-response", icon="search"');
     expect(prompt).toContain('client_key="node-detail"');
     expect(prompt).toContain('client_key="node-evidence"');
     expect(prompt).toContain('client_key="node-follow-up"');
