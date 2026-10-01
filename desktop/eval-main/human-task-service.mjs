@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import { abortable } from "./abortable.mjs";
 import { interactionReturnsToUnsent } from "../renderer/src/interaction-failure-model.js";
 import { randomUUID, createHash } from "node:crypto";
@@ -133,6 +134,16 @@ export class HumanTaskService {
       try {
         session.prepared = await abortable(signal, () => this.evalService.prepareHumanTask({ ...selection, sessionId: session.id }, { signal }));
         signal?.throwIfAborted();
+        if (selection.calibrationCandidate) {
+          const expected = selection.calibrationCandidate.identity;
+          const execution = session.prepared.execution;
+          if (expected.endpoint !== session.endpoint || expected.maxCompletions !== session.maxCompletions
+            || expected.testCaseId !== execution.testCaseId || expected.casePlanDigest !== session.prepared.casePlanDigest
+            || expected.harnessConfigurationDigest !== execution.harnessConfigurationDigest) throw failure("Calibration case or harness changed. Freeze a new comparison before starting inference.");
+          const routeIdentity = ({ selectedModel = null, productModelSelection, configurationModel }) => ({ selectedModel, productModelSelection, configurationModel });
+          if (execution.pinnedModelResolution !== undefined && !isDeepStrictEqual(routeIdentity(execution.pinnedModelResolution), routeIdentity(selection.calibrationCandidate.modelResolution))) throw failure("Calibration candidate route differs from the authorized route. Review model setup before starting inference.");
+          execution.pinnedModelResolution ??= clone(selection.calibrationCandidate.modelResolution);
+        }
         session.status = "active";
         await this.startThread(session, { signal });
       } catch (error) {

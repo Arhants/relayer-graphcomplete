@@ -94,8 +94,8 @@ export class SetupRegistry {
       if (this.state.schemaVersion !== 1 || !Array.isArray(this.state.revisions) || !Array.isArray(this.state.promotions)) fail("Unsupported setup registry.");
       this.state.revisions.forEach(verify); this.state.promotions.forEach(verify);
     } catch (error) { if (error.code !== "ENOENT") throw error; }
-    if (!this.state.revisions.length) {
-      for (const definition of [defaultActorSetup(), defaultJudgeSetup()]) await this.publish({ ...definition, predecessorId: null, feedback: [] });
+    for (const [kind, createDefault] of [["actor", defaultActorSetup], ["judge", defaultJudgeSetup]]) {
+      if (!this.state.revisions.some(revision => revision.kind === kind)) await this.publish({ ...createDefault(), predecessorId: null, feedback: [] });
     }
     return this;
   }

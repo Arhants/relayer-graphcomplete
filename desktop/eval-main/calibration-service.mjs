@@ -118,6 +118,17 @@ export class CalibrationService {
     });
     return copy({ comparison, status: rows.every((row) => row.status === "completed") ? "completed" : "incomplete", rows });
   }
+  actorSelection({ comparisonId, memberId, revisionId }) {
+    const { comparison } = this.report(comparisonId);
+    if (comparison.kind !== "actor" || ![comparison.baseline.id, comparison.candidate.id].includes(revisionId)) fail("Choose an actor revision in this frozen comparison.");
+    const member = this.set(comparison.calibrationSetId).members.find(item => item.id === memberId);
+    if (member?.source.kind !== "task") fail("Actor execution requires a frozen task seed.");
+    const original = member.evidence.session;
+    return { mode: "simulated", testCaseId: original.prepared.execution.testCaseId,
+      harnessConfigurationName: original.prepared.execution.harnessConfigurationName,
+      endpoint: original.endpoint, maxCompletions: original.maxCompletions, actorSetupRevisionId: revisionId,
+      calibrationCandidate: { identity: copy(member.caseIdentity), modelResolution: copy(original.prepared.execution.modelResolution ?? { selectedModel: null, productModelSelection: false }) } };
+  }
   observe(input) {
     return this.serial(async () => {
       const report = this.report(input.comparisonId); const comparison = report.comparison;
