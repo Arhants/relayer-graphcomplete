@@ -11,6 +11,41 @@ export function taskActorPresentationReady({ expected, presentation = globalThis
       || (presentation.completionStatus === "not_started" && presentation.attemptOutcome === "model_failed"));
 }
 
+// These functions are serialized by Playwright; keep their dependencies local.
+export function taskActorControlIdentity(element) {
+  const p = element.ownerDocument.defaultView.__taskActorPresentation;
+  if (!p?.threadId || !p?.turnId || !p?.layerId) return null;
+  let kind; let keys;
+  if (element.matches?.(".workspace-layout #nodeLayer .graph-node[data-node]")) {
+    kind = "node"; keys = ["data-node", "aria-label"];
+  } else if (p.selectedNodeId != null && element.matches?.(".workspace-layout #detailActions button.action-control[data-action-id]")) {
+    if (!element.dataset.actionId || element.dataset.reviewActionId !== element.dataset.actionId
+      || !["navigate-action", "invoke-action"].includes(element.dataset.reviewKind)) return null;
+    kind = "action"; keys = ["data-action-id", "data-review-ref", "data-review-kind", "data-review-action-id", "data-review-target-layer-id", "aria-label"];
+  } else if (element.matches?.(".workspace-layout #workspaceBreadcrumb button.breadcrumb-segment[data-review-path-index]")) {
+    if (!Array.isArray(p.navigationPath)) return null;
+    const index = Number(element.dataset.reviewPathIndex);
+    const entry = p.navigationPath?.[index];
+    if (!Number.isSafeInteger(index) || index < 0 || index >= p.navigationPath.length - 1 || !entry
+      || element.dataset.reviewKind !== "layer-navigation"
+      || element.dataset.reviewRef !== `breadcrumb-layer:${index}:${entry.layerId}`) return null;
+    kind = "breadcrumb"; keys = ["data-review-ref", "data-review-kind", "data-review-path-index", "aria-label", "title", "aria-current"];
+  } else return null;
+  return { kind, attributes: Object.fromEntries(keys.map(key => [key, element.getAttribute(key)])),
+    text: element.textContent, scope: JSON.stringify([p.threadId, p.turnId, p.layerId, p.attemptId, p.selectedNodeId, p.navigationPath]) };
+}
+export function taskActorRebindControl(identity, document = globalThis.document) {
+  const p = document.defaultView.__taskActorPresentation;
+  if (!p || JSON.stringify([p.threadId, p.turnId, p.layerId, p.attemptId, p.selectedNodeId, p.navigationPath]) !== identity.scope) return null;
+  const selector = ({ node: ".workspace-layout #nodeLayer .graph-node[data-node]",
+    action: ".workspace-layout #detailActions button.action-control[data-action-id]",
+    breadcrumb: ".workspace-layout #workspaceBreadcrumb button.breadcrumb-segment[data-review-path-index]" })[identity.kind];
+  if (!selector) return null;
+  const matches = [...document.querySelectorAll(selector)].filter(element => element.textContent === identity.text
+    && Object.entries(identity.attributes).every(([key, value]) => element.getAttribute(key) === value));
+  return matches.length === 1 ? matches[0] : null;
+}
+
 export async function openTaskActorBrowser({ tasks, sessionId, productSession, browser, signal }) {
   signal?.throwIfAborted();
   const surface = await createHumanTaskSurface({ tasks, sessionId, productSession, actor: true, signal });
@@ -41,13 +76,13 @@ export async function openTaskActorBrowser({ tasks, sessionId, productSession, b
     await page.goto(surface.url);
     await page.locator(".workspace-layout").waitFor({ state: "visible" });
     let handles = new Map();
-    let nodeIdentities = new Map();
+    let controlIdentities = new Map();
     async function observe(expected) {
       signal?.throwIfAborted();
       if (expected) await page.waitForFunction(taskActorPresentationReady, { expected }, { timeout: 30000 });
       for (const handle of handles.values()) await handle.dispose();
       handles = new Map();
-      nodeIdentities = new Map();
+      controlIdentities = new Map();
       const snapshot = await page.evaluateHandle(async () => {
         const { isVisibleElement, accessibleControlName } = await import("/src/review-tools.js");
         const root = document.querySelector(".workspace-layout");
@@ -94,14 +129,8 @@ export async function openTaskActorBrowser({ tasks, sessionId, productSession, b
           const ref = randomUUID();
           const handle = await elements.getProperty(String(index));
           handles.set(ref, handle);
-          const identity = await handle.evaluate(element => {
-            if (!element.matches?.("#nodeLayer .graph-node[data-node]")) return null;
-            const p = window.__taskActorPresentation;
-            if (!p?.threadId || !p?.turnId || !p?.layerId) return null;
-            return { nodeId: element.dataset.node, label: element.getAttribute("aria-label"),
-              text: element.textContent, scope: JSON.stringify([p.threadId, p.turnId, p.layerId, p.attemptId, p.selectedNodeId, p.navigationPath]) };
-          });
-          if (identity) nodeIdentities.set(ref, identity);
+          const identity = await handle.evaluate(taskActorControlIdentity);
+          if (identity) controlIdentities.set(ref, identity);
           controls[index].ref = ref;
         }
         await elements.dispose();
@@ -119,17 +148,11 @@ export async function openTaskActorBrowser({ tasks, sessionId, productSession, b
           await page.mouse.wheel(0, action.value === "up" ? -600 : 600);
         } else {
           let handle = handles.get(action.ref)?.asElement();
-          // A graph redraw replaces DOM nodes during model latency. Only rebind
-          // the same graph node in the same observed presentation, never by name.
-          const identity = nodeIdentities.get(action.ref);
+          // Renderer refresh replaces graph and navigation controls during model latency.
+          // Rebind only exact control identity in the same presentation, never by name.
+          const identity = controlIdentities.get(action.ref);
           if (handle && identity && !await handle.evaluate(element => element.isConnected)) {
-            const replacement = await page.evaluateHandle(identity => {
-              const p = window.__taskActorPresentation;
-              if (!p || JSON.stringify([p.threadId, p.turnId, p.layerId, p.attemptId, p.selectedNodeId, p.navigationPath]) !== identity.scope) return null;
-              const matches = [...document.querySelectorAll(".workspace-layout #nodeLayer .graph-node[data-node]")]
-                .filter(element => element.dataset.node === identity.nodeId && element.getAttribute("aria-label") === identity.label && element.textContent === identity.text);
-              return matches.length === 1 ? matches[0] : null;
-            }, identity);
+            const replacement = await page.evaluateHandle(taskActorRebindControl, identity);
             const rebound = replacement.asElement();
             if (rebound) { await handle.dispose(); handles.set(action.ref, replacement); handle = rebound; }
             else await replacement.dispose();

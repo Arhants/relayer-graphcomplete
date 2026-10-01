@@ -1,3 +1,5 @@
+import { Window } from "happy-dom";
+import { taskActorControlIdentity, taskActorRebindControl } from "../desktop/eval-main/task-actor-browser.mjs";
 import { taskActorPresentationReady } from "../desktop/eval-main/task-actor-browser.mjs";
 import { mkdtemp, rm, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -416,4 +418,42 @@ it.each(["repeated", "last-slot", "unconfirmed"])("fails closed on %s control fa
   expect(task.events.filter(event => event.kind === "actor_action_failed").map(event => event.retryAllowed)).toEqual(scenario === "unconfirmed" ? [] : scenario === "repeated" ? [true, false] : [false]);
   expect(task.events.filter(event => event.kind === "actor_action_completed")).toEqual([]);
   expect(f.dispatches).toEqual([]);
+});
+
+
+it.each(["action", "breadcrumb"])("resolves only the same production %s after DOM replacement", kind => {
+  const window = new Window();
+  const document = window.document;
+  window.__taskActorPresentation = { threadId: 1, turnId: 2, layerId: 4, attemptId: 5, selectedNodeId: 6,
+    navigationPath: [{ layerId: 3, viaActionId: null }, { layerId: 4, viaActionId: 7 }] };
+  document.body.innerHTML = `<div class="workspace-layout"><div id="detailActions"><button class="action-control" data-action-id="8" data-review-ref="action-8" data-review-kind="navigate-action" data-review-action-id="8" data-review-target-layer-id="9">Customize with our dates</button></div><div id="workspaceBreadcrumb"><button class="breadcrumb-segment" data-review-ref="breadcrumb-layer:0:3" data-review-kind="layer-navigation" data-review-path-index="0" aria-label="Go to Response">Response</button></div></div>`;
+  const original = document.querySelector(kind === "action" ? ".action-control" : ".breadcrumb-segment");
+  const identity = taskActorControlIdentity(original);
+  expect(identity).not.toBeNull();
+  if (kind === "breadcrumb") {
+    const path = window.__taskActorPresentation.navigationPath;
+    for (const malformed of [undefined, null, {}, "invalid"]) {
+      window.__taskActorPresentation.navigationPath = malformed;
+      expect(taskActorControlIdentity(original)).toBeNull();
+    }
+    window.__taskActorPresentation.navigationPath = path;
+  }
+  const replacement = original.cloneNode(true); original.replaceWith(replacement);
+  expect(original.isConnected).toBe(false);
+  expect(taskActorRebindControl(identity, document)).toBe(replacement);
+  const clone = replacement.cloneNode(true); replacement.after(clone);
+  expect(taskActorRebindControl(identity, document)).toBeNull(); clone.remove();
+  for (const attribute of Object.keys(identity.attributes)) {
+    const prior = replacement.getAttribute(attribute); replacement.setAttribute(attribute, "changed");
+    expect(taskActorRebindControl(identity, document)).toBeNull();
+    if (prior === null) replacement.removeAttribute(attribute); else replacement.setAttribute(attribute, prior);
+  }
+  replacement.textContent += "changed"; expect(taskActorRebindControl(identity, document)).toBeNull(); replacement.textContent = identity.text;
+  for (const field of ["threadId", "turnId", "layerId", "attemptId", "selectedNodeId", "navigationPath"]) {
+    const prior = window.__taskActorPresentation[field]; window.__taskActorPresentation[field] = "changed";
+    expect(taskActorRebindControl(identity, document)).toBeNull(); window.__taskActorPresentation[field] = prior;
+  }
+  const unknown = document.createElement("button"); unknown.textContent = replacement.textContent; replacement.after(unknown);
+  expect(taskActorControlIdentity(unknown)).toBeNull();
+  window.happyDOM.abort();
 });

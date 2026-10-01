@@ -292,3 +292,60 @@ Independent reviewer `/root/provider_backend` found no new authority, navigation
 Its four-file executable/test digest is `02a0142090f4ddcf2ff1d10db5d5d29873654a85b351a7a3db180b80bd7c4ba9`, using sorted paths, NUL separators, and file bytes.
 That review inspected the mapping and source; it did not independently execute the heavy checks.
 The three interrupted clean runs remain preserved. Their replacement live results are separate evidence, not a deterministic test-suite claim.
+
+### Exact replacement identity for action pills and breadcrumbs
+
+The subsequent Europe run twice failed before dispatch on the visible fallback
+“Customize with our dates” action. Community similarly failed on “Go to
+Phone-photo workshop plan.” Their failed trajectories remain preserved. Source
+inspection found that production workspace rendering replaces both fallback
+`#detailActions` buttons and `#workspaceBreadcrumb` buttons. The previous exact
+replacement logic covered graph nodes only.
+
+The actor browser now retains internal identity for those two additional
+production controls. Action identity includes action ID, kind and target;
+breadcrumb identity includes the path index and corresponding layer identity.
+Both also require identical attributes/text and the complete observed thread,
+turn, layer, attempt, selected-node and navigation scope. Only a disconnected
+observed handle may resolve again, and only to a unique exact replacement. Normal
+visibility, enabled-state, owner and hit tests still run. These identities remain
+inside browser automation; the actor receives no new graph or grading data.
+
+Checkpoint mapping and observed evidence:
+
+- `test/eval-task-actor.test.mjs` calls the production identity/resolver with DOM
+  replacements, duplicates, every changed identity attribute, changed text and
+  each scope field. Missing/malformed breadcrumb paths and unknown buttons fail
+  closed. The two new identity cases failed before implementation. The final
+  actor/error/registry suite passed 60 tests under Node 22.23.2; log:
+  `/tmp/actor-control-identity-focused.log`.
+- `scripts/test-eval-web.mjs` calls production `refreshState` after observation
+  and verifies that the original action/breadcrumb handles become disconnected.
+  It checks duplicate, changed kind/target/path/text/scope and hidden replacement
+  rejection, then activates the unchanged exact replacement. A later refreshed
+  fallback invoke reaches the real scoped product route and completion budget.
+  Existing node, input, export, grading isolation and restart chapters remain.
+- Browser red logs are retained at `/tmp/actor-control-identity-red.log` and
+  `/tmp/actor-breadcrumb-identity-red2.log`. The latter demonstrates successful
+  action rebinding followed by failure on the replaced breadcrumb. Those runs
+  used Node 25. The green run used Node 22.23.2 and passed all twelve chapters
+  (`/tmp/actor-control-identity-green.log`), including both redraw subcheckpoints.
+  The green run preceded only the malformed-path guard and unused-variable
+  removal; final integrated browser proof remains the parent's gate.
+
+This establishes failure and recovery for production renderer replacements. It
+neither proves every saved live failure had that cause nor establishes task
+success. Full integrated gates, independent review, and the next live cohort
+remain separate evidence.
+
+Final integrated gates for the exact-identity repair passed on 2026-10-01:
+`npm run check` (3,489 tests and two separate secret-boundary tests),
+`npm run build`, and all twelve `npm run test:eval-web` chapters.
+The browser output separately confirms actual redraw recovery for actions and breadcrumbs.
+A prior check reached the final readability gate and failed on one long PRD sentence.
+That sentence was split without changing meaning, and the full check passed on rerun.
+Independent reviewer `/root/provider_backend` found no unresolved identity or authority finding.
+Reviewed executable/test digest: `ec5989f55ba8d2105a48bb37cf0abca98cfdca58ea2e7d2f2226c7f774ce021f` (sorted path, NUL, bytes).
+The reviewer inspected source and real-browser regression coverage; heavy gates were executed separately.
+A uniform final ten-case live cohort will use this repair and one pinned actor revision.
+Prior attempts remain diagnostic history; they will not replace failures within that cohort.

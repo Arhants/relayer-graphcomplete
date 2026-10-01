@@ -485,10 +485,12 @@ async function proveTaskActor({ browser, service, productSession, data }) {
   tasks = await new HumanTaskService({ stateFile: join(data, "actor-tasks.json"), evalService: service, productSession, setupRegistry }).open();
   let decision = 0;
   const snapshots = [];
+  let controlPage;
   const actors = new TaskActorService({ tasks, setupRegistry, resolveRuntime: async () => ({}),
     openBrowser: async (sessionId, signal) => {
       const controller = await openTaskActorBrowser({ tasks, sessionId, productSession, browser, signal });
       const actorPage = browser.contexts().flatMap((context) => context.pages()).find((page) => new URL(page.url()).searchParams.get("taskActor") === "1");
+      controlPage = actorPage;
       await actorPage.locator(".graph-node").first().waitFor({ state: "visible" });
       const beforeRefresh = await controller.observe();
       const nodeChoice = beforeRefresh.controls.find(control => control.name.includes("Two-worker"));
@@ -520,6 +522,44 @@ async function proveTaskActor({ browser, service, productSession, data }) {
       await controller.act({ kind: "click", ref: nodeChoice.ref });
       await until(async () => String(await actorPage.evaluate(() => window.__taskActorPresentation.selectedNodeId)) === expectedNodeId, "rebound click selects the observed graph node");
       await observedNode.dispose();
+      // Use the ordinary renderer refresh, which rebuilds fallback actions and
+      // breadcrumbs even while the accepted presentation remains unchanged.
+      const rootControls = await controller.observe();
+      await controller.act({ kind: "click", ref: rootControls.controls.find(control => control.name.includes("Incoming queue")).ref });
+      for (const kind of ["action", "breadcrumb"]) {
+        const selector = kind === "action" ? "#detailActions button.action-control" : "#workspaceBreadcrumb button.breadcrumb-segment";
+        await actorPage.locator(selector).first().waitFor({ state: "visible" });
+        const observed = await controller.observe();
+        const choice = observed.controls.find(control => kind === "action" ? control.name.includes("See queue behavior") : control.name.startsWith("Go to "));
+        assert.ok(choice, `${kind} observed before refresh`);
+        const oldControl = await actorPage.locator(selector).first().elementHandle();
+        await actorPage.evaluate(async () => { const { refreshState } = await import("/src/threads.js"); await refreshState(window.__taskActorPresentation.threadId); });
+        await until(() => oldControl.evaluate(element => !element.isConnected), `${kind} replaced by production refresh`);
+        const replacement = actorPage.locator(selector).first();
+        const rejectsReplacement = () => assert.rejects(controller.act({ kind: "click", ref: choice.ref }), { code: "actor_control_unavailable", actionDispatched: false });
+        await replacement.evaluate(element => { const duplicate = element.cloneNode(true); duplicate.id = "duplicate-actor-control"; element.after(duplicate); });
+        await rejectsReplacement(); await actorPage.locator("#duplicate-actor-control").evaluate(element => element.remove());
+        const attributes = kind === "action" ? ["data-action-id", "data-review-kind", "data-review-target-layer-id"] : ["data-review-ref", "data-review-path-index", "data-review-kind"];
+        for (const attribute of attributes) {
+          const previous = await replacement.getAttribute(attribute);
+          await replacement.evaluate((element, attribute) => element.setAttribute(attribute, "changed"), attribute);
+          await rejectsReplacement();
+          await replacement.evaluate((element, { attribute, previous }) => previous === null ? element.removeAttribute(attribute) : element.setAttribute(attribute, previous), { attribute, previous });
+        }
+        const html = await replacement.innerHTML();
+        await replacement.evaluate(element => { element.textContent = "Different control"; }); await rejectsReplacement();
+        await replacement.evaluate((element, html) => { element.innerHTML = html; }, html);
+        const path = await actorPage.evaluate(() => window.__taskActorPresentation.navigationPath);
+        await actorPage.evaluate(() => { window.__taskActorPresentation.navigationPath = [{ layerId: "changed" }]; });
+        await rejectsReplacement();
+        await actorPage.evaluate(path => { window.__taskActorPresentation.navigationPath = path; }, path);
+        await replacement.evaluate(element => { element.hidden = true; }); await rejectsReplacement();
+        await replacement.evaluate(element => { element.hidden = false; });
+        await controller.act({ kind: "click", ref: choice.ref });
+        await oldControl.dispose();
+        console.log(`PASS actor redraw ${kind}: production refresh detached the original and exact replacement activation succeeded`);
+      }
+
       assert.equal(await actorPage.locator("#humanTaskGrading").count(), 0);
       assert.equal(await actorPage.evaluate(async () => (await (await fetch("/api/capabilities")).json()).annotations), false);
       await actorPage.evaluate(() => {
@@ -601,7 +641,13 @@ async function proveTaskActor({ browser, service, productSession, data }) {
       if (decision === 1) Object.assign(action, { kind: "fill", ref: find((control) => control.role === "textarea"), value: "Explain how the workers coordinate." });
       if (decision === 2) Object.assign(action, { kind: "click", ref: find((control) => ["Send", "↑"].includes(control.name)) });
       if (decision === 3) Object.assign(action, { kind: "click", ref: find((control) => control.name.includes("Results store")) });
-      if (decision === 4) Object.assign(action, { kind: "click", ref: find((control) => control.name.includes("Plan the next improvement")) });
+      if (decision === 4) {
+        Object.assign(action, { kind: "click", ref: find((control) => control.name.includes("Plan the next improvement")) });
+        const oldInvoke = await controlPage.locator("#detailActions button.action-control").filter({ hasText: "Plan the next improvement" }).elementHandle();
+        await controlPage.evaluate(async () => { const { refreshState } = await import("/src/threads.js"); await refreshState(window.__taskActorPresentation.threadId); });
+        await until(() => oldInvoke.evaluate(element => !element.isConnected), "invoke button replaced by production refresh");
+        await oldInvoke.dispose();
+      }
       decision++;
       return { action, usage: null };
     } }),
