@@ -251,6 +251,22 @@ impl From<ProductError> for ApiError {
             ProductError::Storage(StorageError::ThreadCreationConflict(message)) => {
                 Self::conflict("thread_creation_conflict", message)
             }
+            ProductError::Storage(StorageError::ThreadArchiveBusy) => {
+                Self::conflict("thread_archive_busy", "Available when work finishes.")
+            }
+            ProductError::Storage(StorageError::Database(sqlx::Error::Database(ref error)))
+                if error.message() == "thread_archived" =>
+            {
+                Self::conflict(
+                    "thread_archived",
+                    "Open this archived chat again before starting work.",
+                )
+            }
+            ProductError::Storage(StorageError::Database(sqlx::Error::Database(ref error)))
+                if error.message() == "thread_archive_busy" =>
+            {
+                Self::conflict("thread_archive_busy", "Available when work finishes.")
+            }
             ProductError::Storage(error) => Self::internal(&error.to_string()),
         }
     }

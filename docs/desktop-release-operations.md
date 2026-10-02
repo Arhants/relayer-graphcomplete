@@ -177,6 +177,13 @@ Each native job:
 
 The runner temporarily places the isolated canary profile and evidence-log paths in the per-user launch environment. This preserves them when Squirrel relaunches through LaunchServices; the script restores any prior values before it exits.
 
+Canary profiles save Preview before launching the seed. The driver waits for
+startup discovery of the exact target before its explicit check and download,
+so an older seed's delayed startup check cannot overwrite download readiness.
+Final Settings capture waits for the relaunched document body and the existing
+visible version/channel/status checks; missing renderer readiness still times out
+without producing acceptance evidence.
+
 The hosted runner proves native packaging and updater behavior for its target. It does not replace a physical-device check for release-critical hardware or user-specific security software.
 
 Apple Silicon workflow `32399053432` completed the exact `0.2.10` to `0.2.11` Preview update on native arm64 macOS. Its committed evidence is under `docs/prd/assets/evidence/desktop/macos-arm64-0.2.10-to-0.2.11/`. Protected workflow `32399976404` later promoted the same `0.2.11` bytes to Stable.

@@ -324,9 +324,13 @@ describe("public share V1 reader", () => {
   });
 
   it("preserves nested navigation and reference cycles without granting execution authority", async () => {
-    const adapter = createPublicViewerAdapter(parsePublicSnapshot(fixtureJsonl()));
+    const records = fixtureJsonl().trimEnd().split("\n").map(JSON.parse);
+    records[1].acceptedView.rootAction.label = "Chat or graph?";
+    records[1].acceptedView.rootAction.icon = "columns-3";
+    const adapter = createPublicViewerAdapter(parsePublicSnapshot(recordsJsonl(records)));
     expect(adapter.readOnly).toBe(true);
     expect(adapter.state.visibleLayer.layer.id).toBe("layer:root");
+    expect(adapter.selection.layerPath[0]).toMatchObject({ label: "Chat or graph?", icon: "columns-3" });
     await expect(adapter.navigateLayer("layer:nested", {
       action: adapter.state.actions[0],
       sourceNode: adapter.state.nodes[0],
@@ -342,6 +346,7 @@ describe("public share V1 reader", () => {
       await adapter.navigateLayer("layer:related", { action: adapter.state.actions[0], sourceNode: adapter.state.nodes[0] });
     }
     expect(adapter.selection.layerPath.map(({ layerId }) => layerId)).toEqual(["layer:root", "layer:nested", "layer:related"]);
+    expect(adapter.selection.layerPath[0]).toMatchObject({ label: "Chat or graph?", icon: "columns-3" });
     await expect(adapter.onInvokeAction({ kind: "invoke" })).resolves.toBe(false);
     await expect(adapter.onSubmitInteraction("mutate")).resolves.toBe(false);
   });
@@ -1023,7 +1028,7 @@ describe("V3 current converted-invoke snapshots", () => {
   });
 });
 
-it("V3 root reference backlinks preserve nonroot mixed-arrival and expansion-cycle guards", () => {
+it("V3 reference backlinks preserve legacy arrival and expansion-cycle guards", () => {
   const records = fixtureJsonl().trimEnd().split("\n").map(JSON.parse);
   records[0].exportVersion = 3;
   const layers = records[1].acceptedView.layers;
@@ -1037,8 +1042,17 @@ it("V3 root reference backlinks preserve nonroot mixed-arrival and expansion-cyc
   const cycle = structuredClone(records);
   cycle[1].acceptedView.layers[0].actions.push(action("action:cycle-root", "node:root", "layer:root", "expand", "layer:root"));
   expect(() => parsePublicSnapshot(recordsJsonl(cycle))).toThrow(expect.objectContaining({ code: "expand_cycle" }));
+  const referencedCycle = structuredClone(records);
+  referencedCycle[1].acceptedView.layers[0].actions[0].relation = "reference";
+  referencedCycle[1].acceptedView.layers[1].actions.push(action("action:referenced-cycle", "node:nested", "layer:nested", "expand", "layer:nested"));
+  expect(() => parsePublicSnapshot(recordsJsonl(referencedCycle))).toThrow(expect.objectContaining({ code: "expand_cycle" }));
   layers[2].actions.at(-1).targetLayerId = "layer:nested";
-  expect(() => parsePublicSnapshot(recordsJsonl(records))).toThrow(expect.objectContaining({ code: "mixed_target_relations" }));
+  expect(() => parsePublicSnapshot(recordsJsonl(records))).not.toThrow();
+  for (const version of [1, 2]) {
+    const older = structuredClone(records);
+    older[0].exportVersion = version;
+    expect(() => parsePublicSnapshot(recordsJsonl(older))).toThrow(expect.objectContaining({ code: "mixed_target_relations" }));
+  }
 });
 
 describe("public share edge shapes", () => {

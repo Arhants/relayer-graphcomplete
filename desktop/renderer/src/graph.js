@@ -76,6 +76,7 @@ function workspace() {
         nodeId,
       });
     },
+    onArchiveThread: viewState.evalContext ? null : (threadId, archived) => import("./thread-archive.js").then((module) => archived ? module.archiveThread(threadId) : module.setThreadArchived(threadId, false)),
     onExportConversation: desktop?.conversation?.export
       ? (threadId) => desktop.conversation.export(threadId)
       : null,

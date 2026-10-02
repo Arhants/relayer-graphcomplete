@@ -1975,7 +1975,7 @@ fn v3_current_closure_preserves_completion_scoped_authored_keys() {
 }
 
 #[test]
-fn v3_root_reference_backlinks_preserve_nonroot_and_expand_cycle_guards() {
+fn v3_reference_backlinks_preserve_legacy_arrival_and_expand_cycle_guards() {
     let mut fixture = records();
     fixture.truncate(2);
     let ConversationExportRecord::Header(header) = &mut fixture[0] else {
@@ -2028,7 +2028,50 @@ fn v3_root_reference_backlinks_preserve_nonroot_and_expand_cycle_guards() {
         Some("layer:child"),
     ));
     view.layers.push(layer("layer:child", "node:child", vec![]));
-    assert_rejected_with_parity(&fixture, "mixed_target_relations");
+    validate_export_records(&fixture).unwrap();
+    validate_incrementally(&fixture).unwrap();
+    for version in [EXPORT_VERSION_V1, EXPORT_VERSION_V2] {
+        let mut older = fixture.clone();
+        let ConversationExportRecord::Header(header) = &mut older[0] else {
+            unreachable!()
+        };
+        header.export_version = version;
+        assert_rejected_with_parity(&older, "mixed_target_relations");
+    }
+}
+
+#[test]
+fn v3_rejects_expansion_cycles_in_reference_entered_components() {
+    let mut fixture = records();
+    fixture.truncate(2);
+    let ConversationExportRecord::Header(header) = &mut fixture[0] else {
+        unreachable!()
+    };
+    header.export_version = EXPORT_VERSION_V3;
+    header.turns.truncate(1);
+    let ConversationExportRecord::Turn(turn) = &mut fixture[1] else {
+        unreachable!()
+    };
+    let view = turn.accepted_view.as_mut().unwrap();
+    view.layers[0].actions = vec![action(
+        "action:reference",
+        "node:1",
+        Some("layer:1"),
+        Some(ExportNavigateRelation::Reference),
+        Some("layer:child"),
+    )];
+    view.layers.push(layer(
+        "layer:child",
+        "node:child",
+        vec![action(
+            "action:cycle",
+            "node:child",
+            Some("layer:child"),
+            Some(ExportNavigateRelation::Expand),
+            Some("layer:child"),
+        )],
+    ));
+    assert_rejected_with_parity(&fixture, "expand_cycle");
 }
 
 #[test]

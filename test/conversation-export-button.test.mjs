@@ -33,6 +33,8 @@ function captureExportHandler({ mode = "interactive", getThread, onExportConvers
     };
   };
   const button = element();
+  const archiveButton = element();
+  const archivedLabel = element();
   const settingsButton = element();
   const settingsMenu = element(["hidden"]);
   const settingsControl = element(["hidden"]);
@@ -57,6 +59,8 @@ function captureExportHandler({ mode = "interactive", getThread, onExportConvers
       if (selector === "#conversationSettingsButton") return settingsButton;
       if (selector === "#conversationSettingsMenu") return settingsMenu;
       if (selector === "#exportConversation") return button;
+      if (selector === "#archiveConversation") return archiveButton;
+      if (selector === "#threadArchivedLabel") return archivedLabel;
       if (selector === "#graphStage") return graphStage;
       return null;
     },

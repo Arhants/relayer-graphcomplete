@@ -142,6 +142,21 @@ describe("product workspace breadcrumb", () => {
     expect(deepPath.slice(0, 1)).toEqual(rootLayerPath(interaction));
   });
 
+  it("refreshes root presentation without erasing an authored reference path back to that root", () => {
+    const { interaction, rootLayer } = fixture();
+    const path = appendLayerPath(rootLayerPath(interaction), {
+      id: 501, kind: "navigate", sourceNodeId: 10, targetLayerId: 100,
+    }, { id: 10, title: "Architecture", icon: "network" });
+    interaction.completionOutput.rootAction = { label: "Architecture plan", icon: "layout-panel-left" };
+
+    const refreshed = layerPathForVisibleLayer(path, interaction, rootLayer);
+
+    expect(refreshed).toHaveLength(2);
+    expect(refreshed[0]).toMatchObject({ label: "Architecture plan", icon: "layout-panel-left" });
+    expect(refreshed[1]).toEqual(path[1]);
+    expect(path[0].label).toBe("Response");
+  });
+
   it("rebuilds authored labels when Eval history restores a deep layer", async () => {
     const { interaction, rootLayer } = fixture();
     const architecture = rootLayer.nodes[0];

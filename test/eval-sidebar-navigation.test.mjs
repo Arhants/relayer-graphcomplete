@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-const globalNames = ["document", "location", "window"];
+const globalNames = ["document", "location", "window", "lucide"];
 const originalGlobals = new Map(
   globalNames.map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)]),
 );
@@ -102,7 +102,9 @@ describe("Eval review sidebar", () => {
 it("keeps quoted chat, project, and Eval destination names on the actual buttons", async () => {
   const { Window } = await import("happy-dom");
   const browser = new Window({ url: "http://127.0.0.1:43123/" });
-  Object.assign(globalThis, { window: browser, document: browser.document, location: browser.location });
+  Object.assign(globalThis, { window: browser, document: browser.document, location: browser.location,
+    lucide: { Circle: "Circle", Trash2: "Trash2", createElement: () => browser.document.createElementNS("http://www.w3.org/2000/svg", "svg") },
+  });
   document.body.innerHTML = `<div class="sidebar-title"><strong>Relayer</strong></div><button id="newThread"></button>
     <section class="side-section"><div class="section-label"></div><div id="chatList"></div></section>
     <section class="side-section"><div class="section-label"></div><div id="projectList"></div></section><button id="settingsButton"></button>`;

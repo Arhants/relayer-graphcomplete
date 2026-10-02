@@ -112,6 +112,41 @@ describe("workspace navigation integration", () => {
     }
   });
 
+  it.each(["columns-3", undefined])("refreshes an annotation-only follow-up breadcrumb on acceptance (icon %s)", async (icon) => {
+    const root = rootLayer(201, 21);
+    const turn = { ...interaction(2, 10, null, 2), graphNodeId: 902, text: "",
+      completionStatus: "running", completionOutput: null,
+      contexts: [{ target: { id: 11 }, annotations: ["and what do you prefer a chat or a graph"] }] };
+    const state = productState([{ id: 10, title: "Chat or graph" }], [turn]);
+    state.currentProjection = { cursor: 1, hasMore: false, events: [], states: [{
+      completionId: 902, headRevision: 1, lifecycle: "active", currentLayerId: 201,
+      finalLayerId: null, safeReason: null, temporalFeatures: { projectionUi: true },
+    }] };
+    requestImplementation = vi.fn(async (path) => {
+      if (path.startsWith("/api/state?threadId=10")) return state;
+      if (path.endsWith("/layers/201")) return root;
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    const controller = await loadModules();
+    await controller.loadThread(10);
+    expect(controller.viewState.layerPath[0]).toMatchObject({ label: "Response", icon: "messages-square" });
+    controller.replaceCurrentSelection(21);
+    const historyBefore = controller.getNavigationHistory();
+
+    turn.completionStatus = "accepted";
+    turn.completionOutput = { rootLayer: root, rootAction: { label: "Chat or graph?", icon } };
+    Object.assign(state.currentProjection.states[0], { headRevision: 2, lifecycle: "succeeded", finalLayerId: 201 });
+    state.currentProjection.cursor = 2;
+    await controller.refreshState(10);
+
+    expect(controller.viewState.layerPath[0]).toMatchObject({
+      layerId: 201, label: "Chat or graph?", icon: icon ?? "messages-square",
+    });
+    expect(controller.viewState.selectedNodeId).toBe(21);
+    expect(controller.getNavigationHistory().canGoBack).toBe(historyBefore.canGoBack);
+    expect(controller.getNavigationHistory().canGoForward).toBe(historyBefore.canGoForward);
+  });
+
   it("keeps accepted product status while rendering its succeeded temporal current", async () => {
     const root = rootLayer(101, 11);
     const turn = { ...interaction(1, 10, root), graphNodeId: 901 };
@@ -367,7 +402,7 @@ describe("workspace navigation integration", () => {
     expect(controller.viewState).toMatchObject({ currentThreadId: 20, currentInteractionId: 2 });
   });
 
-  it("opens a resolved invoke across threads at its root and delegates Back to workspace history", async () => {
+  it("restores archived resolved-invoke destinations and archived cross-thread history without duplicate invocations", async () => {
     const sourceLayer = rootLayer(101, 11);
     const action = { id: 501, kind: "invoke", sourceNodeId: 11, targetLayerId: 201 };
     sourceLayer.actions = [action];
@@ -386,7 +421,11 @@ describe("workspace navigation integration", () => {
       resultCompletionStatus: "accepted",
     };
     sourceState.actionInvocations = [runningInvocation];
-    requestImplementation = vi.fn(async (path) => {
+    let destinationArchived = true;
+    let sourceArchived = false;
+    requestImplementation = vi.fn(async (path, options) => {
+      if (path === "/api/threads/20/archive") { expect(JSON.parse(options.body)).toEqual({ archived: false }); destinationArchived = false; return { id: 20, title: "Result", archivedAt: null }; }
+      if (path === "/api/threads/10/archive") { sourceArchived = false; return { id: 10, title: "Source", archivedAt: null }; }
       if (path.startsWith("/api/state?threadId=10")) return sourceState;
       if (path === "/api/threads/10/interactions/1/actions/501/destination") {
         return {
@@ -400,14 +439,14 @@ describe("workspace navigation integration", () => {
       }
       if (path === "/api/threads/20") {
         return {
-          thread: { id: 20, title: "Result", projectId: 8 },
+          thread: { id: 20, title: "Result", projectId: 8, archivedAt: destinationArchived ? "1" : null },
           interactions: [destination],
           actionInvocations: [acceptedInvocation],
         };
       }
       if (path === "/api/threads/10") {
         return {
-          thread: { id: 10, title: "Source" },
+          thread: { id: 10, title: "Source", archivedAt: sourceArchived ? "2" : null },
           interactions: [source],
           actionInvocations: [acceptedInvocation],
         };
@@ -434,9 +473,13 @@ describe("workspace navigation integration", () => {
     expect(controller.getNavigationHistory().canGoBack).toBe(true);
     expect(controller.appState.actionInvocations).toEqual([acceptedInvocation]);
 
+    expect(destinationArchived).toBe(false);
+    sourceArchived = true;
     const beforeHistoryCommit = vi.fn();
     await controller.navigateHistory("back", { beforeCommit: beforeHistoryCommit });
     expect(beforeHistoryCommit).toHaveBeenCalledOnce();
+    expect(sourceArchived).toBe(false);
+    expect(controller.appState.threads.find((thread) => thread.id === 10).archivedAt).toBeNull();
     expect(controller.viewState).toMatchObject({ currentThreadId: 10, currentInteractionId: 1 });
     expect(controller.viewState.layerPath.map(({ layerId }) => layerId)).toEqual([101]);
     expect(controller.appState.actionInvocations).toEqual([acceptedInvocation]);

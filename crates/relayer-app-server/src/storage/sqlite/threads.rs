@@ -17,13 +17,39 @@ const THREAD_COLUMNS: &str = r#"
                 WHEN i.completion_status IN ('not_started','running','submitted') THEN 'running'
                 WHEN i.completion_status='failed' THEN 'failed'
             END FROM interactions i WHERE i.thread_id=t.id ORDER BY i.sequence DESC LIMIT 1)
-
+ ,t.archived_at, (SELECT busy FROM thread_archive_activity WHERE id=t.id)
     FROM threads t
 "#;
 
 const VISIBLE_THREAD: &str = "t.surface='conversation' AND (t.conversation_import_id IS NULL OR EXISTS(SELECT 1 FROM conversation_imports ci WHERE ci.id=t.conversation_import_id AND ci.state='published'))";
 
 impl SqliteProductStore {
+    pub(crate) async fn list_archived_threads(&self) -> Result<Vec<Thread>, StorageError> {
+        let rows = sqlx::query(&format!("{THREAD_COLUMNS} WHERE {VISIBLE_THREAD} AND t.archived_at IS NOT NULL ORDER BY t.archived_at DESC,t.id DESC"))
+            .fetch_all(&self.pool).await?;
+        rows.iter().map(thread_from_row).collect()
+    }
+
+    pub(crate) async fn set_thread_archived(
+        &self,
+        id: ThreadId,
+        archived: bool,
+    ) -> Result<Option<Thread>, StorageError> {
+        let mut transaction = self.pool.begin_with("BEGIN IMMEDIATE").await?;
+        let Some(thread) = fetch_thread(&mut transaction, id).await? else {
+            return Ok(None);
+        };
+        if archived && thread.archive_blocked {
+            return Err(StorageError::ThreadArchiveBusy);
+        }
+        // Idempotent archive preserves its original archive ordering.
+        sqlx::query("UPDATE threads SET archived_at=CASE WHEN ?2 THEN COALESCE(archived_at,strftime('%Y-%m-%dT%H:%M:%fZ','now')) ELSE NULL END WHERE id=?1")
+            .bind(id.value()).bind(archived).execute(&mut *transaction).await?;
+        let thread = fetch_thread(&mut transaction, id).await?;
+        transaction.commit().await?;
+        Ok(thread)
+    }
+
     pub(crate) async fn restore_unstarted_thread_root(
         &self,
         id: ThreadId,
@@ -159,7 +185,7 @@ pub(super) async fn fetch_threads(
     connection: &mut SqliteConnection,
 ) -> Result<Vec<Thread>, StorageError> {
     let rows = sqlx::query(&format!(
-        "{THREAD_COLUMNS} WHERE {VISIBLE_THREAD} ORDER BY t.updated_at DESC, t.created_at DESC, t.id DESC"
+        "{THREAD_COLUMNS} WHERE {VISIBLE_THREAD} AND t.archived_at IS NULL ORDER BY t.updated_at DESC, t.created_at DESC, t.id DESC"
     ))
     .fetch_all(connection)
     .await?;
@@ -208,6 +234,8 @@ fn thread_from_row(row: &SqliteRow) -> Result<Thread, StorageError> {
             .map(ProjectId::from_database),
 
         activity: row.try_get(14)?,
+        archived_at: row.try_get(15)?,
+        archive_blocked: row.try_get::<i64, _>(16)? != 0,
     })
 }
 
@@ -403,6 +431,217 @@ mod icon_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn archive_round_trip_preserves_thread_history_scope_and_activity_order() {
+        let directory = tempfile::tempdir().unwrap();
+        let database = directory.path().join("archive.sqlite3");
+        let store = SqliteProductStore::open(&database).await.unwrap();
+        let (project, _) = store
+            .insert_or_get_project("Project", directory.path().to_str().unwrap(), "1")
+            .await
+            .unwrap();
+        for project_id in [None, Some(project.id)] {
+            let thread = store
+                .insert_thread_with_initial_interaction(NewThreadRecord {
+                    icon_selection_eligible: true,
+                    title: "Archive fixture",
+                    project_id,
+                    initial_message: "Saved question",
+                    harness_configuration_name: "test",
+                    permission_profile_id: "ask",
+                    model_selection: None,
+                    timestamp: "1",
+                })
+                .await
+                .unwrap();
+            set_status(&store, &thread, "failed").await;
+            // Real persisted draft and saved checkout metadata remain attached to this identity.
+            sqlx::query(
+                "UPDATE threads SET working_directory=?1,checkout_context_json=?2 WHERE id=?3",
+            )
+            .bind(directory.path().to_str().unwrap())
+            .bind(r#"{"kind":"existing","path":"/saved/checkout","branch":"feature"}"#)
+            .bind(thread.id.value())
+            .execute(&store.pool)
+            .await
+            .unwrap();
+            sqlx::query("INSERT INTO node_context_drafts(id,thread_id,target_node_id,source_interaction_node_id,source_layer_id,target_node_json,text,revision,created_at,updated_at) VALUES (?1,?2,1,1,1,'{}','Unsent attached draft',1,'1','1')")
+                .bind(format!("draft-{}", thread.id.value())).bind(thread.id.value()).execute(&store.pool).await.unwrap();
+            let saved_thread = store.get_thread(thread.id).await.unwrap().unwrap();
+            let before = store.load_thread(thread.id).await.unwrap();
+            let archived = store
+                .set_thread_archived(thread.id, true)
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(archived.archived_at.is_some());
+            assert_eq!(archived.updated_at, thread.updated_at);
+            assert!(
+                !store
+                    .list_threads()
+                    .await
+                    .unwrap()
+                    .iter()
+                    .any(|t| t.id == thread.id)
+            );
+            assert_eq!(store.list_archived_threads().await.unwrap()[0], archived);
+            assert_eq!(
+                store
+                    .set_thread_archived(thread.id, true)
+                    .await
+                    .unwrap()
+                    .unwrap(),
+                archived
+            );
+            let readable = store.load_thread(thread.id).await.unwrap();
+            assert_eq!(readable.interactions, before.interactions);
+            assert_eq!(readable.thread.unwrap().archived_at, archived.archived_at);
+            let current = store.load_product_state(Some(thread.id)).await.unwrap();
+            assert_eq!(current.selected_thread_id, Some(thread.id));
+            assert!(
+                current
+                    .threads
+                    .iter()
+                    .any(|t| t.id == thread.id && t.archived_at.is_some())
+            );
+            let reopened = SqliteProductStore::open(&database).await.unwrap();
+            assert_eq!(
+                reopened.get_thread(thread.id).await.unwrap().unwrap(),
+                archived
+            );
+            let restored = reopened
+                .set_thread_archived(thread.id, false)
+                .await
+                .unwrap()
+                .unwrap();
+            let mut expected = archived;
+            expected.archived_at = None;
+            assert_eq!(restored, expected);
+            assert_eq!(restored.project_id, thread.project_id);
+            assert_eq!(restored.working_directory, saved_thread.working_directory);
+            assert_eq!(restored.checkout_context, saved_thread.checkout_context);
+            let draft: (String, i64) =
+                sqlx::query_as("SELECT text,revision FROM node_context_drafts WHERE thread_id=?1")
+                    .bind(thread.id.value())
+                    .fetch_one(&reopened.pool)
+                    .await
+                    .unwrap();
+            assert_eq!(draft, ("Unsent attached draft".into(), 1));
+            assert_eq!(
+                reopened.load_thread(thread.id).await.unwrap().interactions,
+                before.interactions
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn archive_serializes_both_admission_orders_and_checks_earlier_work() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = SqliteProductStore::open(&directory.path().join("archive.sqlite3"))
+            .await
+            .unwrap();
+        let thread = store
+            .insert_thread_with_initial_interaction(NewThreadRecord {
+                icon_selection_eligible: true,
+                title: "Race fixture",
+                project_id: None,
+                initial_message: "Saved question",
+                harness_configuration_name: "test",
+                permission_profile_id: "ask",
+                model_selection: None,
+                timestamp: "1",
+            })
+            .await
+            .unwrap();
+        for status in [
+            "not_started",
+            "submitted",
+            "running",
+            "waiting_for_approval",
+        ] {
+            set_status(&store, &thread, status).await;
+            assert!(
+                matches!(
+                    store.set_thread_archived(thread.id, true).await,
+                    Err(StorageError::ThreadArchiveBusy)
+                ),
+                "{status}"
+            );
+            assert!(
+                store
+                    .get_thread(thread.id)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .archived_at
+                    .is_none()
+            );
+        }
+        store
+            .request_interaction_stop(thread.id, thread.root_interaction_id)
+            .await
+            .unwrap();
+        assert!(matches!(
+            store.set_thread_archived(thread.id, true).await,
+            Err(StorageError::ThreadArchiveBusy)
+        ));
+        set_status(&store, &thread, "stopped").await;
+        // Archive wins: both follow-up admission and retry through the real storage seams fail.
+        store.set_thread_archived(thread.id, true).await.unwrap();
+        let error = store
+            .insert_interaction(thread.id, "Follow-up", None, false, false)
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("thread_archived"));
+        let error = store
+            .mark_interaction_running(thread.root_interaction_id, "test")
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("thread_archived"));
+        store.set_thread_archived(thread.id, false).await.unwrap();
+        // Admission wins: archive refuses, even when a newer interaction is idle.
+        let later = store
+            .insert_interaction(thread.id, "Later idle turn", None, false, false)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE interactions SET completion_status='failed' WHERE id=?1")
+            .bind(later.id.value())
+            .execute(&store.pool)
+            .await
+            .unwrap();
+        set_status(&store, &thread, "running").await;
+        assert_eq!(
+            store
+                .get_thread(thread.id)
+                .await
+                .unwrap()
+                .unwrap()
+                .activity
+                .as_deref(),
+            Some("failed")
+        );
+        assert!(matches!(
+            store.set_thread_archived(thread.id, true).await,
+            Err(StorageError::ThreadArchiveBusy)
+        ));
+        set_status(&store, &thread, "accepted").await;
+        // A graph-settled execution can still have an active native unwind.
+        sqlx::query("INSERT INTO interaction_attempts(interaction_id,attempt_number,started_at,family_id,family_revision,harness_configuration_name,harness_configuration_revision,harness_configuration_digest,provider_id,adapter_id,adapter_implementation_version,model_id,access_contract,outcome,effect_boundary) VALUES (?1,1,'1',1,1,'test',1,'digest','test','test',1,'model','contract','running','unknown')")
+            .bind(thread.root_interaction_id.value()).execute(&store.pool).await.unwrap();
+        assert!(matches!(
+            store.set_thread_archived(thread.id, true).await,
+            Err(StorageError::ThreadArchiveBusy)
+        ));
+        sqlx::query(
+            "UPDATE interaction_attempts SET native_wait_ended_at='2' WHERE interaction_id=?1",
+        )
+        .bind(thread.root_interaction_id.value())
+        .execute(&store.pool)
+        .await
+        .unwrap();
+        store.set_thread_archived(thread.id, true).await.unwrap();
+    }
 
     async fn set_status(store: &SqliteProductStore, thread: &Thread, status: &str) {
         sqlx::query("UPDATE interactions SET completion_status=?1 WHERE id=?2")

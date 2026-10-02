@@ -1201,6 +1201,24 @@ impl ProductService {
             .await
             .map_err(Into::into)
     }
+    pub(crate) async fn list_archived_threads(&self) -> Result<Vec<Thread>, ProductError> {
+        self.storage
+            .list_archived_threads()
+            .await
+            .map_err(Into::into)
+    }
+
+    pub(crate) async fn set_thread_archived(
+        &self,
+        id: ThreadId,
+        archived: bool,
+    ) -> Result<Thread, ProductError> {
+        self.storage
+            .set_thread_archived(id, archived)
+            .await?
+            .ok_or_else(|| ProductError::Invalid("Thread not found.".into()))
+    }
+
     pub(crate) async fn list_threads(&self) -> Result<Vec<Thread>, ProductError> {
         self.storage.list_threads().await.map_err(Into::into)
     }
