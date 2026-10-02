@@ -13,7 +13,7 @@
   },
   "rendererArtifact": {
     "directory": "desktop/renderer",
-    "digest": "6888f88fa855d83c80c6ca39a6180e41872599ca79340914a836683218153522",
+    "digest": "69a6f87a677fa1fdcceb5447e4da0c60436ea7d17db122c8e91e73b7b2861e6c",
     "files": {
       "assets/relayer-logo.svg": {
         "bytes": 31624,
@@ -76,8 +76,8 @@
         "sha256": "9a57771b780859060113f8be2ad49b66b31b02dd86b5f09cea7b1d374684de29"
       },
       "src/checkout.js": {
-        "bytes": 10460,
-        "sha256": "6c59da9f992e9b41cfd0ae0b8f6676fb2e6bac2cfe1890cbfa0715f75e269c09"
+        "bytes": 13667,
+        "sha256": "efaf00919f30e1ff14818cbaba09779fad320ead41a2e45ed056ec2446edcebf"
       },
       "src/composer-drafts.js": {
         "bytes": 9125,
@@ -376,8 +376,8 @@
         "sha256": "8ef7bdf6d8b97ef298e083ad42c7e87670e4bd588468970a43c1f73da60c0831"
       },
       "styles.css": {
-        "bytes": 128954,
-        "sha256": "dd05c2301b1e13ec82d32b5d774ddca48805fabfd20269206e2afb65c5235046"
+        "bytes": 130271,
+        "sha256": "5a5a0da9ac48b8dd86cb5bdd72579c98b9492902a49221d612c3ae73ef0f6817"
       },
       "vendor/lucide.min.js": {
         "bytes": 386702,
