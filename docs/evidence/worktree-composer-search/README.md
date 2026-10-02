@@ -53,7 +53,7 @@ below when they finish. Without a PR the adversarial review is non-certifying.
 
 ## Frozen source and observed desktop proof
 
-Final six-file change manifest: `source-snapshot.json`, based on HEAD
+Pre-main six-file change manifest: `pre-main-source-snapshot.json`, based on HEAD
 `ebb1a1be3a805ca93482ccb958cce3881ef0136f`, digest
 `5930c30254d38e25ebd15e6fdaf19d7073533afa63af8c5e65c5f9d709905866`.
 The final warm controller/renderer run passed fourteen scenarios in 649ms.
@@ -64,8 +64,8 @@ HTTP fixture during post-admission loading; it does not claim accepted output.
 runtime directory with before/after/copied SHA-256 equality. Then
 `CARGO_TARGET_DIR=<frozen-directory> node scripts/run-worktree-test.mjs` passed
 all seventeen independently reported checkpoints, including actual accepted
-fixture output and harness execution in the exact created cwd. The original
-result is copied to `result.json`; two screenshot copies show the picker and
+fixture output and harness execution in the exact created cwd. The pre-main
+result is copied to `pre-main-result.json`; two screenshot copies show the picker and
 accepted task. Native keyboard Enter is exercised after base selection and again
 when retrying the retained creation plan after reopening the draft. No created
 worktree is selected from the list before either Send.
@@ -116,3 +116,48 @@ all 92 served renderer identities and their aggregate, both unchanged PNGs, and
 the actual successful capture/cancellation/cleanup result. Verdict: no binding
 findings; non-certifying without a PR. This supplements the unchanged six-file
 source review and does not certify the original failed outer check.
+
+
+## PR #651 and main integration (October 2, 2026)
+
+PR #651 first opened at `3ad8e07d`. Its fresh complete `npm run check` passed:
+271 Vitest files / 3,393 scenarios, the existing one skipped file / three skipped
+scenarios, secret boundary 2, Python 66, and every native/default/crash,
+package/type/workspace, receipt and readability gate. Log:
+`/tmp/relayer-worktree-pr-check.log`. Earlier failed runs remain historical.
+
+Main `99c7ddc12b5c505ed21c9ab176776b19117b76d3` was merged at `eb4ec76f`.
+CSS resolution preserves worktree search/input styling and archive hover
+controls. The social preview receipt was regenerated through its real workflow
+for the combined renderer. Its light/dark images and source identities are the
+actual capture output, never manually reassigned hashes.
+
+The integrated warm run passed 18 renderer/controller/archive/evidence scenarios.
+The integrated build passed and its exact binaries were frozen with matching
+before/after/copied SHA-256 values. The worktree driver passed all 17 checkpoints
+against those bytes; the project/new-thread runner passed its restart, collapse
+and layer-selection markers. Current `result.json`, screenshot copies and
+`source-snapshot.json` now bind the integrated source. The earlier snapshot and
+result are explicitly retained with a `pre-main-` prefix. The integrated complete check passed: 273 Vitest files / 3,403 scenarios, the
+existing one skipped file / three skipped scenarios, secret boundary 2, Python
+66, and all native/default/crash, package/type/workspace, receipt and readability
+gates. Log: `/tmp/relayer-worktree-integrated-check.log`. It ran the exact
+unchanged executable source at integrated digest
+`82afe6041ca99e991d4ac21119501b9dd9838c5721deb1503e0b593f182c5f61`.
+
+`worktree-demo.mp4` is an 11.8-second recording of live production Electron page
+frames, with optional embedded captions. It shows New worktree, search across
+100 fixture branches, selection of search-fixture-99 and one native Enter,
+followed by actual accepted graph output in the created checkout. The app server,
+Git service, controller and renderer are production paths; provider execution
+is the deterministic inference-free fixture. It is not paid/live provider proof.
+
+`video-manifest.json` records video dimensions/hash, exact production source and
+native binary hashes, frame/stage boundaries and the recorded commit. The exact
+recording driver bytes are archived in `video-driver-source.txt`; copying that
+file to `scripts/.worktree-demo-capture.mjs` restores its repository-relative
+imports. The driver derives from the declared worktree test, disables its
+injected lost reply, records capturePage frames and adds viewing delays. It
+checks actual selected bases, created cwd and accepted output. Its shortened
+happy path does not claim the recovery scenarios covered by the separate full
+desktop driver. Disposable executable recording files are removed after use.
