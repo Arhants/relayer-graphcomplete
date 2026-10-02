@@ -193,6 +193,7 @@ async function run() {
   await writeFile(join(projectDirectory, "tracked.txt"), "committed fixture\n");
   git("add", "."); git("commit", "-m", "fixture");
   git("update-ref", "refs/remotes/origin/main", "HEAD");
+  for (let index = 0; index < 100; index++) git("update-ref", `refs/heads/search-fixture-${index}`, "HEAD");
   git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main");
   const initialCommit = git("rev-parse", "HEAD");
   const linkedDirectory = join(dataDirectory, "external-linked");
@@ -322,17 +323,27 @@ async function run() {
   await waitFor("returned main checkout", () => evaluate(`document.querySelector('#folderSummary')?.textContent.includes('relayer-graphcomplete') && document.querySelector('#checkoutButton')?.disabled === false`));
   await click("#checkoutButton");
   await click("#newWorktree");
+  await waitFor("new-worktree returns focus to prompt", () => evaluate(`document.activeElement?.id === 'newThreadPrompt' && document.querySelector('#checkoutMenu')?.classList.contains('hidden')`));
+  await click("#checkoutButton");
   await waitFor("New worktree base control", () => evaluate(`Boolean(document.querySelector('#worktreeBase'))`));
   const defaultBase = await evaluate(`document.querySelector('#worktreeBase')?.value`);
   if (defaultBase !== "refs/remotes/origin/main") throw new Error(`Unexpected default base ${defaultBase}`);
   const cachedRemote = await evaluate(`Array.from(document.querySelector('#worktreeBase').options).some(option => option.value === 'refs/remotes/origin/main' && option.textContent.includes('cached'))`);
   if (!cachedRemote) throw new Error("Cached remote branch is not selectable.");
+  const bounded = await evaluate(`document.querySelector('#worktreeBase').options.length <= 24`);
+  if (!bounded) throw new Error("Branch results are unbounded.");
+  await evaluate(`document.querySelector('#worktreeBaseSearch').value = 'search-fixture-99'; document.querySelector('#worktreeBaseSearch').dispatchEvent(new Event('input', { bubbles: true }))`);
+  const searchable = await evaluate(`(() => { const values = Array.from(document.querySelector('#worktreeBase').options).map(option => option.value); return values.includes('checkout') && values.includes('refs/remotes/origin/main') && values.includes('refs/heads/search-fixture-99') && !values.includes('refs/heads/search-fixture-1'); })()`);
+  if (!searchable) throw new Error("Branch search lost pinned bases or did not narrow results.");
+  await evaluate(`document.querySelector('#worktreeBaseSearch').value = ''; document.querySelector('#worktreeBaseSearch').dispatchEvent(new Event('input', { bubbles: true }))`);
   if (inventory().length !== 2 || (await productRequest(productSession, "/api/state")).threads.length !== 0) throw new Error("Menu choice mutated Git or created a thread before Send.");
   await waitFor("visible New worktree menu", () => evaluate("document.querySelector('#checkoutMenu')?.classList.contains('hidden') === false && document.querySelector('#newWorktree')?.checked === true"));
   evidence.menu = await captureEvidence("01-checkout-menu");
-  await click("#checkoutButton");
+  await evaluate(`document.querySelector('#worktreeBase').dispatchEvent(new Event('change', { bubbles: true }))`);
+  await waitFor("base selection returns to prompt", () => evaluate(`document.activeElement?.id === 'newThreadPrompt'`));
   await waitFor("Send enabled", () => evaluate(`document.querySelector('#createThread')?.disabled === false`));
-  await click("#createThread");
+  webContents.sendInputEvent({ type: "keyDown", keyCode: "Return" });
+  webContents.sendInputEvent({ type: "keyUp", keyCode: "Return" });
   await waitFor("lost-create-reply retained draft", () => evaluate(`document.querySelector('#checkoutNotice')?.textContent.includes('Injected lost reply')`));
   if (inventory().length !== 3 || (await productRequest(productSession, "/api/state")).threads.length !== 0) throw new Error("Lost reply did not retain exact partial Git success.");
   const pending = (await desktopSettings.read()).composerDrafts.pendingNewThread;
@@ -353,7 +364,9 @@ async function run() {
   const retainedChoice = await evaluate(`document.querySelector('#newWorktree')?.checked === true && document.querySelector('#worktreeBase')?.value === 'refs/remotes/origin/main'`);
   if (!retainedChoice) throw new Error("Reopen lost New worktree/base choice.");
   await click("#checkoutButton");
-  await click("#createThread");
+  await evaluate(`document.querySelector('#newThreadPrompt').focus()`);
+  webContents.sendInputEvent({ type: "keyDown", keyCode: "Return" });
+  webContents.sendInputEvent({ type: "keyUp", keyCode: "Return" });
   const thread = await waitFor("created exact-location thread", async () => {
     const state = await productRequest(productSession, "/api/state");
     return state.threads.length === 1 ? state.threads[0] : false;
@@ -480,6 +493,7 @@ async function run() {
   await waitFor("history readable despite absent cwd", () => evaluate(`document.querySelectorAll('.graph-node').length > 0`));
   evidence.missingHistory = await captureEvidence("05-missing-location-readable-history");
   const checkpoints = {
+    boundedBranchSearchPinnedBases: true, enterCreatesAndStartsTask: true,
     registeredCheckoutListScroll: true,
     externalCheckoutSelection: true, cachedRemoteDefaultBase: true,
     sendOnlyMutation: true, interruptedCreateDurableReopenReuse: true,

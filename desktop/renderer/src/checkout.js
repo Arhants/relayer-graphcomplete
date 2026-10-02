@@ -7,6 +7,24 @@ import { request } from "./api.js";
 let availabilityChanged = () => {};
 let scopeChanged = () => {};
 let submitting = false;
+const BASE_RESULT_LIMIT = 20;
+// The current committed checkout and conventional default remain discoverable
+// even when a repository has hundreds of generated branches.
+function renderBaseOptions(inspection, choice, query = "") {
+  const pinned = inspection.bases.filter(base => base.ref === "checkout"
+    || base.ref === "refs/remotes/origin/main" || (base.ref || base.name) === choice.base);
+  const needle = query.trim().toLocaleLowerCase();
+  const matches = inspection.bases.filter(base => !pinned.includes(base)
+    && base.name.toLocaleLowerCase().includes(needle));
+  const visible = [...pinned, ...matches.slice(0, BASE_RESULT_LIMIT)];
+  const select = $("#worktreeBase");
+  select.innerHTML = `<option value="">Choose a base…</option>` + visible.map(base =>
+    `<option value="${escapeHtmlAttribute(base.ref || base.name)}">${escapeHtml(base.ref === "checkout" ? "Local checkout" : base.name)}${base.remote ? " · cached" : ""}</option>`).join("");
+  select.value = choice.base || "";
+  $("#worktreeBaseResults").textContent = matches.length > BASE_RESULT_LIMIT
+    ? `Showing ${BASE_RESULT_LIMIT} of ${matches.length} matching branches. Search to narrow the list.`
+    : "";
+}
 const activeStatuses = new Set(["not_started", "preparing", "running", "submitted", "waiting_for_approval"]);
 async function refreshSharedCheckout(scope) {
   if (!productApiAvailable || !scope.path) return;
@@ -109,14 +127,29 @@ export function renderCheckout() {
       const label = entry.detached ? "Detached HEAD" : entry.branch || "Checkout";
       return `<button type="button" data-checkout-index="${index}" ${reason || pending ? "disabled" : ""}><span>${escapeHtml(label)}</span><small>${escapeHtml(entry.path)}</small>${states.length ? `<small>${escapeHtml(states.join(" · "))}</small>` : ""}</button>`;
     }).join("");
-    const bases = inspection.bases.map((base) => `<option value="${escapeHtmlAttribute(base.ref || base.name)}" ${(base.ref || base.name) === scope.checkout?.base ? "selected" : ""}>${escapeHtml(base.name)}${base.remote ? " · cached" : ""}</option>`).join("");
     const planned = scope.checkout?.newWorktree;
-    menu.innerHTML = `<div class="checkout-list" role="group" aria-label="Registered checkouts" tabindex="0">${items}</div><hr><label class="checkout-checkbox"><input type="checkbox" id="newWorktree" ${planned ? "checked" : ""} ${pending ? "disabled" : ""}>New worktree</label>${planned ? `<label class="checkout-base">Base<select id="worktreeBase" ${pending || scope.checkout.planId ? "disabled" : ""}><option value="" ${!scope.checkout.base ? "selected" : ""}>Choose a base…</option>${bases}</select></label>` : ""}${relative && !explicitSubfolder ? `<hr><button type="button" id="separateSubfolder" ${pending ? "disabled" : ""}>Save as separate project</button>` : ""}`;
+    menu.innerHTML = `<div class="checkout-list" role="group" aria-label="Registered checkouts" tabindex="0">${items}</div><hr><label class="checkout-checkbox"><input type="checkbox" id="newWorktree" ${planned ? "checked" : ""} ${pending ? "disabled" : ""}>New worktree</label>${planned ? `<label class="checkout-base">Search branches<input type="search" id="worktreeBaseSearch" placeholder="Search branches…" ${pending || scope.checkout.planId ? "disabled" : ""}></label><label class="checkout-base">Base<select id="worktreeBase" ${pending || scope.checkout.planId ? "disabled" : ""}></select></label><small id="worktreeBaseResults" role="status"></small>` : ""}${relative && !explicitSubfolder ? `<hr><button type="button" id="separateSubfolder" ${pending ? "disabled" : ""}>Save as separate project</button>` : ""}`;
     menu.querySelectorAll("[data-checkout-index]").forEach((item) => {
-      item.onclick = safely(async () => { await checkoutController.pick(inspection.worktrees[Number(item.dataset.checkoutIndex)]); void refreshSharedCheckout(scope); closeCheckoutMenu(); });
+      item.onclick = safely(async () => { await checkoutController.pick(inspection.worktrees[Number(item.dataset.checkoutIndex)]); void refreshSharedCheckout(scope); closeCheckoutMenu(); $("#newThreadPrompt")?.focus(); });
     });
-    $("#newWorktree").onchange = safely(() => checkoutController.setNewWorktree($("#newWorktree").checked));
-    if ($("#worktreeBase")) $("#worktreeBase").onchange = safely(() => checkoutController.setBase($("#worktreeBase").value));
+    const focusDraft = () => {
+      // Re-rendering replaces the focused control. Restore a useful keyboard
+      // destination so the next Enter reaches the existing Send handler.
+      if (scope.checkout.newWorktree && !scope.checkout.base) $("#worktreeBase")?.focus();
+      else { closeCheckoutMenu(); $("#newThreadPrompt")?.focus(); }
+    };
+    $("#newWorktree").onchange = safely(async () => {
+      await checkoutController.setNewWorktree($("#newWorktree").checked);
+      focusDraft();
+    });
+    if ($("#worktreeBase")) {
+      renderBaseOptions(inspection, scope.checkout);
+      $("#worktreeBaseSearch").oninput = () => renderBaseOptions(inspection, scope.checkout, $("#worktreeBaseSearch").value);
+      $("#worktreeBase").onchange = safely(async () => {
+        await checkoutController.setBase($("#worktreeBase").value);
+        focusDraft();
+      });
+    }
     if ($("#separateSubfolder")) $("#separateSubfolder").onclick = safely(async () => {
       scope.separateSubfolder = true;
       scope.kind = "folder";
