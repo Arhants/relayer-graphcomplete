@@ -5,15 +5,15 @@
     "desktop/main/services/share-publish-coordinator.mjs": "f722b04879f31c2ab210c6e1eb2a8bf686af37bea6689cff9f6c4d143728abed",
     "desktop/main/services/share-publish-attempt-store.mjs": "55d555b3e1decc8c543356f66be0c4c1605c7f60dc593287fb84ecd93fb2f7ff",
     "desktop/main/services/share-service-client.mjs": "f30067b00bdb02ac64fbcfc932bafe02428cefd38ef094baa9abf51f5748c501",
-    "desktop/main/index.mjs": "9cb1b7d0e48ae14dbe264e26b248016f783936ffe8785f8cc113b27fdc001359",
+    "desktop/main/index.mjs": "c05f13093122085434fcd3704c894add4c1fa23525bf8ce118de1354a92e7600",
     "contracts/share-service-v1/contract.json": "7407c99d32fb04a62ab958257be5525dc3451adc9899d600e07de730dccc89ff",
     "scripts/capture-share-preview-evidence.mjs": "4510e3a54f6b658c2df86b1a06afc8ca2428a36693a93648786bd4e075327562",
     "test/fixtures/social-preview.jsonl": "ff4a4545de49ccc20562f2f763b6a120d87fa37f7703a994abeb71b219a405aa",
-    "desktop/shared/telemetry-module-inventory.mjs": "65f575d323b1b466c875f9d3d2cd8ddd0488c2f22fec764878cd93aefb765b10"
+    "desktop/shared/telemetry-module-inventory.mjs": "93c3aab5097cc763dea60924b9e8bd8430f469147bfd6878a7625dd9569b3d9c"
   },
   "rendererArtifact": {
     "directory": "desktop/renderer",
-    "digest": "14618f8f97e0edfebcb72edac29546240a165f7abfd1328968007210931cbae1",
+    "digest": "415d9337d99e8b80f4cddbff668eafca07c0c907d8d55730f2e6f66dab7e3ec4",
     "files": {
       "assets/relayer-logo.svg": {
         "bytes": 31624,
@@ -144,8 +144,12 @@
         "sha256": "dd367d1a606aff3951519ea3365a1ca2b920ab78473f92149d2a97627f81cb52"
       },
       "src/main.js": {
-        "bytes": 21078,
-        "sha256": "171261f8dda1444b7892b5cc3888bf0318b7260d3dbae5864f3d68b04a4ff8ff"
+        "bytes": 21618,
+        "sha256": "31a7212705b1bc54193999363d9d79a186cedf65de37cfd2da3ca4bf3b98df3f"
+      },
+      "src/model-availability-refresh.js": {
+        "bytes": 1085,
+        "sha256": "5332c74883898f1343d63b3eb8b9400ccf0f703ef38b091e62446ab3082db72d"
       },
       "src/model-family-model.js": {
         "bytes": 11679,
