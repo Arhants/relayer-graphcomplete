@@ -32,9 +32,13 @@ it("renders ordinary folder, loading, failure and Git choices in the production 
   window.document.querySelector("#checkoutButton").click();
   window.document.querySelector("#newWorktree").focus();
   window.document.querySelector("#newWorktree").click();
+  // Opening the base immediately must retain focus when draft persistence settles.
+  window.document.querySelector("#worktreeBaseButton").click();
   await new Promise(resolve => setTimeout(resolve, 0));
-  expect(window.document.querySelector("#checkoutMenu").classList.contains("hidden")).toBe(true);
-  window.document.querySelector("#checkoutButton").click();
+  expect(window.document.activeElement.id).toBe("worktreeBaseSearch");
+  window.document.activeElement.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+  window.document.querySelector("#newThreadPrompt").focus();
+  expect(window.document.querySelector("#checkoutMenu").classList.contains("hidden")).toBe(false);
   const menu = window.document.querySelector("#checkoutMenu");
   const list = menu.querySelector('.checkout-list[role="group"][aria-label="Registered checkouts"]');
   expect(list.tabIndex).toBe(0);
@@ -81,6 +85,9 @@ it("renders ordinary folder, loading, failure and Git choices in the production 
   window.document.querySelector("#checkoutButton").click();
   window.document.querySelector("#newWorktree").click();
   await new Promise(resolve => setTimeout(resolve, 0));
+  expect(window.document.activeElement.id).toBe("worktreeBaseButton");
+  expect(window.document.querySelector("#worktreeBasePicker").classList.contains("hidden")).toBe(true);
+  window.document.querySelector("#worktreeBaseButton").click();
   expect(window.document.activeElement.id).toBe("worktreeBaseSearch");
   expect(checkoutController.state.scope.checkout.base).toBeNull();
   await expect(checkoutController.prepareSend()).rejects.toThrow("Choose an available base");

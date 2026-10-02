@@ -153,8 +153,13 @@ export function renderCheckout() {
       else { closeCheckoutMenu(); $("#newThreadPrompt")?.focus(); }
     };
     $("#newWorktree").onchange = safely(async () => {
-      await checkoutController.setNewWorktree($("#newWorktree").checked);
-      focusDraft();
+      const saved = checkoutController.setNewWorktree($("#newWorktree").checked);
+      // Keep the checkout menu visible so the base remains discoverable.
+      // A valid default still leaves Enter at the existing prompt Send seam.
+      if (scope.checkout.newWorktree && !scope.checkout.base) $("#worktreeBaseButton")?.focus();
+      else $("#newThreadPrompt")?.focus();
+      // Persistence must not steal focus after the user opens the base picker.
+      await saved;
     });
     if ($("#worktreeBase")) {
       renderBaseOptions(inspection, scope.checkout);
