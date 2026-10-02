@@ -9,7 +9,14 @@ impl SqliteProductStore {
     ) -> Result<ProductStateSnapshot, StorageError> {
         let mut transaction = self.pool.begin().await?;
         let projects = projects::fetch_projects(&mut transaction).await?;
-        let threads = threads::fetch_threads(&mut transaction).await?;
+        let mut threads = threads::fetch_threads(&mut transaction).await?;
+        // An explicitly requested archived workspace remains readable without restoring it.
+        if let Some(id) = requested_thread_id
+            && !threads.iter().any(|thread| thread.id == id)
+            && let Some(thread) = threads::fetch_thread(&mut transaction, id).await?
+        {
+            threads.push(thread);
+        }
         let selected_thread_id = requested_thread_id
             .filter(|id| threads.iter().any(|thread| thread.id == *id))
             .or_else(|| threads.first().map(|thread| thread.id));

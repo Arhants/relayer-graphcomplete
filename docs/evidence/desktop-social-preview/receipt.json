@@ -9,11 +9,11 @@
     "contracts/share-service-v1/contract.json": "7407c99d32fb04a62ab958257be5525dc3451adc9899d600e07de730dccc89ff",
     "scripts/capture-share-preview-evidence.mjs": "4510e3a54f6b658c2df86b1a06afc8ca2428a36693a93648786bd4e075327562",
     "test/fixtures/social-preview.jsonl": "ff4a4545de49ccc20562f2f763b6a120d87fa37f7703a994abeb71b219a405aa",
-    "desktop/shared/telemetry-module-inventory.mjs": "80d5ca6465a79e6c1f945f7b2e1fccf5ba3ab6b01f2831971450cc7d453d4619"
+    "desktop/shared/telemetry-module-inventory.mjs": "65f575d323b1b466c875f9d3d2cd8ddd0488c2f22fec764878cd93aefb765b10"
   },
   "rendererArtifact": {
     "directory": "desktop/renderer",
-    "digest": "6cdadd2ad942d1427d2e7238919a65aeca71380df2826fd0a93282d0e79bf5c9",
+    "digest": "14618f8f97e0edfebcb72edac29546240a165f7abfd1328968007210931cbae1",
     "files": {
       "assets/relayer-logo.svg": {
         "bytes": 31624,
@@ -116,8 +116,8 @@
         "sha256": "9813114cc78844ce28c8532ef4585262be1c915f8c5cfac53334b623e69b66a6"
       },
       "src/graph.js": {
-        "bytes": 5563,
-        "sha256": "7c527923d530ac7fe33253eced5237385098c60d992f7075a1ac01100c7e85d6"
+        "bytes": 5774,
+        "sha256": "1f5f313da5af92ebacac3054f9be3ccb60a25fcbd71cc8d3139a81c63d39f8a5"
       },
       "src/harness-settings-model.js": {
         "bytes": 1899,
@@ -144,8 +144,8 @@
         "sha256": "dd367d1a606aff3951519ea3365a1ca2b920ab78473f92149d2a97627f81cb52"
       },
       "src/main.js": {
-        "bytes": 20713,
-        "sha256": "a91e881e88593309e0618b6ab7db95652b43d74cfffb4146e2c84d734019fa75"
+        "bytes": 21078,
+        "sha256": "171261f8dda1444b7892b5cc3888bf0318b7260d3dbae5864f3d68b04a4ff8ff"
       },
       "src/model-family-model.js": {
         "bytes": 11679,
@@ -176,8 +176,8 @@
         "sha256": "0d5c91e3be5a620d1d20ee3a26a73516a02ad43db59bf11dd0577876eb8e29d2"
       },
       "src/navigation.js": {
-        "bytes": 12743,
-        "sha256": "997475e84309948505c683862a429956a9dcb9d7d2c65fa07330b4843341c3bb"
+        "bytes": 13251,
+        "sha256": "9d00cf7a8c9da6d3fab7f13abb3e84b2703d22b6444026cb1601d735dff815c8"
       },
       "src/node-context-drafts.js": {
         "bytes": 25194,
@@ -264,16 +264,16 @@
         "sha256": "51d1cf895a9f261ebf74d4cba3000897e37ab8571339a68a581390f847089c15"
       },
       "src/product-workspace/view.js": {
-        "bytes": 15223,
-        "sha256": "8f503edd7a926ff234d81faf0e84a4847dd80c2b64b544c0a2d37bcf159ed8bc"
+        "bytes": 15411,
+        "sha256": "258d3ad0d6af68b29e66252284c487178303eaf513439e6fc6f08a954818f35b"
       },
       "src/product-workspace/workspace-layout.js": {
         "bytes": 4731,
         "sha256": "8e5d307f95b1863fb995606ca32a832de088916716c39476f9d31f2174de002d"
       },
       "src/product-workspace/workspace.js": {
-        "bytes": 267251,
-        "sha256": "5bed0fde71276956e741d81099ce9bf0d711a3a911490cc6bcf0793cc5c13d5f"
+        "bytes": 268435,
+        "sha256": "dd84e7bedaf283613e66df0d0e0d5f8c12985b2355629f799d0eecb0bc6a6eba"
       },
       "src/project-composer-navigation.js": {
         "bytes": 282,
@@ -343,17 +343,21 @@
         "bytes": 1453,
         "sha256": "b573f6681ffa7b6aa563f1867fc87c74f2feaf6ce89fc7a86e9737edae53f1a4"
       },
+      "src/thread-archive.js": {
+        "bytes": 4672,
+        "sha256": "f88988a24e4f603e27dd85dedaccf3c806a147188125877a09752a0667cc3d32"
+      },
       "src/thread-model.js": {
         "bytes": 883,
         "sha256": "6ecc188e2f85f1d507775cd5dc7cb077d1f85698cd5940c1b501e62bf71d45c1"
       },
       "src/threads.js": {
-        "bytes": 64106,
-        "sha256": "b62539b551e0a635d0184a1b3e8233713f5077bde8687af18aaabe3f73926f34"
+        "bytes": 65601,
+        "sha256": "894e855f0968bf53544d5785870c655feeb77430aaef261a45c45cb1d12570ad"
       },
       "src/ui.js": {
-        "bytes": 1801,
-        "sha256": "cc097502fc2edf38832715c536e356665e4564336441c89a2b655a5af019d53b"
+        "bytes": 2147,
+        "sha256": "e1cda9b0294e179091569d90e7c5b2877da0c6f220bdf20ab91a99166c0f57c8"
       },
       "src/update-indicator-model.js": {
         "bytes": 1117,
@@ -372,8 +376,8 @@
         "sha256": "8ef7bdf6d8b97ef298e083ad42c7e87670e4bd588468970a43c1f73da60c0831"
       },
       "styles.css": {
-        "bytes": 127113,
-        "sha256": "5301a1f37a4bb4014c060ccb45ad8f1649b60c05de8db0244fad1017d0e37f9b"
+        "bytes": 128859,
+        "sha256": "9acab2ad6162ad88648c844c821d1dcfd869a39eef8dc22f89f037f427ec74d6"
       },
       "vendor/lucide.min.js": {
         "bytes": 386702,

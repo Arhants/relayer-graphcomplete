@@ -9,10 +9,11 @@ export function productWorkspaceMarkup() {
         <button id="historyForward" data-review-ref="history-forward" data-review-kind="history" disabled title="Forward" aria-label="Forward"><span aria-hidden="true">→</span><i class="history-spinner hidden" aria-hidden="true"></i></button>
       </nav>
       <div class="thread-title-group">
-        <div class="thread-title-copy"><div class="thread-title-row"><span id="threadIcon" class="thread-topic-icon" aria-hidden="true">◌</span><h2 id="threadTitle">New thread</h2><span class="thread-status-symbol hidden" id="threadStatusSymbol" role="img"></span><button class="annotation-count-badge hidden" id="threadAnnotationBadge" type="button" aria-label="Open thread comments"></button></div><span class="sr-only" id="threadScope">No folder</span></div>
+        <div class="thread-title-copy"><div class="thread-title-row"><span id="threadIcon" class="thread-topic-icon" aria-hidden="true">◌</span><h2 id="threadTitle">New thread</h2><span id="threadArchivedLabel" class="hidden">Archived</span><span class="thread-status-symbol hidden" id="threadStatusSymbol" role="img"></span><button class="annotation-count-badge hidden" id="threadAnnotationBadge" type="button" aria-label="Open thread comments"></button></div><span class="sr-only" id="threadScope">No folder</span></div>
         <div class="conversation-settings hidden" id="conversationSettings">
           <button class="conversation-settings-button" id="conversationSettingsButton" type="button" title="Conversation settings" aria-label="Conversation settings" aria-expanded="false" aria-controls="conversationSettingsMenu">•••</button>
           <div class="conversation-settings-menu hidden" id="conversationSettingsMenu" role="menu" aria-label="Conversation settings">
+            <button class="conversation-export hidden" id="archiveConversation" type="button" role="menuitem">Archive</button>
             <button class="conversation-export" id="shareConversationMenu" type="button" role="menuitem" data-review-ref="share-conversation-menu" data-review-kind="conversation-share">Share…</button>
             <button class="conversation-export" id="exportConversation" type="button" role="menuitem" data-review-ref="export-conversation" data-review-kind="conversation-export">Export conversation…</button>
           </div>

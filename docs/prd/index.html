@@ -713,7 +713,7 @@ interface CompletionTerminalError extends Error {
 <td><code>SCP-007</code>–<code>SCP-009</code>: thread management</td>
 <td><span class="delivery-status partial">Partially met</span></td>
 <td>Create, list, select, and reopen are present for the initial thread shape.</td>
-<td>Fork, rename, archive, pin, delete-entry, move-to-project, and graph-reference preservation are not implemented.</td>
+<td>Fork, rename, pin, delete-entry, move-to-project, and graph-reference preservation are not implemented. Archive is covered by §3.5.1 and ARC-001–ARC-003.</td>
 </tr>
 <tr class="requirement-row status-partial">
 <td>Section 8.2 local persistence and restart recovery</td>
@@ -1220,6 +1220,20 @@ type InteractionModelBinding = {
 </tbody>
 </table>
 <p>Unavailable profiles remain visible but disabled with a product-readable reason. If no profile is available, New Thread cannot send. The selected profile is written during thread creation, shown with the saved thread, and cannot be changed for later turns in that thread.</p>
+<h3>3.5.1 Archive chats</h3>
+<p>Archive is reversible organization for project and standalone threads. A red trashcan Archive button sits at the far right of each expanded sidebar chat row. It stays hidden until the row is hovered or receives keyboard focus; revealing it does not shift the row layout. Hidden buttons do not receive pointer input. Active-work buttons remain disabled and appear dimmed when revealed. Archive is also available in the open thread menu. Archiving preserves the graph, history, drafts, project membership, exact checkout, and working directory across restart. It does not change draft, accepted, or stopped graph states, cancel work, or change conversation activity timestamps.</p>
+<p>Archive is disabled during Running, Stopping, and Needs approval. The disabled action says “Available when work finishes.”</p>
+<p>Rust enforces the same boundary atomically against new work admission. Earlier recursive work, native execution still unwinding, and unresolved execution/input admission also count as working even when the latest human turn is idle. Failed, interrupted, and otherwise settled threads may be archived.</p>
+<p>Archived threads disappear from ordinary lists and search. Settings → Archived chats is their only archive listing and search surface. It searches titles, labels project membership, orders most recently archived first, and provides Open and Unarchive. Any explicit navigation to an archived thread, including a direct reference or initial thread URL, unarchives it; background reads, refreshes, exports, and previews do not. Restore preserves conversation activity order. Archiving the currently open thread leaves its workspace and reading position visible with an Archived indicator and Unarchive action. It remains archived until explicitly reopened or restored; Send is unavailable until restoration.</p>
+<p>Archive takes effect immediately and provides Undo without a confirmation dialog. Repeating Archive preserves the original archive time. Bulk and automatic archive policies are outside this version.</p>
+<table>
+<thead><tr><th>Checkpoint</th><th>Smallest deterministic proof</th><th>Desktop proof</th></tr></thead>
+<tbody>
+<tr><td>ARC-001: Durable reversible metadata preserves history, scope, checkout and activity order; ordinary lists exclude archived chats; direct reads remain read-only.</td><td>The storage test <code>archive_round_trip_preserves_thread_history_scope_and_activity_order</code> exercises real storage, selected archived state, disk reopen, and restoration for both scopes. The HTTP test <code>thread_archive_http_authority_discovery_and_read_only_reopen</code> covers authenticated routes, read-only rejection and typed conflicts. The integrity test <code>archive_authority_rejects_missing_or_weakened_objects_on_reopen</code> verifies the archive guards. Existing migration/reopen proof includes schema 0042; the real accepted-graph export test compares accepted records while archived.</td><td>Archive, read retained workspace, Settings search, restore, process reopen.</td></tr>
+<tr><td>ARC-002: Active work blocks archive and archived state blocks new admission atomically.</td><td><code>archive_serializes_both_admission_orders_and_checks_earlier_work</code> observes production writes, active states, an earlier active interaction, and graph-settled native unwind. <code>thread-archive.test.mjs</code> checks disabled control reasons.</td><td>Busy thread action disabled; authenticated API returns busy; read-only archive writes denied.</td></tr>
+<tr><td>ARC-003: Sidebar trashcan and thread menu, immediate archive and Undo, retained open workspace, Settings-only discovery/search, explicit-open restore.</td><td><code>thread-archive.test.mjs</code> drives production renderer archive actions, sidebar projection, Undo and Settings search/restore; <code>workspace-navigation-integration.test.mjs</code> covers archived cross-thread reference/history restoration. Preview reads never acquire archive write authority. <code>npm run test:desktop:sidebar-overflow</code> checks resting/hover/keyboard visibility, busy controls, pointer targets, stable layout, selected/standalone/project rows and collapsed rails.</td><td><code>npm run evidence:thread-archive</code> drives the real Rust API and production renderer with synthetic inference-free threads and records video and individual checkpoint results.</td></tr>
+</tbody>
+</table>
 <h3>3.6 Requirements</h3>
 <ul>
 <li><strong>SCP-001:</strong> Send is disabled until the composer has text and a valid No folder or project scope.</li>
@@ -3460,7 +3474,7 @@ submitReview({ turnId, rootLayerResult, evidence, criterionJudgments, summary, f
 <li>thresholds and calibration examples beyond the fixed first six-fact LLM-judge rubric;</li>
 <li>when multiple real harness ablations justify a generalized signed configuration manifest;</li>
 <li>default maximum number of Relayer-managed worktrees, whether the limit is global or per project, and the limit-reached cleanup flow;</li>
-<li>exact thread archive, delete-entry, graph-retention, and remove-local-data behavior;</li>
+<li>exact delete-entry, graph-retention, and remove-local-data behavior;</li>
 <li>exact product persistence database, export bundle, restore, and migration format. Shared snapshots use V3 for attached mutations or converted invokes, otherwise V1 when asset-free and V2 with accepted visual content. Sections 7.2B and 8.4 define these portable snapshots.</li>
 </ul>
 <h3>17.4 Current unproven requirements</h3>
@@ -3468,7 +3482,7 @@ submitReview({ turnId, rootLayerResult, evidence, criterionJudgments, summary, f
 <li>Stop and retry controls do not have product proof.</li>
 <li>Context attachment does not have product proof.</li>
 <li>Checkout selection and new-worktree creation have deterministic production proof in <code>docs/evidence/worktrees/README.md</code>. Fork and worktree-cleanup flows remain unproven.</li>
-<li>Rename, archive, pin, delete-entry, move-to-project, and unsent-draft recovery do not have product proof.</li>
+<li>Rename, pin, delete-entry, move-to-project, and unsent-draft recovery do not have product proof. Archive proof is scoped to ARC-001–ARC-003.</li>
 <li>API-key providers and operating-system secret storage do not have product proof.</li>
 <li>Prime Agent does not have clean-install live-product proof.</li>
 <li>The root package exports canonical <code>complete(inputGraph)</code>; live app-server adoption of that exported seam does not yet have product proof.</li>

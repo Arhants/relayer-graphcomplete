@@ -57,7 +57,7 @@ mod tests {
         .fetch_all(&store.pool)
         .await
         .unwrap();
-        assert_eq!(versions, [40, 41]);
+        assert_eq!(versions, [40, 41, 42]);
         assert!(
             store
                 .recover_interaction_accepted(
