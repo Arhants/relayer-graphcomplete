@@ -184,6 +184,21 @@ Final Settings capture waits for the relaunched document body and the existing
 visible version/channel/status checks; missing renderer readiness still times out
 without producing acceptance evidence.
 
+The driver bounds DevTools HTTP discovery, socket opening, and handshake acknowledgements.
+Observation and screenshot commands allow at most 30 seconds, or the smaller phase budget.
+Check, download, and install commands retain the supplied phase budget because they may do real work.
+A missing answer fails the canary; the driver never retries a mutating command or treats timeout as acceptance.
+The first-install target must exit within 30 seconds after SIGTERM before seed installation starts.
+Completed job logs identify the native mount, copy, signature, notarization, termination, and updater phases.
+Native OS commands still rely on the workflow's outer timeout; stage labels help diagnose a blocked call.
+
+`test/desktop-cdp-canary.test.mjs` observes these production driver boundaries in process.
+Its stalled discovery, socket, handshake, updater-read, and screenshot scenarios protect distinct failure edges.
+A lost download answer scenario applies the download once, then proves the runner neither retries nor installs.
+Existing scenarios retain startup ordering, early discovery, renderer readiness, and unavailable-evidence coverage.
+These deterministic checkpoints protect the evidence authority boundary of UPD-002 and ADR 0002.
+They do not replace the declared native canary or certify an existing connected-provider profile.
+
 The hosted runner proves native packaging and updater behavior for its target. It does not replace a physical-device check for release-critical hardware or user-specific security software.
 
 Apple Silicon workflow `32399053432` completed the exact `0.2.10` to `0.2.11` Preview update on native arm64 macOS. Its committed evidence is under `docs/prd/assets/evidence/desktop/macos-arm64-0.2.10-to-0.2.11/`. Protected workflow `32399976404` later promoted the same `0.2.11` bytes to Stable.
