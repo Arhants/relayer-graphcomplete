@@ -80,6 +80,25 @@ export async function openTaskActorBrowser({ tasks, sessionId, productSession, b
     context = await browser.newContext({ viewport: { width: 1480, height: 920 } });
     signal?.throwIfAborted();
     await context.addInitScript(() => {
+      // Installed before application handlers. The counter cannot be reset by page
+      // code; any trusted input makes a failed click outcome ambiguous.
+      let inputEvents = 0;
+      for (const type of ["pointerdown", "pointerup", "pointermove", "pointerover", "pointerout", "pointerenter", "pointerleave", "mousedown", "mouseup", "mousemove", "mouseover", "mouseout", "mouseenter", "mouseleave", "click", "dblclick", "auxclick", "focus", "blur", "focusin", "focusout", "input", "change", "keydown", "keyup", "touchstart", "touchend", "touchmove", "pointercancel", "touchcancel", "wheel", "scroll", "scrollend"]) {
+        window.addEventListener(type, event => { if (event.isTrusted) inputEvents++; }, true);
+      }
+      const probeType = `task-actor-input-${crypto.randomUUID()}`;
+      const dispatchProbe = window.dispatchEvent.bind(window);
+      const ProbeEvent = Event;
+      let pendingProbe = null;
+      let probeSeen = false;
+      window.addEventListener(probeType, event => { if (event === pendingProbe) probeSeen = true; }, true);
+      Object.defineProperty(window, "__taskActorInputEvidence", { value: Object.freeze({
+        checkpoint() {
+          probeSeen = false; pendingProbe = new ProbeEvent(probeType);
+          dispatchProbe(pendingProbe); pendingProbe = null;
+          return probeSeen ? inputEvents : null;
+        },
+      }), configurable: false, writable: false });
       const nativeFetch = window.fetch.bind(window);
       const writes = window.__taskActorWrites = { pending: 0, changedAt: 0 };
       window.fetch = async (input, options = {}) => {
@@ -211,7 +230,27 @@ export async function openTaskActorBrowser({ tasks, sessionId, productSession, b
           if (action.kind === "click") {
             menuAuthorities.clear();
             if (openedSelect) { await openedSelect.dispose(); openedSelect = null; }
-            await handle.click({ timeout: 5000 });
+            const clickEvidence = await handle.evaluateHandle(element => ({
+              document: element.ownerDocument, root: element.ownerDocument.documentElement, target: element,
+              recorder: window.__taskActorInputEvidence, count: window.__taskActorInputEvidence?.checkpoint(),
+            }));
+            try {
+              await handle.click({ timeout: 5000 });
+            } catch (error) {
+              // Text identifies the narrow browser failure, but never establishes
+              // nondispatch by itself. A same-document barrier and untouched input
+              // recorder are required. No click is replayed here.
+              const detached = /Element is not attached to the DOM/.test(error?.message || "");
+              const untouched = detached && !signal?.aborted && await clickEvidence.evaluate(evidence =>
+                evidence.document === document && evidence.root === document.documentElement && evidence.target.ownerDocument === document
+                && !evidence.target.isConnected && evidence.recorder === window.__taskActorInputEvidence
+                && Number.isSafeInteger(evidence.count) && evidence.recorder.checkpoint() === evidence.count,
+              ).catch(() => false);
+              if (untouched && !signal?.aborted) throw Object.assign(new Error("Actor control detached before browser input dispatch."), {
+                code: "actor_control_unavailable", actionDispatched: false,
+              });
+              throw error;
+            } finally { await clickEvidence.dispose().catch(() => {}); }
             if (nativeMenuObservation && await handle.evaluate(element => element.tagName === "SELECT" && element.matches(":open"))) {
               openedSelect = await handle.evaluateHandle(element => element);
               openedMenuSignature = (await handle.evaluate(taskActorOpenedSelect))?.signature;

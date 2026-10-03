@@ -502,6 +502,93 @@ async function proveTaskActor({ browser, service, productSession, data }) {
       controlPage = actorPage;
       await actorPage.locator(".graph-node").first().waitFor({ state: "visible" });
       try {
+      // Force the actual renderer's refresh in the gap after preflight, before
+      // native click. This is intentionally later than the rebind tests below.
+      {
+        const observed = await controller.observe();
+        const original = await actorPage.locator(".graph-node").first().elementHandle();
+        const label = await original.getAttribute("aria-label");
+        const ref = observed.controls.find(control => control.name === label).ref;
+        const prototype = Object.getPrototypeOf(original);
+        const nativeClick = prototype.click;
+        let inject = true;
+        prototype.click = async function (options) {
+          if (inject) {
+            inject = false;
+            await actorPage.evaluate(async () => { const { refreshState } = await import("/src/threads.js"); await refreshState(window.__taskActorPresentation.threadId); });
+            await until(() => original.evaluate(element => !element.isConnected), "pre-dispatch renderer refresh detached target");
+          }
+          return nativeClick.call(this, options);
+        };
+        try {
+          await assert.rejects(controller.act({ kind: "click", ref }), { code: "actor_control_unavailable", actionDispatched: false });
+        } finally { prototype.click = nativeClick; await original.dispose(); }
+        const fresh = await controller.observe();
+        await controller.act({ kind: "click", ref: fresh.controls.find(control => control.name === label).ref });
+        // Even the same error text is terminal after a real trusted activation.
+        const after = await controller.observe();
+        const activated = await actorPage.locator(".graph-node").first().elementHandle();
+        const activeLabel = await activated.getAttribute("aria-label");
+        prototype.click = async function (options) {
+          await nativeClick.call(this, options);
+          await this.evaluate(element => element.remove());
+          throw new Error("Element is not attached to the DOM");
+        };
+        try {
+          await assert.rejects(controller.act({ kind: "click", ref: after.controls.find(control => control.name === activeLabel).ref }), error => {
+            assert.equal(error.actionDispatched, undefined); assert.equal(error.code, undefined);
+            assert.match(error.message, /not attached/); return true;
+          });
+        } finally { prototype.click = nativeClick; await activated.dispose(); }
+        await actorPage.evaluate(async () => { const { refreshState } = await import("/src/threads.js"); await refreshState(window.__taskActorPresentation.threadId); });
+        // A trusted scroll can run product handlers even without pointer input.
+        const beforeScroll = await controller.observe();
+        const scrollTarget = await actorPage.locator(".graph-node").first().elementHandle();
+        const scrollLabel = await scrollTarget.getAttribute("aria-label");
+        prototype.click = async function () {
+          await actorPage.evaluate(async () => {
+            const scroller = document.createElement("div");
+            scroller.style.cssText = "position:fixed;top:0;left:0;width:40px;height:10px;overflow:scroll;display:block;z-index:999999;scroll-behavior:auto";
+            const content = document.createElement("div");
+            content.style.cssText = "display:block;width:20px;height:100px;min-height:100px";
+            scroller.append(content); document.body.append(scroller);
+            try {
+              await new Promise(resolve => requestAnimationFrame(resolve));
+              if (scroller.scrollHeight <= scroller.clientHeight) throw new Error("Scroll proof fixture has no overflow.");
+              await new Promise((resolve, reject) => {
+                const timeout = setTimeout(() => reject(new Error(`Trusted scroll proof timed out: ${scroller.scrollTop}/${scroller.scrollHeight}/${scroller.clientHeight}`)), 2000);
+                scroller.addEventListener("scroll", event => { clearTimeout(timeout); event.isTrusted ? resolve() : reject(new Error("Scroll proof was synthetic.")); }, { once: true });
+                scroller.scrollTop = 40;
+              });
+            } finally { scroller.remove(); }
+          });
+          await this.evaluate(element => element.remove());
+          throw new Error("Element is not attached to the DOM");
+        };
+        try {
+          await assert.rejects(controller.act({ kind: "click", ref: beforeScroll.controls.find(control => control.name === scrollLabel).ref }), error => {
+            assert.equal(error.actionDispatched, undefined); assert.match(error.message, /not attached/); return true;
+          });
+        } finally { prototype.click = nativeClick; await scrollTarget.dispose(); }
+        await actorPage.evaluate(async () => { const { refreshState } = await import("/src/threads.js"); await refreshState(window.__taskActorPresentation.threadId); });
+        // document.open can clear listeners without replacing the Document.
+        // Use another disposable surface so this negative cannot contaminate the actor.
+        const rewriteController = await openTaskActorBrowser({ tasks, sessionId, productSession, browser, signal, observationContract });
+        try {
+          const rewritePage = browser.contexts().flatMap(context => context.pages()).at(-1);
+          await rewritePage.locator(".graph-node").first().waitFor({ state: "visible" });
+          const rewriteObservation = await rewriteController.observe();
+          const rewriteName = await rewritePage.locator(".graph-node").first().getAttribute("aria-label");
+          prototype.click = async function () {
+            await rewritePage.evaluate(() => { document.open(); document.write('<html><body>replaced</body></html>'); document.close(); });
+            throw new Error("Element is not attached to the DOM");
+          };
+          await assert.rejects(rewriteController.act({ kind: "click", ref: rewriteObservation.controls.find(control => control.name === rewriteName).ref }), error => {
+            assert.equal(error.actionDispatched, undefined); assert.match(error.message, /not attached/); return true;
+          });
+        } finally { prototype.click = nativeClick; await rewriteController.close(); }
+        console.log("PASS actor dispatch race: real renderer redraw requires fresh observation; trusted activation, scroll and document rewrite failures stay terminal");
+      }
       // A native popup is outside Chromium screenshot pixels: its opened-only
       // accessible option names are a separately authorized observation.
       await actorPage.evaluate(() => {

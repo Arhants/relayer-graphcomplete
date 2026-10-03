@@ -470,3 +470,47 @@ exhausted-budget rejection bug before repair; `/tmp/completion-gate-browser.log`
 exposed an asynchronous UI assertion; `/tmp/completion-gate-browser-final.log`
 exhausted the fixture budget before the required continuation. The final fixture
 permits four candidate completions but uses three; no live turns were padded.
+
+
+### Detached click after preflight (2026-10-03)
+
+The Local weekend incident retained only runtime_failure, so its exact historical
+exception is unknown. A real Chromium reproduction using the production actor
+controller demonstrated detachment between preflight and native click. This is a
+confirmed race gap, not proof of the historical cause.
+
+Changed seams: browser click dispatch evidence, bounded recovery classification,
+and browser regression coverage. No model, endpoint, or completion limit changes.
+
+| Checkpoint | Required evidence |
+|---|---|
+| Detachment after preflight with no delivered input | Real browser regression at production actor dispatch returns unavailable_control with certified non-dispatch; a fresh observation can act on the replacement. |
+| No replay or weakened identity | Existing service bounded-recovery tests retain the failed intent and require another model decision. Existing redraw authority checks reject changed scopes, duplicate controls and mismatched identities. |
+| Fail closed after input or lost evidence | Browser tests retain fatal behavior after trusted activation, scrolling and document rewrite. Existing service tests cover cancellation and ambiguous errors. Missing evidence and browser cancellation branches are inspected fail-closed behavior, not separately exercised new browser scenarios. |
+| Normal interaction unaffected | Existing node, authored-input, navigation and native-menu browser chapters remain required. |
+
+Run focused actor tests during editing, then full npm run check, npm run build,
+and npm run test:eval-web before committing. Use the existing compatible warm
+native cache; no native source changes are required. A separately authorized
+Local weekend live rerun follows verification and preserves the original failure.
+No test or source presence alone establishes proof.
+
+Browser verification: the final run passed every chapter, including real renderer
+refresh between preflight and click, fresh observation recovery, trusted click and
+scroll failures, and same-document rewrite failure. Log:
+`/tmp/weekend-click-fix-browser-verified.log`. Earlier attempts failed because
+CSP blocked the scroll fixture's innerHTML styles. The corrected fixture uses
+CSSOM, asserts overflow and a trusted scroll, and has a bounded failure timeout.
+Both failed logs remain: `/tmp/weekend-click-fix-browser.log` and
+`/tmp/weekend-click-fix-browser-final.log`. Production behavior was unchanged
+during these fixture repairs. Focused actor/service tests passed 54 scenarios.
+Full check/build and exact independent review receipt follow in the PR.
+
+Final full check and build passed on this source. Logs:
+`/tmp/weekend-click-fix-check.log` and `/tmp/weekend-click-fix-build.log`.
+Independent static reviewer `/root/slice1_authority` found no unresolved authority
+blocker and inspected the successful browser log. Its two executable/test file
+digest (sorted path + NUL + bytes) is
+`6186045af05b5221ed410cd48f940225954a1c68ccdc07600637a32021913a48`.
+The reviewer did not independently rerun tests. This assertion invalidates when
+those files change. The separate live follow-up is not yet outcome evidence.
