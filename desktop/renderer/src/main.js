@@ -48,6 +48,7 @@ import { createReviewPresentationAdapter } from "./review-tools.js";
 import { initializeProviderSettings, refreshProviderSettings } from "./provider-settings.js";
 import { setProviderModelsRefreshedHandler } from "./provider-models-refresh.js";
 import { createProviderModelsRefreshedHandler } from "./provider-ui-model.js";
+import { watchModelAvailability } from "./model-availability-refresh.js";
 import {
   installOnboardingTutorialController,
   onboardingTutorialController,
@@ -542,6 +543,18 @@ async function boot() {
     }),
   });
   connectEvents();
+  if (productApiAvailable && desktop?.models?.onChanged) {
+    const availabilityRefresh = watchModelAvailability({
+      subscribe: desktop.models.onChanged,
+      refresh: async () => {
+        await refreshProviderSettings();
+        await refreshProviderModelUi();
+      },
+      onError: (error) => toast(error.message),
+    });
+    window.addEventListener("pagehide", () => availabilityRefresh.stop(), { once: true });
+    await availabilityRefresh.ready;
+  }
 }
 
 void boot().catch((error) => {
