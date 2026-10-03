@@ -1,6 +1,7 @@
 import { writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { waitForCanaryRuntimeStaging } from "./canary-runtime-staging.mjs";
 
 function delay(milliseconds) {
   return new Promise((resolvePromise) => setTimeout(resolvePromise, milliseconds));
@@ -170,6 +171,7 @@ export async function driveElectronUpdateCanary({
   availableScreenshotPath,
   readyScreenshotPath,
   timeoutMs = 20 * 60 * 1000,
+  runtimeStaging,
 } = {}) {
   const client = await connect(port, timeoutMs);
   try {
@@ -202,6 +204,10 @@ export async function driveElectronUpdateCanary({
       timeoutMs,
     });
     await capture(client, readyScreenshotPath);
+    if (runtimeStaging) {
+      const providerState = await client.evaluate("window.relayerDesktop.providers.status()");
+      await waitForCanaryRuntimeStaging({ ...runtimeStaging, definitions: providerState?.definitions, targetVersion, timeoutMs });
+    }
     try {
       console.error("[desktop-canary] Invoke updater install");
       await client.evaluate("window.relayerDesktop.updater.install()", timeoutMs);
@@ -321,6 +327,13 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       availableScreenshotPath: argument("screenshot-available"),
       readyScreenshotPath: argument("screenshot-ready"),
       timeoutMs,
+      ...(argument("profile-directory", { optional: true }) ? {
+        runtimeStaging: {
+          profileDirectory: argument("profile-directory"),
+          publicationReceiptPath: argument("preview-publication-receipt"),
+          targetKey: argument("target"),
+        },
+      } : {}),
     });
   } else if (mode === "capture") {
     await captureElectronRenderer({ port, outputPath: argument("screenshot"), timeoutMs });
