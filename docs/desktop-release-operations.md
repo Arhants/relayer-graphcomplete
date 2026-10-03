@@ -199,6 +199,16 @@ Existing scenarios retain startup ordering, early discovery, renderer readiness,
 These deterministic checkpoints protect the evidence authority boundary of UPD-002 and ADR 0002.
 They do not replace the declared native canary or certify an existing connected-provider profile.
 
+A fresh seed profile retains an active but disconnected default Codex definition.
+App download can therefore prefetch a managed runtime even without a signed-in provider.
+The canary waits for the exact incoming runtime receipts and staging-directory teardown before requesting restart.
+It reads requirements from the public Preview manifest, verified against the immutable publication receipt.
+The wait is bounded and rejects changed metadata, wrong recipes, and connected profiles.
+It never removes the protected default provider or answers the native runtime-download quit confirmation.
+Production activation still validates staged runtime contents when the target launches.
+The in-process canary tests cover receipt/teardown ordering, wrong recipes, incomplete staging before install,
+and the manifest/profile authority boundaries. Native update and connected-profile acceptance remain separate.
+
 The hosted runner proves native packaging and updater behavior for its target. It does not replace a physical-device check for release-critical hardware or user-specific security software.
 
 Apple Silicon workflow `32399053432` completed the exact `0.2.10` to `0.2.11` Preview update on native arm64 macOS. Its committed evidence is under `docs/prd/assets/evidence/desktop/macos-arm64-0.2.10-to-0.2.11/`. Protected workflow `32399976404` later promoted the same `0.2.11` bytes to Stable.

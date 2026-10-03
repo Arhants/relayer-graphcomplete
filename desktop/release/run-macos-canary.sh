@@ -285,6 +285,9 @@ node "$script_directory/electron-cdp-canary.mjs" \
   --mode update \
   --port 9229 \
   --target-version "$target_version" \
+  --target "$target" \
+  --profile-directory "$update_user_data" \
+  --preview-publication-receipt "$publication_receipt" \
   --screenshot-available "$available_screenshot" \
   --screenshot-ready "$ready_screenshot" \
   --timeout-seconds "$timeout_seconds"

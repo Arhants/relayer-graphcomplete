@@ -1,12 +1,88 @@
 import { runInNewContext } from "node:vm";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, mkdir, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { captureInstalledUpdateState, captureElectronRenderer, driveElectronUpdateCanary } from "../desktop/release/electron-cdp-canary.mjs";
+import { waitForCanaryRuntimeStaging } from "../desktop/release/canary-runtime-staging.mjs";
 
 afterEach(() => vi.unstubAllGlobals());
+
+const disconnectedCodex = { id: "codex", adapterId: "codex-subscription", lifecycleState: "active", connected: false };
+
+async function stagingFixture(root) {
+  const manifest = Buffer.from("version: 0.2.37\nrelayerManagedRuntimes:\n  codex: 0.159.3\n  claude: 0.3.286\n");
+  const publicationReceiptPath = join(root, "publication.json");
+  const publication = { schemaVersion: 2, channel: "preview", target: "macos-arm64", version: "0.2.37",
+    manifest: { key: "desktop/macos/arm64/beta-mac.yml", size: manifest.length,
+      sha256: createHash("sha256").update(manifest).digest("hex") } };
+  await writeFile(publicationReceiptPath, JSON.stringify(publication));
+  const pendingDirectory = join(root, "managed-runtimes", ".pending-app-updates", "0.2.37");
+  await mkdir(pendingDirectory, { recursive: true });
+  const pending = { schemaVersion: 2, appVersion: "0.2.37", runtimeId: "codex", target: "macos-arm64",
+    recipeId: "codex@0.159.3", installation: "01234567-89ab-cdef-0123-456789abcdef" };
+  return {
+    options: { profileDirectory: root, publicationReceiptPath, targetKey: "macos-arm64", targetVersion: "0.2.37",
+      definitions: [disconnectedCodex], timeoutMs: 1000, pollIntervalMs: 10,
+      fetchImpl: async () => new Response(manifest) },
+    writePending: (changes = {}) => writeFile(join(pendingDirectory, "codex-macos-arm64.json"), JSON.stringify({ ...pending, ...changes })),
+  };
+}
+
+it("waits for the incoming runtime receipt and staging teardown before permitting native restart", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relayer-canary-staging-"));
+  try {
+    const fixture = await stagingFixture(root);
+    const staging = join(root, "managed-runtimes", ".staging", "codex-update-fixture");
+    await mkdir(staging, { recursive: true });
+    let settled = false;
+    const waiting = waitForCanaryRuntimeStaging(fixture.options).then(() => { settled = true; });
+    await fixture.writePending();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(settled).toBe(false);
+    await rm(staging, { recursive: true });
+    await waiting;
+    expect(settled).toBe(true);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+it("rejects a staged receipt for a different recipe instead of permitting restart", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relayer-canary-staging-"));
+  try {
+    const fixture = await stagingFixture(root);
+    await fixture.writePending({ recipeId: "codex@0.159.2" });
+    await expect(waitForCanaryRuntimeStaging(fixture.options)).rejects.toThrow(/does not match the incoming/);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+it("fails the real driver before install if managed staging never settles", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relayer-canary-staging-"));
+  const driver = cdpFixture({ seedStartup: true, startupAlreadyComplete: true, providerDefinitions: [disconnectedCodex] });
+  try {
+    const fixture = await stagingFixture(root);
+    await expect(driveElectronUpdateCanary({ port: 9229, targetVersion: "0.2.37",
+      availableScreenshotPath: join(root, "available.png"), readyScreenshotPath: join(root, "ready.png"), timeoutMs: 60,
+      runtimeStaging: fixture.options,
+    })).rejects.toThrow(/Timed out waiting for managed runtime staging/);
+    expect(driver.downloads()).toBe(1);
+    expect(driver.installs()).toBe(0);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+it("rejects changed Preview metadata and connected profiles at the staging authority boundary", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relayer-canary-staging-"));
+  try {
+    const fixture = await stagingFixture(root);
+    await expect(waitForCanaryRuntimeStaging({ ...fixture.options,
+      fetchImpl: async () => new Response("changed manifest"),
+    })).rejects.toThrow(/does not match its publication receipt/);
+    await expect(waitForCanaryRuntimeStaging({ ...fixture.options,
+      definitions: [{ ...disconnectedCodex, connected: true }],
+    })).rejects.toThrow(/isolated disconnected-provider profile/);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
 
 function installedRenderer() {
   const element = () => ({
@@ -32,7 +108,7 @@ function installedRenderer() {
   };
 }
 
-function cdpFixture({ neverReady = false, seedStartup = false, startupAlreadyComplete = false, unansweredMethod, unansweredExpression, delayedDownloadMs = 0, neverOpen = false } = {}) {
+function cdpFixture({ neverReady = false, seedStartup = false, startupAlreadyComplete = false, unansweredMethod, unansweredExpression, delayedDownloadMs = 0, neverOpen = false, providerDefinitions } = {}) {
   const sockets = [];
   let markDownloadStarted;
   const downloadStarted = new Promise((resolve) => { markDownloadStarted = resolve; });
@@ -81,7 +157,9 @@ function cdpFixture({ neverReady = false, seedStartup = false, startupAlreadyCom
                 installs += 1;
               },
             };
-            result = { result: { value: runInNewContext(params.expression, { window: { relayerDesktop: { updater } } }) } };
+            result = { result: { value: runInNewContext(params.expression, { window: { relayerDesktop: {
+              updater, providers: { status: () => ({ definitions: providerDefinitions }) },
+            } } }) } };
           } catch (error) {
             result = { exceptionDetails: { exception: { description: error.message } } };
           }
