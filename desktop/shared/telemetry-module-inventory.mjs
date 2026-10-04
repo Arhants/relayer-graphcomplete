@@ -68,6 +68,7 @@ export const APPROVED_TELEMETRY_MODULES = Object.freeze({
     "desktop/renderer/src/public-share-viewer/main.js",
     "desktop/renderer/src/public-share-viewer/snapshot.js",
     "desktop/renderer/src/public-share-viewer/template.js",
+    "desktop/renderer/src/relayer-mark.js",
     "desktop/renderer/src/review-tools.js",
     "desktop/renderer/src/share-publish-ui.js",
     "desktop/renderer/src/sidebar.js",
