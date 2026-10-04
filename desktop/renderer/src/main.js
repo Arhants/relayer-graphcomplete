@@ -68,6 +68,7 @@ import {
 } from "./composer-drafts.js";
 import { projectComposerGate } from "./project-composer-navigation.js";
 import { initializeSidebar } from "./sidebar.js";
+import { createBrandLockup, spreadOnHover } from "./relayer-mark.js";
 const PROJECT_COMPOSER_DESTINATION_SELECTOR = [
   "#settingsButton",
   "[data-thread]",
@@ -406,11 +407,16 @@ function bindEvents() {
 
 async function boot() {
   assertRelayerIconRendererReady();
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const lockup = createBrandLockup($("#brandLockup"), { reducedMotion });
+  spreadOnHover($("#heroLockup"), createBrandLockup($("#heroLockup"), { height: 40, reducedMotion }));
   await loadDesignFonts();
   initializeSidebar({
     body: document.body,
     toggle: $("#collapseSidebar"),
     mediaQuery: window.matchMedia("(max-width: 760px)"),
+    lockup,
+    brand: $("#brandLockup"),
   });
   await initializeProjectSidebar();
   if (evalReview) viewState.evalContext = await evalReview.context();
