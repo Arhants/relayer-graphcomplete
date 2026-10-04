@@ -88,11 +88,16 @@ describe("draft preview render bridge", () => {
     const renderer = { render: vi.fn(async () => ({ png: PNG, width: 1176, height: 812 })) };
     let folder: string | undefined;
     let folderExisted = false;
+    let programFolder: string | undefined;
+    let programFolderExisted = false;
     let unauthorized = 0;
     let rendered: unknown;
     const { running, directory } = await startHost(previewConfiguration, renderer, async (context, host) => {
       folder = context.graph.acquireCapability().previewDirectory;
       folderExisted = folder !== undefined && (await stat(folder)).isDirectory();
+      // The program folder shares the preview folder's lifetime: granted for the run, gone after it.
+      programFolder = context.graph.acquireCapability().programDirectory;
+      programFolderExisted = programFolder !== undefined && (await stat(programFolder)).isDirectory();
       unauthorized = (await renderRequest(host.url, "wrong")).status;
       rendered = await (await renderRequest(host.url, PREVIEW_TOKEN)).json();
     });
@@ -106,6 +111,9 @@ describe("draft preview render bridge", () => {
       interactionNodeId: 1, fingerprint: "sha256:abc", snapshot: { version: 1, target: { kind: "layer", layerId: 3 } },
     });
     await expect(stat(folder!)).rejects.toThrow();
+    expect(programFolderExisted).toBe(true);
+    expect(programFolder).toContain("relayer-graph-programs-");
+    await expect(stat(programFolder!)).rejects.toThrow();
     const exported = join(directory, "exported");
     await running.host.exportCandidateTrace(31, exported, {
       runId: "run", executionId: "execution", interactionId: "31", harnessConfigurationName: "test-preview",
@@ -121,13 +129,17 @@ describe("draft preview render bridge", () => {
     ["the host has no renderer", previewConfiguration, false],
   ] as const)("grants no preview folder when %s", async (_case, harnessConfiguration, withRenderer) => {
     let folder: string | undefined = "unset";
+    let programFolder: string | undefined;
     const renderer = { render: vi.fn(async () => ({ png: PNG, width: 1, height: 1 })) };
     const { running } = await startHost(harnessConfiguration, withRenderer ? renderer : undefined, async (context) => {
       folder = context.graph.acquireCapability().previewDirectory;
+      programFolder = context.graph.acquireCapability().programDirectory;
     });
 
     await running.host.complete(1, 1, graph, undefined, undefined, { productInteractionId: 32 });
 
     expect(folder).toBeUndefined();
+    // Program edits do not depend on previews; every run gets its folder.
+    expect(programFolder).toContain("relayer-graph-programs-");
   });
 });

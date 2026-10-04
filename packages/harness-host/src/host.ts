@@ -1262,7 +1262,14 @@ export class HarnessHost {
       && resolveGraphCapabilityProfile(session.descriptor.configuration).preview === "enabled"
       ? await mkdtemp(join(tmpdir(), "relayer-graph-previews-"))
       : undefined;
-    const scope = new ActiveHarnessGraphScope(previewDirectory === undefined ? capability : { ...capability, previewDirectory });
+    // Every run gets a folder where the graph client keeps the last program it
+    // ran, so a retry can send edits instead of the whole program. Removed with the turn.
+    const programDirectory = await mkdtemp(join(tmpdir(), "relayer-graph-programs-"));
+    const scope = new ActiveHarnessGraphScope({
+      ...capability,
+      programDirectory,
+      ...(previewDirectory === undefined ? {} : { previewDirectory }),
+    });
     if (previewDirectory !== undefined) this.previewTraces.set(interactionNodeId, traceSink);
     const observedTrace = new EffectObservingTraceSink(traceSink);
     let completionError: HarnessExecutionFailure | undefined;
@@ -1378,6 +1385,8 @@ export class HarnessHost {
           completionError ??= normalizeHarnessFailure(error, true, observedTrace.effectBoundary());
         }
       }
+      // The kept program is transient too: it never outlives the turn.
+      await rm(programDirectory, { recursive: true, force: true }).catch(() => undefined);
     }
     const forceStopped = forceStoppedNativeOutcome !== undefined;
     if (forceStoppedNativeOutcome !== undefined) {
