@@ -125,6 +125,8 @@ export function wordmark({ ink, x, baseline, capHeight }) {
 }
 
 // Drives one inline SVG between the mark (spread 0) and the wordmark (spread 1).
+// `reducedMotion` may be a boolean or a function read at each transition, so an OS preference
+// changed while the app runs takes effect on the next hover.
 export function createBrandLockup(svg, {
   height = LOCKUP_HEIGHT,
   reducedMotion = false,
@@ -146,7 +148,7 @@ export function createBrandLockup(svg, {
   draw(0);
   return {
     get spread() { return spread; },
-    setSpread(target, { animate = !reducedMotion } = {}) {
+    setSpread(target, { animate = !(typeof reducedMotion === "function" ? reducedMotion() : reducedMotion) } = {}) {
       if (frame !== null) { cancelFrame(frame); frame = null; }
       if (!animate || target === spread) return draw(target);
       const from = spread, start = now();

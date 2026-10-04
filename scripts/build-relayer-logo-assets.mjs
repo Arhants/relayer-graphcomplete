@@ -14,7 +14,9 @@ export const assetsDirectory = resolve(repositoryRoot, "desktop/renderer/assets"
 // light background. The mask is white tile, black slashes, applied in luminance mode so the
 // in-app tiles take the current theme's text colour and show the page through the slashes.
 export async function relayerLogoAssets() {
-  const design = JSON.parse(await readFile(await resolveDesignPath(), "utf8"));
+  // Always the committed default design: a lab design selected through RELAYER_DESIGN restyles
+  // the running app, but the icon, favicon and share image are built once from the default.
+  const design = JSON.parse(await readFile(await resolveDesignPath(""), "utf8"));
   const { text, bg } = design.palette.roles;
   return {
     "relayer-logo.svg": markSvg({ tile: text.light, ink: bg.light }),

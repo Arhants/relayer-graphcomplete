@@ -82,11 +82,12 @@ describe("responsive sidebar", () => {
   });
 
   it("keeps the sidebar in flow and sizes the new-thread composer from available space", async () => {
-    const [html, css, main, account] = await Promise.all([
+    const [html, css, main, account, evalSettings] = await Promise.all([
       readFile(new URL("../desktop/renderer/index.html", import.meta.url), "utf8"),
       readFile(new URL("../desktop/renderer/styles.css", import.meta.url), "utf8"),
       readFile(new URL("../desktop/renderer/src/main.js", import.meta.url), "utf8"),
       readFile(new URL("../desktop/renderer/src/desktop-account.js", import.meta.url), "utf8"),
+      readFile(new URL("../desktop/eval-renderer/product-settings.js", import.meta.url), "utf8"),
     ]);
     expect(html).toContain('id="collapseSidebar"');
     expect(html).toContain('id="desktopAccountButton"');
@@ -121,6 +122,11 @@ describe("responsive sidebar", () => {
     expect(main).toContain('brand: $("#brandLockup")');
     expect(html).toContain('<svg class="brand-lockup hero-lockup" id="heroLockup"');
     expect(main).toContain('spreadOnHover($("#heroLockup"), createBrandLockup($("#heroLockup"), { height: 40, reducedMotion }))');
+    expect(main).toContain('const reducedMotion = () => motion.matches;');
+    // The Eval settings host swaps main.js for its own entry point, which must draw the same lockups.
+    expect(evalSettings).toContain('import { createBrandLockup, spreadOnHover } from "/src/relayer-mark.js";');
+    expect(evalSettings).toContain('[["brandLockup", 24], ["heroLockup", 40]]');
+    expect(evalSettings).toContain('.sidebar-title strong").textContent = "Eval";');
     expect(account).not.toContain("additionalAccountButtons");
   });
 });

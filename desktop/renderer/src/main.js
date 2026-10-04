@@ -407,7 +407,8 @@ function bindEvents() {
 
 async function boot() {
   assertRelayerIconRendererReady();
-  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
+  const reducedMotion = () => motion.matches;
   const lockup = createBrandLockup($("#brandLockup"), { reducedMotion });
   spreadOnHover($("#heroLockup"), createBrandLockup($("#heroLockup"), { height: 40, reducedMotion }));
   await loadDesignFonts();

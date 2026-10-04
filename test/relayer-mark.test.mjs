@@ -158,5 +158,15 @@ describe("brand lockup", () => {
     still.setSpread(1);
     expect(still.spread).toBe(1);
     expect(frames.pending()).toBe(0);
+
+    // A preference read per transition: the OS setting can change while the app runs.
+    let reduce = false;
+    const live = createBrandLockup(fakeSvg(), { reducedMotion: () => reduce, ...frames });
+    live.setSpread(1);
+    expect(frames.pending()).toBe(1);
+    reduce = true;
+    live.setSpread(0);
+    expect(live.spread).toBe(0);
+    expect(frames.pending()).toBe(0);
   });
 });
