@@ -65,6 +65,23 @@ describe("Relayer mark", () => {
     expect(renderMark(0.2).glyphs).toContain("<polygon"); // the A's leg has started peeling away
   });
 
+  it("keeps the outer letters inside the frame while they swing out", () => {
+    for (const t of [0.5, 0.6, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1]) {
+      const { box, glyphs } = renderMark(t);
+      // Read the drawing back from the markup: shear, the two door-hinge transforms, the mirror and the stems.
+      const k = -Number(/matrix\(1,0,(-?[\d.]+),1,0,0\)/.exec(glyphs)[1]);
+      const [, , top, , tall] = /<rect x="(-?[\d.]+)" y="(-?[\d.]+)" width="(-?[\d.]+)" height="(-?[\d.]+)"/.exec(glyphs).map(Number);
+      const hinges = [...glyphs.matchAll(/translate\((-?[\d.]+),0\) scale\((-?[\d.]+),1\) translate\((-?[\d.]+),0\)/g)].map((m) => m.slice(1).map(Number));
+      const [[xL, sL, offsetL], [xY, sY, offsetY]] = hinges;
+      const mirror = Number(/translate\((-?[\d.]+),0\) scale\(-1,1\)/.exec(glyphs)[1]);
+      const stemR2 = Number(/scale\(-1,1\)"><rect x="(-?[\d.]+)"/.exec(glyphs)[1]);
+      const left = xL + sL * (0 + offsetL) - k * (top + tall); // the first R stem, at the bottom of the shear
+      const right = xY + sY * (mirror - stemR2 + offsetY) - k * top; // the mirrored R stem, at the top of the shear
+      expect(box.x, `t=${t} left`).toBeLessThanOrEqual(left + 0.05); // markup rounds to 0.01 units
+      expect(box.x + box.width, `t=${t} right`).toBeGreaterThanOrEqual(right - 0.05);
+    }
+  });
+
   it("commits the icon and the tile mask exactly as the geometry renders them", async () => {
     const assets = await relayerLogoAssets();
     expect(Object.keys(assets)).toEqual(["relayer-logo.svg", "relayer-mark-mask.svg"]);

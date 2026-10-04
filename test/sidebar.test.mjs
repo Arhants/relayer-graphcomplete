@@ -65,20 +65,20 @@ describe("responsive sidebar", () => {
 
   it("spreads the brand lockup on hover, folds it back on leave, and ignores hover in the icon rail", () => {
     const spreads = [];
-    const lockup = { setSpread: (value) => spreads.push(value) };
+    const lockup = { setSpread: (value, options = {}) => spreads.push(options.animate === false ? "snap" : value) };
     const { toggle, brand } = fixture(false, lockup);
-    expect(spreads).toEqual([0]); // rests on the mark
+    expect(spreads).toEqual(["snap"]); // rests on the mark
     brand.hover();
     brand.leave();
-    expect(spreads).toEqual([0, 1, 0]);
+    expect(spreads).toEqual(["snap", 1, 0]);
     brand.hover();
-    toggle.click(); // collapsing while hovered folds the word away
-    expect(spreads).toEqual([0, 1, 0, 1, 0]);
+    toggle.click(); // collapsing while hovered snaps to the mark with the rail, no overhang
+    expect(spreads).toEqual(["snap", 1, 0, 1, "snap"]);
     brand.hover();
-    expect(spreads).toEqual([0, 1, 0, 1, 0]); // no room for the word in the rail
+    expect(spreads).toEqual(["snap", 1, 0, 1, "snap"]); // no room for the word in the rail
     brand.leave();
     toggle.click();
-    expect(spreads.at(-1)).toBe(0); // expanding returns to the mark, not the word
+    expect(spreads.slice(-2)).toEqual([0, "snap"]); // expanding returns to the mark, not the word
   });
 
   it("keeps the sidebar in flow and sizes the new-thread composer from available space", async () => {

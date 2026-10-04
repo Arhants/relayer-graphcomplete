@@ -85,11 +85,18 @@ export function renderMark(t = 0) {
   const ea = ease(smoothstep(0.2, 0.7, t)), armAngle = Math.atan2(run, yJ - yT);
   if (ea > 0.02) glyphs += polygon(rotate([[-s / 2, 0], [s / 2, 0], [-run + s / 2, yT - yJ], [-run - s / 2, yT - yJ]], [cY, yJ], armAngle * (1 - ea)));
   // R and E swing out of the L slash like a door hinged on it; ƎЯ swing out of the Y slash the other way.
-  const sx = ease(smoothstep(0.25, 1, t));
+  // The hinge scale multiplies a whole half-word, so it keeps four decimals.
+  const sx = Math.round(ease(smoothstep(0.25, 1, t)) * 1e4) / 1e4;
   if (sx > 0.02) {
-    glyphs += `<g transform="translate(${n(cL)},0) scale(${n(sx)},1) translate(${n(-G.c1)},0)">${letterR(G, G.oxR1)}${letterE(G, G.oxE1, false)}</g>`;
-    glyphs += `<g transform="translate(${n(cY)},0) scale(${n(sx)},1) translate(${n(-G.c2)},0)">${letterE(G, G.oxE2, true)}`
+    glyphs += `<g transform="translate(${n(cL)},0) scale(${sx},1) translate(${n(-G.c1)},0)">${letterR(G, G.oxR1)}${letterE(G, G.oxE1, false)}</g>`;
+    glyphs += `<g transform="translate(${n(cY)},0) scale(${sx},1) translate(${n(-G.c2)},0)">${letterE(G, G.oxE2, true)}`
       + `<g transform="translate(${n(2 * G.oxR2 + G.Rw)},0) scale(-1,1)">${letterR(G, G.oxR2)}</g></g>`;
+    // The outer letters open faster than their slashes travel, so late in the spread they reach
+    // past the frame interpolated between tile and word; widen it so the SVG never clips them.
+    const left = Math.min(box.x, cL - sx * G.c1 - k * yBot);
+    const right = Math.max(box.x + box.width, cY + sx * (G.oxR2 + G.Rw - G.c2) - k * yTop);
+    box.x = left;
+    box.width = right - left;
   }
   const tileSide = box.height;
   return {
