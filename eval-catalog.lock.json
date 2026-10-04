@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
   "repositoryUrl": "ssh://git@github.com/vishaltandale00/relayer-capability-evals.git",
-  "commit": "8aa46d8ff1e046ed832441e47c84eb5e1de7e0ca",
-  "entrypoint": "catalog.mjs"
+  "commit": "2ae3ff3a24ea74d7f73fab5ebd5304e7ba49ffe4",
+  "entrypoint": "interactive-catalog.mjs"
 }
