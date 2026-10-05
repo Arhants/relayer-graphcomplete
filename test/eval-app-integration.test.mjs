@@ -1548,6 +1548,13 @@ describe("Relayer Eval application service", () => {
       personalPresentationVersionId: selected.turns[0].candidateTrace.personalPresentationVersionId,
       ref: selected.turns[0].candidateTrace.ref,
     });
+    // Time to first graph is read from the real trace: the fixture publishes through a terminal
+    // submit, so first graph and accepted coincide, and a fixture harness runs no stdin programs.
+    expect(bundle.run.executions[0].turns[0].timing).toMatchObject({
+      schemaVersion: 1, graphWriteRejections: 0, programRuns: null,
+    });
+    expect(bundle.run.executions[0].turns[0].timing.acceptedSeconds).toBeGreaterThanOrEqual(0);
+    expect(bundle.run.executions[0].turns[0].timing.firstGraphAt).toBe(bundle.run.executions[0].turns[0].timing.acceptedAt);
     const context = evalService.reviewContext(selected.id);
     expect(context).toMatchObject({
       runId: completed.id,

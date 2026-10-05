@@ -70,6 +70,7 @@ import {
   gradeAcceptedReviewTopology,
 } from "./simulated-user-judge.mjs";
 import { GRAPH_SEARCH_EVAL_TARGET } from "./configuration-paths.mjs";
+import { graphTimingFromTrace } from "./graph-timing.mjs";
 
 /**
  * Real-time bound on one product turn. RELAYER_EVAL_TURN_TIMEOUT_MS raises it
@@ -522,6 +523,13 @@ function childHasDurableExecution(child, configuration, configurationDigest) {
     && evidence?.safeReason === null
     && evidence?.settlementNodeId === child.graphNodeId
     && evidence?.settlementRootLayerId === child.rootLayerId;
+}
+
+/** Reads a turn's timing from its exported trace. A missing ledger still yields the program counts. */
+export async function graphTimingFromTraceDirectory(directory, sentAt) {
+  const lines = async (name) => (await readFile(join(directory, name), "utf8").catch(() => ""))
+    .split("\n").filter(Boolean).map((line) => JSON.parse(line));
+  return graphTimingFromTrace({ sentAt: Number(sentAt), events: await lines("events.jsonl"), graphOperations: await lines("graph-operations.jsonl") });
 }
 
 export async function validateCandidateTrace(directory, descriptor, interaction, correlation, { requireComplete = false } = {}) {
@@ -2216,9 +2224,12 @@ export class EvalService {
         deterministicPassed: false,
         judgeResults: [],
         candidateTrace: copy(execution.candidateTraceCaptures?.[String(interaction.id)] || disabledCandidateTrace()),
+        // Time to first graph and repair counts, read from the trace. Null when there is no trace.
+        timing: copy(execution.graphTimings?.[String(interaction.id)] ?? null),
         ...(artifact === null ? {} : { artifact: copy(artifact) }),
       }));
       delete execution.candidateTraceCaptures;
+      delete execution.graphTimings;
       execution.promotable = execution.turns.every((turn) => !this.candidateTraceRequired || turn.candidateTrace.status === "complete");
       if (definition.requiredChecks?.includes("agent-authored-complete")) {
         execution.promotable = execution.promotable
@@ -3133,6 +3144,8 @@ export class EvalService {
             || execution.testCaseId === RECURSIVE_GRAPH_MEMORY_CASE_ID,
         },
       );
+      execution.graphTimings ||= {};
+      execution.graphTimings[String(interaction.id)] = await graphTimingFromTraceDirectory(targetDirectory, interaction.createdAt);
       execution.candidateTraceCaptures ||= {};
       execution.candidateTraceCaptures[String(interaction.id)] = {
         ...copy(descriptor),
