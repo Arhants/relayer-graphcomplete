@@ -45,7 +45,20 @@ A retry can now send edits instead of the whole program.
 
 Nothing else changes: the model still writes no files, the heredoc is still the only shell action for graph authoring, the approval shape is identical, stable clientKeys make the edited rerun update the same drafts, and a full rerun still works.
 
-Estimated effect, from replaying the traces with each retry costing only its changed lines: run A 422 s to about 257 s, run B 474 s to about 281 s. Run C had no retries and does not change.
+Estimated effect, from replaying the traces with each retry costing only its changed lines: run A 422 s to about 257 s, run B 474 s to about 281 s. Run C had no retries and does not change. This estimate assumes every retry retypes the program, which was true on Codex CLI 0.147.0 with `gpt-5.6-sol`; see the measured runs below for the current pin.
+
+## Measured on the Eval runner
+
+Eight live Codex runs of `empty-project.hierarchical-overview.single-turn` with `codex-basic`, four on `main` and four on this branch, same machine, same model (`gpt-6.1-sol`, Codex CLI 0.159.3). Traces and the full table are in `docs/evidence/time-to-first-graph-patch-retries/`.
+
+| Branch | Accepted at (median, range) | Full drafts per run | Patch reruns per run | Retry typing (total) | Output tokens (median) |
+| --- | --- | ---: | ---: | ---: | ---: |
+| main | 349 s (184–561) | 3–5 | 0 | 357 s | 8,840 |
+| patch-retries | 262 s (230–325) | 1 | 4–6 | 166 s | 6,440 |
+
+All 8 turns accepted and passed the deterministic judge. On this branch the model sent one full program per run and then only patches (300 to 2,400 characters, 4 to 27 s each), from the prompt alone.
+
+Two things the baseline taught us. On the current Codex pin, a full retry that changes only a few lines is already cheap (1.5 to 6 s, 50 to 430 tokens for a 12 to 14 k character program), so the old 58 s per small fix no longer holds. Retries that restructure the program still cost the full price (100 to 120 s each; `main` run 02 had three and finished at 561 s). The patch path removes that cost. Four runs per branch is too few to call the median difference a measured speedup.
 
 ## Proposals for discussion
 
