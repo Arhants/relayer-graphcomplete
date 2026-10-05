@@ -29,7 +29,7 @@ export * from "./edge-shapes.js";
 export * from "./icons.js";
 export * from "./objects.js";
 export type { GraphPreview } from "./preview.js";
-export { GraphProgramEditError, applyGraphProgramEdits, rerunGraphProgram, type GraphProgramEdit } from "./program.js";
+export { GraphProgramEditError, applyGraphProgramEdits, graphProgramId, rerunGraphProgram, type GraphProgramEdit } from "./program.js";
 export * from "./query.js";
 export * from "./types.js";
 export * from "./visual-assets.js";

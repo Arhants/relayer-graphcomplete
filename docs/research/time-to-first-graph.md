@@ -38,10 +38,10 @@ It reads each `events.jsonl`, finds the `commandExecution` items carrying `RELAY
 
 A retry can now send edits instead of the whole program.
 
-- The host grants every run a per-turn folder, like the preview folder, and removes it with the turn (`RELAYER_GRAPH_PROGRAM_DIR`).
-- `RelayerGraphClient.fromEnv()` keeps the stdin program it is running in there (Node exposes it as `process._eval`).
-- A new graph-client export, `rerunGraphProgram(edits)`, applies exact-match find/replace edits to that last program, keeps the result as the next base, and runs it. Each `find` must match exactly one place; a missing base or a missing or ambiguous match fails before anything runs.
-- Both Codex prompt builders and the Claude prompt describe this for the fallback heredoc. The pinned launcher strips the environment and reads no files, so it keeps whole-program reruns.
+- The host grants every run a per-turn path (`RELAYER_GRAPH_PROGRAM_DIR`) and removes it with the turn. The client creates the folder on first save, so unused runs cost nothing and the grant itself cannot throw.
+- `RelayerGraphClient.fromEnv()` saves the stdin program it is running under a short content-hash id and prints `graph program id: <id>` (Node exposes the stdin source as `process._eval`). A program that crashes before `fromEnv()`, or a run where `_eval` is missing, never prints an id and is not patchable.
+- A new graph-client export, `rerunGraphProgram(id, edits)`, applies exact-match find/replace edits to that named program, saves the result under its own new id, and runs it. Each `find` must match exactly one place; a missing id or a missing or ambiguous match fails before anything runs.
+- Both Codex prompt builders and the Claude prompt describe this only when the run has a program folder and is on the fallback heredoc. The pinned launcher strips the environment and reads no files, so it keeps whole-program reruns.
 
 Nothing else changes: the model still writes no files, the heredoc is still the only shell action for graph authoring, the approval shape is identical, stable clientKeys make the edited rerun update the same drafts, and a full rerun still works.
 
@@ -73,4 +73,4 @@ These are not in this change. Both need an issue first.
 - These are attached-navigation qualification runs, so they probably retry more than everyday use.
 - Some of run B's rejections came from a writer ordering bug that the evidence README says is fixed.
 - Every saving above is an estimate from replaying the traces, not a measured run.
-- Related open work: [#612](https://github.com/vishaltandale00/relayer-graphcomplete/pull/612) adds opt-in authoring experiments, including saving the program to a file in an unpinned configuration; [#654](https://github.com/vishaltandale00/relayer-graphcomplete/issues/654) proposes a scoped authoring library. Neither lets a retry send a diff against the trusted copy of the last program.
+- Related open work: [#612](https://github.com/vishaltandale00/relayer-graphcomplete/pull/612) adds opt-in authoring experiments, including saving the program to a file in an unpinned configuration; [#654](https://github.com/vishaltandale00/relayer-graphcomplete/issues/654) proposes a scoped authoring library. Neither lets a retry send a diff against a named saved program.

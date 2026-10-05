@@ -646,17 +646,17 @@ describe("CodexBasicHarness", () => {
         },
       });
 
-      await harness.complete(runContext(1, "token"));
+      await harness.complete(withProgramDirectory(runContext(1, "token")));
 
       expect(submittedPrompt).toContain("Run exactly node --input-type=module");
       expect(submittedPrompt).toContain("delimited by exactly RELAYER_GRAPH_PROGRAM");
       expect(submittedPrompt).toContain("do not create a script in either the project checkout or a temporary directory");
       expect(submittedPrompt).not.toContain("do not resolve Node.js from PATH");
-      // A retry may send edits to the last program through the same heredoc instead of retyping it.
+      // A retry names the program that printed its id and sends edits through the same heredoc.
       expect(submittedPrompt).toContain("Do not retype the whole program for a small fix");
-      expect(submittedPrompt).toContain('await rerunGraphProgram([{ find: "exact text from the last program", replace: "fixed text" }])');
-      expect(submittedPrompt).toContain("Each find must match exactly one place in the last program");
-      expect(submittedPrompt).toContain("fix the edit or rerun the full program");
+      expect(submittedPrompt).toContain('await rerunGraphProgram("<id>", [{ find: "exact text from that program", replace: "fixed text" }])');
+      expect(submittedPrompt).toContain("Each find must match exactly one place in that program");
+      expect(submittedPrompt).toContain("A program that crashed before printing an id has no saved copy");
       expect(submittedEnvironment).not.toHaveProperty("RELAYER_GRAPH_AUTHORING_NODE");
     }
   });
@@ -810,14 +810,17 @@ describe("CodexBasicHarness", () => {
     await harness.complete(previewed);
     expect(submitted[0]?.environment.RELAYER_GRAPH_PREVIEW_DIR).toBe("/tmp/previews-1");
     expect(submitted[0]?.environment.RELAYER_GRAPH_PROGRAM_DIR).toBe("/tmp/programs-1");
+    expect(submitted[0]?.prompt).toContain("rerunGraphProgram(\"<id>\"");
     await harness.complete(plain);
     expect(submitted[1]?.environment).not.toHaveProperty("RELAYER_GRAPH_PROGRAM_DIR");
+    expect(submitted[1]?.prompt).not.toContain("rerunGraphProgram");
     expect(buildLayeredNavigationPrompt(previewed, "@relayer/graph-client")).toContain(draftPreviewGuidance(CODEX_PREVIEW_VIEWING));
     expect(buildLayeredNavigationPrompt(plain, "@relayer/graph-client")).not.toContain("Draft previews are on");
+    expect(buildLayeredNavigationPrompt(plain, "@relayer/graph-client")).not.toContain("rerunGraphProgram");
   });
 
   it("recognizes a program edit only in the same heredoc form as a full program", () => {
-    const patch = "import { rerunGraphProgram } from \"file:///client/index.js\";\nawait rerunGraphProgram([{ find: \"a\", replace: \"b\" }]);\n";
+    const patch = "import { rerunGraphProgram } from \"file:///client/index.js\";\nawait rerunGraphProgram(\"a1b2c3d4\", [{ find: \"a\", replace: \"b\" }]);\n";
     const launcher = "/immutable/runtime/graph-authoring-launcher";
     expect(isFallbackGraphAuthoringCommand(`node --input-type=module <<'RELAYER_GRAPH_PROGRAM'\n${patch}RELAYER_GRAPH_PROGRAM`)).toBe(true);
     expect(isExactGraphAuthoringLauncherCommand(`"${launcher}" <<'RELAYER_GRAPH_PROGRAM'\n${patch}RELAYER_GRAPH_PROGRAM`, launcher)).toBe(true);
@@ -1961,6 +1964,16 @@ function runContext(id: number, token: string, trace: HarnessTraceSink = createN
     },
     trace,
     approvals: { request: async () => { throw new Error("unused approval channel"); } },
+  };
+}
+
+function withProgramDirectory(context: HarnessRunContext, programDirectory = "/tmp/programs-1"): HarnessRunContext {
+  return {
+    ...context,
+    graph: {
+      ...context.graph,
+      acquireCapability: () => ({ ...context.graph.acquireCapability(), programDirectory }),
+    },
   };
 }
 

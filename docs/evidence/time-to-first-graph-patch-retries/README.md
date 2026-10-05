@@ -1,18 +1,18 @@
 # Patch retries: proof against the Eval runner
 
-Date: 2026-10-05. Source: branch `patch-retries` (graph-client, harness-host and docs changes in PR #661) against `main` at `3fd7624d`. Both branches share the same Rust binaries; no Rust changed.
+Date: 2026-10-05. Source: branch `patch-retries` (graph-client, harness-host and docs changes in PR #661) against `main` at `3fd7624d`. Both branches share the same Rust binaries; no Rust changed. The eight live Codex runs below used the earlier `rerunGraphProgram(edits)` form that patched one shared `program.mjs`. Named program ids (`rerunGraphProgram("<id>", edits)`) are proven by the deterministic rows in the checkpoint map, not by those live runs.
 
 ## Scope
 
-Show that a retry can send edits to the last graph program instead of retyping it, through the real harness host and graph server, and measure what that does to time to first graph on a real model. No quality claim beyond the deterministic judge passing. Follow-up proposals (outline first, per-node detail) are not tested here.
+Show that a retry can send edits to a named saved graph program instead of retyping it, through the real harness host and graph server, and measure what that does to time to first graph on a real model. No quality claim beyond the deterministic judge passing. Follow-up proposals (outline first, per-node detail) are not tested here.
 
 ## Checkpoint map
 
 | Changed seam | Promise | Observation |
 | --- | --- | --- |
-| Graph client `fromEnv()` and `rerunGraphProgram` | The stdin program is kept; a patch applies in order; one match per find; missing base or bad match fails before anything runs | `packages/graph-client/test/program.test.ts` (real `node --input-type=module` stdin runs) |
-| Harness host per-turn program folder | Granted to every run, removed with the turn | `packages/harness-host/test/draft-preview-bridge.test.ts` |
-| Codex and Claude env and prompts | Fallback heredoc teaches edits; pinned launcher does not; env var passed only when granted; edits recognized only in the same heredoc form | `codex-basic.test.ts`, `claude-basic.test.ts` |
+| Graph client `fromEnv()` and `rerunGraphProgram` | Each program that reaches `fromEnv()` is saved under its own id and printed; a patch names that id, applies in order, one match per find; a missing id or bad match fails before anything runs; a crash before `fromEnv()` is not saved | `packages/graph-client/test/program.test.ts` (real `node --input-type=module` stdin runs) |
+| Harness host per-turn program path | Granted to every run as a path (created on first save), removed with the turn | `packages/harness-host/test/draft-preview-bridge.test.ts` |
+| Codex and Claude env and prompts | Fallback heredoc teaches named edits only when a folder is granted; pinned launcher does not; env var passed only when granted; edits recognized only in the same heredoc form | `codex-basic.test.ts`, `claude-basic.test.ts` |
 | Whole path, zero inference | Rejected program, patch heredoc, accepted graph, folder gone, through the real host and Rust graph server | `test/graph-program-patch-rerun-e2e.test.mjs` |
 | Whole path, real model | A live Codex turn uses the patch on its own and the graph is accepted | `runs/` below, 8 traces |
 

@@ -1,5 +1,5 @@
 import { NativeExecutionCancelled } from "./completion-execution.js";
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { Socket } from "node:net";
@@ -1262,9 +1262,11 @@ export class HarnessHost {
       && resolveGraphCapabilityProfile(session.descriptor.configuration).preview === "enabled"
       ? await mkdtemp(join(tmpdir(), "relayer-graph-previews-"))
       : undefined;
-    // Every run gets a folder where the graph client keeps the last program it
-    // ran, so a retry can send edits instead of the whole program. Removed with the turn.
-    const programDirectory = await mkdtemp(join(tmpdir(), "relayer-graph-programs-"));
+    // Where the graph client may save the programs it runs, so a retry can send
+    // edits to one of them. Only a path: the client creates it on first save, so a
+    // run that never saves (pinned launcher, fixtures, Prime) costs nothing, and
+    // nothing here can throw before the try. Removed with the turn either way.
+    const programDirectory = join(tmpdir(), `relayer-graph-programs-${randomBytes(9).toString("base64url")}`);
     const scope = new ActiveHarnessGraphScope({
       ...capability,
       programDirectory,
@@ -1385,7 +1387,7 @@ export class HarnessHost {
           completionError ??= normalizeHarnessFailure(error, true, observedTrace.effectBoundary());
         }
       }
-      // The kept program is transient too: it never outlives the turn.
+      // Saved programs are transient too: they never outlive the turn.
       await rm(programDirectory, { recursive: true, force: true }).catch(() => undefined);
     }
     const forceStopped = forceStoppedNativeOutcome !== undefined;

@@ -95,9 +95,9 @@ describe("draft preview render bridge", () => {
     const { running, directory } = await startHost(previewConfiguration, renderer, async (context, host) => {
       folder = context.graph.acquireCapability().previewDirectory;
       folderExisted = folder !== undefined && (await stat(folder)).isDirectory();
-      // The program folder shares the preview folder's lifetime: granted for the run, gone after it.
+      // The host grants a program path for the run; the client creates it on first save.
       programFolder = context.graph.acquireCapability().programDirectory;
-      programFolderExisted = programFolder !== undefined && (await stat(programFolder)).isDirectory();
+      programFolderExisted = programFolder !== undefined && await stat(programFolder).then((info) => info.isDirectory(), () => false);
       unauthorized = (await renderRequest(host.url, "wrong")).status;
       rendered = await (await renderRequest(host.url, PREVIEW_TOKEN)).json();
     });
@@ -111,7 +111,7 @@ describe("draft preview render bridge", () => {
       interactionNodeId: 1, fingerprint: "sha256:abc", snapshot: { version: 1, target: { kind: "layer", layerId: 3 } },
     });
     await expect(stat(folder!)).rejects.toThrow();
-    expect(programFolderExisted).toBe(true);
+    expect(programFolderExisted).toBe(false);
     expect(programFolder).toContain("relayer-graph-programs-");
     await expect(stat(programFolder!)).rejects.toThrow();
     const exported = join(directory, "exported");
@@ -139,7 +139,7 @@ describe("draft preview render bridge", () => {
     await running.host.complete(1, 1, graph, undefined, undefined, { productInteractionId: 32 });
 
     expect(folder).toBeUndefined();
-    // Program edits do not depend on previews; every run gets its folder.
+    // Program edits do not depend on previews; every run gets a path the client may create.
     expect(programFolder).toContain("relayer-graph-programs-");
   });
 });

@@ -9,7 +9,7 @@ import { createDesktopGraphRuntime } from "../desktop/main/services/graphcomplet
 import { RelayerAppServerService } from "../desktop/main/services/relayer-app-server.mjs";
 
 /**
- * Zero-inference proof that a retry can send edits to the last graph program.
+ * Zero-inference proof that a retry can send edits to a named saved graph program.
  * A fixture harness runs real `node --input-type=module` stdin programs, the way
  * Codex and Claude do, against the real harness host and Rust graph server:
  * the first program is rejected, a patch heredoc fixes it, and the graph is accepted.
@@ -47,8 +47,8 @@ await graph.submitLayer(layer);
 await graph.submit(${interactionNodeId});
 `;
 
-const patchProgram = (interactionNodeId) => `import { rerunGraphProgram } from "${client}";
-await rerunGraphProgram([{
+const patchProgram = (interactionNodeId, id) => `import { rerunGraphProgram } from "${client}";
+await rerunGraphProgram(${JSON.stringify(id)}, [{
   find: "await graph.submit(${interactionNodeId});",
   replace: 'await graph.addAction(${interactionNodeId}, { kind: "navigate", relation: "expand", label: "Answer", target: layer, clientKey: "root" });\\nawait graph.submit(${interactionNodeId});',
 }]);
@@ -69,9 +69,12 @@ function fixtureFactory(state) {
         RELAYER_GRAPH_PROGRAM_DIR: capability.programDirectory,
       };
       state.first = await runProgram(fullProgram(context.inputGraph.id), environment);
-      state.savedAfterFirst = await readFile(join(capability.programDirectory, "program.mjs"), "utf8");
-      state.second = await runProgram(patchProgram(context.inputGraph.id), environment);
-      state.savedAfterSecond = await readFile(join(capability.programDirectory, "program.mjs"), "utf8");
+      // The model reads the id from the program's own output, exactly as the prompt says.
+      state.firstId = /graph program id: ([0-9a-f]{8})/.exec(state.first.stdout)?.[1];
+      state.savedFirst = await readFile(join(capability.programDirectory, "programs", `${state.firstId}.mjs`), "utf8");
+      state.second = await runProgram(patchProgram(context.inputGraph.id, state.firstId), environment);
+      state.secondId = /running as ([0-9a-f]{8})/.exec(state.second.stdout)?.[1];
+      state.savedSecond = await readFile(join(capability.programDirectory, "programs", `${state.secondId}.mjs`), "utf8");
     },
   });
 }
@@ -119,18 +122,20 @@ it("rejects the first program, accepts the patched rerun, and keeps the model's 
   });
   const detail = await waitForStatus(session, thread.id, "accepted");
 
-  // The first run was a real graph rejection: no root action yet.
+  // The first run was a real graph rejection: no root action yet. It still printed its id.
   expect(state.first.code).not.toBe(0);
   expect(state.first.stderr).toMatch(/root/i);
-  expect(state.savedAfterFirst).toBe(fullProgram(detail.interactions[0].graphNodeId));
-  // The patch ran the edited program with the same clientKeys, and the edit became the next base.
+  expect(state.firstId).toMatch(/^[0-9a-f]{8}$/);
+  expect(state.savedFirst).toBe(fullProgram(detail.interactions[0].graphNodeId));
+  // The patch ran the edited program with the same clientKeys and saved it under its own id.
   expect(state.second).toMatchObject({ code: 0 });
-  expect(state.savedAfterSecond).toContain('clientKey: "root"');
-  expect(state.savedAfterSecond).not.toContain("rerunGraphProgram");
+  expect(state.second.stdout).toContain(`graph program id: ${state.secondId}`);
+  expect(state.savedSecond).toContain('clientKey: "root"');
+  expect(state.savedSecond).not.toContain("rerunGraphProgram");
   // The accepted graph is the patched program's output.
   const output = detail.interactions[0].completionOutput;
   expect(output.rootLayer.nodes.map((node) => node.title)).toEqual(["Patched answer"]);
-  // The host removed the program folder with the turn.
+  // The host removed the saved programs with the turn.
   await expect(stat(state.programDirectory)).rejects.toThrow();
 }, 60_000);
 
