@@ -2555,9 +2555,9 @@ export class EvalService {
     return thread;
   }
 
-  async completionJudgeArtifactEvidence(prepared, { signal } = {}) {
+  async completionJudgeArtifactEvidence(prepared, { signal, contract = "completion-evidence-v1" } = {}) {
     await abortable(signal, () => this.assertHumanTaskCatalog(prepared));
-    return completionArtifactEvidence(prepared.execution.fixture?.workspaceDirectory, { signal });
+    return completionArtifactEvidence(prepared.execution.fixture?.workspaceDirectory, { signal, contract, baseline: prepared.execution.fixture?.seededCommit ?? prepared.execution.fixture?.upstreamCommit ?? (/^[a-f0-9]{40,64}$/.test(prepared.execution.fixture?.sourceRevision ?? "") ? prepared.execution.fixture.sourceRevision : undefined) });
   }
 
   async gradeHumanTaskStep(prepared, step, { signal } = {}) {

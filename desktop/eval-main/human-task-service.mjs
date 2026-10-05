@@ -1,3 +1,4 @@
+import { resolveEvaluatorSelection, completionJudgeSpec, participantMayStopIncomplete } from "./evaluator-selection.mjs";
 import { isDeepStrictEqual } from "node:util";
 import { abortable } from "./abortable.mjs";
 import { interactionReturnsToUnsent } from "../renderer/src/interaction-failure-model.js";
@@ -62,16 +63,25 @@ export class HumanTaskService {
       if (session.mode !== "simulated" || session.status !== "active") throw failure("Actor session is not active.", 409);
       const before = session.events.length;
       const recorded = clone(data);
-      if (kind === "actor_observation" && recorded.observation?.screenshot) {
-        const bytes = Buffer.from(recorded.observation.screenshot, "base64");
-        if (bytes.length > 10 * 1024 * 1024 || bytes.toString("base64") !== recorded.observation.screenshot) throw failure("Invalid actor screenshot.");
+      const screenshotOwner = kind === "actor_observation" ? recorded.observation : kind === "actor_completion_evidence" ? recorded.input : null;
+      if (screenshotOwner?.screenshot) {
+        const bytes = Buffer.from(screenshotOwner.screenshot, "base64");
+        if (bytes.length > 10 * 1024 * 1024 || bytes.toString("base64") !== screenshotOwner.screenshot) throw failure("Invalid actor screenshot.");
         const sha256 = createHash("sha256").update(bytes).digest("hex");
         const folder = join(dirname(this.stateFile), "actor-screenshots");
         await mkdir(folder, { recursive: true });
         try { await writeFile(join(folder, `${sha256}.png`), bytes, { flag: "wx", mode: 0o600 }); }
-        catch (error) { if (error.code !== "EEXIST") throw error; }
-        delete recorded.observation.screenshot;
-        recorded.observation.screenshotArtifact = { sha256, mediaType: "image/png" };
+        catch (error) {
+          if (error.code !== "EEXIST") throw error;
+          if (createHash("sha256").update(await readFile(join(folder, `${sha256}.png`))).digest("hex") !== sha256) throw failure("Actor screenshot integrity failure.");
+        }
+        if (kind === "actor_observation") { delete screenshotOwner.screenshot; screenshotOwner.screenshotArtifact = { sha256, mediaType: "image/png" }; }
+        else {
+          const observation = session.events.find(item => item.id === recorded.observationEventId && item.kind === "actor_observation");
+          const observed = observation?.observation?.screenshotArtifact?.sha256 ?? (observation?.observation?.screenshot ? createHash("sha256").update(Buffer.from(observation.observation.screenshot, "base64")).digest("hex") : null);
+          if (observed !== sha256 || digest(recorded.input) !== recorded.inputDigest) throw failure("Completion screenshot/input binding changed.");
+          screenshotOwner.screenshot = { sha256, mediaType: "image/png" }; recorded.inputEncoding = "screenshot-reference-v1";
+        }
       }
       const event = this.event(session, kind, recorded);
       try { await this.persist(); } catch (error) { session.events.length = before; throw error; }
@@ -87,6 +97,21 @@ export class HumanTaskService {
     const bytes = await readFile(join(dirname(this.stateFile), "actor-screenshots", `${hash}.png`));
     if (createHash("sha256").update(bytes).digest("hex") !== hash) throw failure("Actor screenshot integrity failure.");
     return `data:image/png;base64,${bytes.toString("base64")}`;
+  }
+  async completionJudgeInput(id, eventId) {
+    const event = this.find(id).events.find(item => item.id === eventId && item.kind === "actor_completion_evidence");
+    if (!event?.input) throw failure("Missing completion judge input.", 404);
+    const input = clone(event.input);
+    if (event.inputEncoding !== undefined) {
+      const ref = input.screenshot;
+      if (event.inputEncoding !== "screenshot-reference-v1" || ref?.mediaType !== "image/png" || !/^[a-f0-9]{64}$/.test(ref?.sha256 ?? "")) throw failure("Invalid completion screenshot reference.");
+      const observation = this.find(id).events.find(item => item.id === event.observationEventId && item.kind === "actor_observation");
+      const screenshot = (await this.actorScreenshot(id, observation?.id)).slice("data:image/png;base64,".length);
+      if (createHash("sha256").update(Buffer.from(screenshot, "base64")).digest("hex") !== ref.sha256) throw failure("Completion screenshot binding changed.");
+      input.screenshot = screenshot;
+    }
+    if (digest(input) !== event.inputDigest) throw failure("Completion judge input integrity failure.");
+    return input;
   }
   interruptActor(id, reason) {
     return this.serial(async () => {
@@ -126,7 +151,12 @@ export class HumanTaskService {
       if (typeof selection.endpoint !== "string" || !selection.endpoint.trim() || selection.endpoint.length > 8000) throw failure("Describe the task artifact or endpoint.");
       const session = { schemaVersion: 1, id: `human-${randomUUID()}`, mode: "human", status: "preparing", createdAt: new Date().toISOString(), maxCompletions: selection.maxCompletions, completions: 0, endpoint: selection.endpoint.trim(), step: 0, threadIds: [], events: [], annotations: [], stepChecks: [], satisfaction: null, termination: null };
       if (selection.mode !== undefined && !["human", "simulated"].includes(selection.mode)) throw failure("Unknown task mode.");
-      if (selection.mode === "simulated") { session.mode = "simulated"; const setup = this.setupRegistry?.selected("actor", selection.actorSetupRevisionId);
+      if (selection.mode === "simulated") { session.mode = "simulated";
+        const resolved = resolveEvaluatorSelection(this.setupRegistry, selection);
+        selection = resolved.selection;
+        const setup = resolved.actorSetup;
+        if (resolved.completionJudgeSetup) session.completionJudgeSetup = resolved.completionJudgeSetup;
+        if (resolved.evaluatorRelease) session.evaluatorRelease = resolved.evaluatorRelease;
         if (setup) session.actorSetup = setup;
         session.actor = setup ? actorConfiguration({ ...setup.settings, promptTemplate: setup.promptTemplate, promptVersion: setup.promptVersion }) : actorConfiguration(selection.actor); }
       this.sessions.unshift(session);
@@ -373,9 +403,9 @@ export class HumanTaskService {
     return this.serial(async () => {
       signal?.throwIfAborted();
       const session = this.find(id);
-      if (session.mode !== "simulated" || session.status !== "active" || !session.actorSetup?.behaviorContract?.completionJudge) throw failure("Completion judge session is not active.", 409);
+      if (session.mode !== "simulated" || session.status !== "active" || !completionJudgeSpec(session)) throw failure("Completion judge session is not active.", 409);
       await abortable(signal, () => this.settled(session, { signal }));
-      const artifactEvidence = await abortable(signal, () => this.evalService.completionJudgeArtifactEvidence(session.prepared, { signal }));
+      const artifactEvidence = await abortable(signal, () => this.evalService.completionJudgeArtifactEvidence(session.prepared, { signal, contract: completionJudgeSpec(session).evidenceContract?.id ?? "completion-evidence-v1" }));
       signal?.throwIfAborted();
       await abortable(signal, () => this.settled(session, { signal }));
       signal?.throwIfAborted();
@@ -388,10 +418,30 @@ export class HumanTaskService {
         while (Buffer.byteLength(JSON.stringify(prefix + marker)) > limit) prefix = prefix.slice(0, Math.floor(prefix.length * 0.8));
         return prefix + marker;
       };
+      const v2 = completionJudgeSpec(session).evidenceContract?.id === "completion-evidence-v2";
+      const committed = new Map();
+      if (v2) for (const threadId of session.threadIds) {
+        const detail = await abortable(signal, () => this.detail(threadId, { signal }));
+        for (const turn of detail.interactions ?? []) {
+          if (!terminal.has(turn.completionStatus) && !interactionReturnsToUnsent(turn)) throw failure("Wait for the current response before collecting evidence.", 409);
+          committed.set(`${threadId}:${turn.id}`, turn);
+        }
+      }
       const candidates = session.events.filter(event => ["submission", "actor_action"].includes(event.kind));
       const projected = candidates.slice(-80).map(event => {
         const item = { id: event.id, kind: event.kind, at: event.at };
-        if (event.kind === "submission") return { ...item, text: text(event.text ?? event.request?.text), outcome: text(event.outcome, 100) };
+        if (event.kind === "submission") {
+          const base = { ...item, text: text(event.text ?? event.request?.text), outcome: text(event.outcome, 100) };
+          if (!v2) return base;
+          const turn = event.outcome === "accepted" ? committed.get(`${event.threadId}:${event.interactionId}`) : undefined;
+          const inputs = (turn?.submittedInputs ?? []).slice(0, 12).map(input => {
+            const serialized = JSON.stringify(input.value ?? null);
+            return { prompt: text(input.action?.prompt), ...(Buffer.byteLength(serialized) <= 2000 ? { value: clone(input.value ?? null) } : { valueText: text(serialized), truncated: true }) };
+          });
+          return { ...base, participant: "simulated_user", interactionId: event.interactionId ?? null,
+            ...(turn ? { committedAt: text(turn.createdAt, 100), submittedInputs: inputs,
+              ...(turn.submittedInputs?.length > inputs.length ? { inputsOmitted: turn.submittedInputs.length - inputs.length } : {}) } : { committedInputsUnavailable: true }) };
+        }
         const action = event.action ?? {};
         return { ...item, action: { kind: text(action.kind, 100), value: text(action.value), comment: text(action.comment), reason: text(action.reason, 100), endpointStatus: text(action.endpointStatus, 100), remainingWork: text(action.remainingWork), satisfaction: [1, 2, 3, 4].includes(action.satisfaction) ? action.satisfaction : null } };
       });
@@ -415,7 +465,7 @@ export class HumanTaskService {
       if (session.status !== "active") throw failure("Task session is not active.", 409);
       if (!["endpoint_reached", "satisfied", "abandoned", "budget_exhausted"].includes(input?.reason)) throw failure("Choose a termination reason.");
       if (input.satisfaction !== undefined && ![1, 2, 3, 4].includes(input.satisfaction)) throw failure("Choose a satisfaction rating from 1 to 4.");
-      const judgeSpec = session.mode === "simulated" && session.actorSetup?.behaviorContract?.completionJudge;
+      const judgeSpec = session.mode === "simulated" && completionJudgeSpec(session);
       const actionBudgetExhausted = judgeSpec && Number.isSafeInteger(session.actor?.maxActions)
         && session.events.filter(event => ["actor_action", "actor_action_rejected"].includes(event.kind)).length >= session.actor.maxActions;
       if (input.reason === "budget_exhausted" && session.completions < session.maxCompletions && !actionBudgetExhausted) throw failure("The completion budget is not exhausted.");
@@ -425,10 +475,11 @@ export class HumanTaskService {
         const intent = session.events.find(event => event.id === input.actorActionEventId && event.kind === "actor_action" && event.action?.kind === "finish");
         const latestJudgment = session.events.findLast(event => event.kind === "actor_completion_judgment");
         const evidence = session.events.find(event => event.id === judgment?.evidenceEventId && event.kind === "actor_completion_evidence");
-        if (input.reason !== "endpoint_reached" || !judgment || !intent || judgment !== latestJudgment
+        const voluntaryStop = participantMayStopIncomplete(session, intent?.action) && input.reason === intent.action.reason;
+        if ((!voluntaryStop && input.reason !== "endpoint_reached") || !judgment || !intent || judgment !== latestJudgment
           || !evidence || evidence.actorActionEventId !== intent.id || evidence.observationEventId !== intent.observationEventId
           || !isDeepStrictEqual(evidence.judge, judgeSpec) || evidence.sequence <= intent.sequence || evidence.sequence >= judgment.sequence
-          || judgment.verdict !== "complete" || judgment.actorActionEventId !== intent.id
+          || (!voluntaryStop && judgment.verdict !== "complete") || !["complete", "incomplete", "uncertain"].includes(judgment.verdict) || judgment.actorActionEventId !== intent.id
           || judgment.observationEventId !== intent.observationEventId || judgment.sequence <= intent.sequence
           || !isDeepStrictEqual(judgment.judge, judgeSpec)
           || session.events.some(event => event.sequence > intent.sequence && ["actor_action", "submission", "actor_action_rejected"].includes(event.kind))) {
@@ -510,6 +561,7 @@ export class HumanTaskService {
       if (!["completed", "failed", "interrupted"].includes(session.status)) throw failure("Finish the session before exporting immutable evidence.");
       if (session.status === "completed") await this.settled(session);
       const graphAnnotations = this.annotationSnapshotLoader && session.threadIds.length ? await this.annotationSnapshotLoader(session.threadIds) : null;
+      for (const event of session.events) { if (event.kind === "actor_completion_evidence" && event.input) await this.completionJudgeInput(id, event.id); }
       const actorScreenshots = [];
       for (const event of session.events) {
         if (event.kind === "actor_observation" && event.observation?.screenshotArtifact) actorScreenshots.push({ eventId: event.id, ...event.observation.screenshotArtifact, dataUrl: await this.actorScreenshot(id, event.id) });
