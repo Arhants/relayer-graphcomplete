@@ -10,6 +10,7 @@ import { GRAPH_QUERY_CONTRACT_VERSION } from "./query-errors.generated.js";
 import { GraphQueryError, isGraphQueryErrorBody, type GraphQueryErrorBody, type GraphSearchOptions, type GraphSearchRequest, type GraphSearchResult } from "./query.js";
 import { GraphApiError, type CompletionInputGraph, type CompletionOutput, type CompletionState, type CurrentTransitionReceipt, type GraphAction, type GraphApiErrorBody, type GraphCapability, type GraphEdge, type GraphId, type GraphLayer, type GraphNode, type InteractionInput, type ResolvedLayer, type ResolvedPersonalPresentation, type StopReason } from "./types.js";
 import { GraphIcons } from "./icon-discovery.js";
+import { withGraphMethodErrors } from "./method-errors.js";
 import { materializeGraphPreview, type GraphPreview } from "./preview.js";
 import { GraphVisualAssets } from "./visual-assets.js";
 
@@ -39,7 +40,8 @@ export class RelayerGraphClient {
     if (!url || !token || !Number.isSafeInteger(node) || node < 1) {
       throw new Error("RELAYER_GRAPH_URL, RELAYER_GRAPH_TOKEN, and RELAYER_NODE_ID are required");
     }
-    return new RelayerGraphClient({ url, token, nodeId: node, ...(previewDirectory ? { previewDirectory } : {}) });
+    // Harness programs guess method names; fail them with the real name (see method-errors.ts).
+    return withGraphMethodErrors(new RelayerGraphClient({ url, token, nodeId: node, ...(previewDirectory ? { previewDirectory } : {}) }));
   }
 
   async getNode(reference: NodeReference): Promise<GraphNode> {
