@@ -84,6 +84,16 @@ function fullPlanWithoutDiff() {
 // Each case spawns the planner as a subprocess, and the full-plan cases also
 // run cargo metadata; the default 5s per-test budget races CI runner load.
 describe("affected-module plan v1", { timeout: 30_000 }, () => {
+  test("maps static OpenSSL link inputs to target directives, receipts, Rust, and real packaging", () => {
+    for (const path of ["crates/relayer-graph-server/build.rs", "crates/relayer-graph-server/build_support/openssl_link.rs"]) {
+      const result = plan(path);
+      expect(result.rustPackages).toContain("relayer-graph-server");
+      expect(result.chapters.packaging).toBe(true);
+      expect(result.vitestFiles).toContain("test/windows-candidate.test.mjs");
+      expect(result.vitestFiles).toContain("test/ladybug-packaged-lifecycle.test.mjs");
+    }
+  });
+
   test("narrows only the reviewed prose evidence document, preserving mixed and deleted paths", () => {
     withPlannerFixture((repository) => {
       const path = "docs/evidence/issue-477-recursive-fixture-abort/README.md";
@@ -755,10 +765,12 @@ describe("affected-module plan v1", { timeout: 30_000 }, () => {
     expect(result.chapters.vitest).toBe(true);
     // prime-agent-packaging checks the harness/python eol pins; the ladybug
     // lifecycle test runs git check-attr over the receipt-input paths and is
-    // the checkpoint that actually verifies the ladybug LF pins.
+    // the checkpoint that actually verifies the ladybug LF pins. The Windows
+    // candidate scenario rematerializes generated contracts through real Git.
     expect(result.vitestFiles).toEqual([
       "test/ladybug-packaged-lifecycle.test.mjs",
       "test/prime-agent-packaging.test.mjs",
+      "test/windows-candidate.test.mjs",
     ]);
   });
 
