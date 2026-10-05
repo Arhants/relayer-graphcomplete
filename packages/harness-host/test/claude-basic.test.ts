@@ -748,6 +748,7 @@ describe("ClaudeBasicHarness", () => {
       expect(previewed.call.options.allowedTools).toEqual(allowedTools);
       expect(previewed.call.options.mcpServers).toHaveProperty("relayer_graph_preview");
       expect(previewed.call.prompt).toContain(draftPreviewGuidance(CLAUDE_PREVIEW_VIEWING));
+      expect(previewed.call.prompt).toContain("cursor and border-collapse are not in the CSS property allowlist");
 
       const plain = await previewRun(approvalMode, undefined);
       expect(plain.call.options.env).not.toHaveProperty("RELAYER_GRAPH_PREVIEW_DIR");
