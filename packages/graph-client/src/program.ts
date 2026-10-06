@@ -40,7 +40,12 @@ function programPath(directory: string, id: string): string {
 }
 
 function saveProgram(directory: string, id: string, source: string): void {
-  mkdirSync(join(directory, "programs"), { recursive: true, mode: 0o700 });
+  try {
+    // The host owns the parent lifetime. Never recreate a removed turn folder.
+    mkdirSync(join(directory, "programs"), { mode: 0o700 });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+  }
   const destination = programPath(directory, id);
   const temporary = `${destination}.${randomUUID()}.tmp`;
   writeFileSync(temporary, source, { mode: 0o600, flag: "wx" });

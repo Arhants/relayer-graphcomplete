@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -60,12 +60,23 @@ describe("rerunGraphProgram through node --input-type=module", () => {
   afterEach(async () => {
     for (const folder of folders.splice(0)) await rm(folder, { recursive: true, force: true });
   });
-  /** The host hands out a path it never creates; the client creates it on first save. */
+  /** The host creates the per-turn parent; clients may only create children. */
   async function programFolder(): Promise<string> {
     const parent = await mkdtemp(join(tmpdir(), "relayer-client-program-"));
     folders.push(parent);
-    return join(parent, "programs-for-turn");
+    const directory = join(parent, "programs-for-turn");
+    await mkdir(directory, { mode: 0o700 });
+    return directory;
   }
+
+  it("cannot recreate a turn folder after host cleanup", async () => {
+    const folder = await programFolder();
+    await runStdinProgram(PROGRAM, folder);
+    await rm(folder, { recursive: true });
+    const late = await runStdinProgram(PROGRAM, folder);
+    expect(late.stdout).toContain("unavailable (could not save)");
+    await expect(stat(folder)).rejects.toMatchObject({ code: "ENOENT" });
+  });
 
   it("saves each program under its own id, prints it, and runs a patch of exactly that program", async () => {
     const folder = await programFolder();

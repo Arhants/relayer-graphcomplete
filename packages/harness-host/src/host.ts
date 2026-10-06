@@ -1262,10 +1262,8 @@ export class HarnessHost {
       && resolveGraphCapabilityProfile(session.descriptor.configuration).preview === "enabled"
       ? await mkdtemp(join(tmpdir(), "relayer-graph-previews-"))
       : undefined;
-    // Where the graph client may save the programs it runs, so a retry can send
-    // edits to one of them. Only a path: the client creates it on first save, so a
-    // run that never saves (pinned launcher, fixtures, Prime) costs nothing, and
-    // nothing here can throw before the try. Removed with the turn either way.
+    // The host owns the turn folder lifetime; clients may only create children.
+    // Create inside the try so failures still clean up previews and normalize.
     const programDirectory = join(tmpdir(), `relayer-graph-programs-${randomBytes(9).toString("base64url")}`);
     const scope = new ActiveHarnessGraphScope({
       ...capability,
@@ -1285,6 +1283,7 @@ export class HarnessHost {
     /** Set when the force-stop fired before the native turn settled: how that turn ended. */
     let forceStoppedNativeOutcome: { readonly kind: ForceStoppedNativeOutcome; readonly detail?: string } | undefined;
     try {
+      await mkdir(programDirectory, { mode: 0o700 });
       const acceptedContracts = session.descriptor.configuration.executionAccessContracts;
       if (executionLeaseId !== undefined) {
         const pending = this.pendingExecutionAccess.get(executionLeaseId);

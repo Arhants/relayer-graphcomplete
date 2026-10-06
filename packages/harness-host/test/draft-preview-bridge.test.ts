@@ -96,7 +96,7 @@ describe("draft preview render bridge", () => {
     const { running, directory } = await startHost(previewConfiguration, renderer, async (context, host) => {
       folder = context.graph.acquireCapability().previewDirectory;
       folderExisted = folder !== undefined && (await stat(folder)).isDirectory();
-      // The host grants a program path for the run; the client creates it on first save.
+      // The host creates the program parent before invoking the harness.
       programFolder = context.graph.acquireCapability().programDirectory;
       programFolderExisted = programFolder !== undefined && await stat(programFolder).then((info) => info.isDirectory(), () => false);
       unauthorized = (await renderRequest(host.url, "wrong")).status;
@@ -112,7 +112,7 @@ describe("draft preview render bridge", () => {
       interactionNodeId: 1, fingerprint: "sha256:abc", snapshot: { version: 1, target: { kind: "layer", layerId: 3 } },
     });
     await expect(stat(folder!)).rejects.toThrow();
-    expect(programFolderExisted).toBe(false);
+    expect(programFolderExisted).toBe(true);
     expect(programFolder).toContain("relayer-graph-programs-");
     await expect(stat(programFolder!)).rejects.toThrow();
     const exported = join(directory, "exported");
