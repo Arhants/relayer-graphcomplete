@@ -13,7 +13,7 @@
   },
   "rendererArtifact": {
     "directory": "desktop/renderer",
-    "digest": "4edf2a9be53f4127eb9db153b5d1f85b437840904d89ae84bed684ba08f6ee31",
+    "digest": "25667f6a9fa45ceb756b94e6af8d8c297ab2002229a34fb13d22b13e0a2d2e22",
     "files": {
       "assets/relayer-logo.svg": {
         "bytes": 509,
@@ -132,8 +132,8 @@
         "sha256": "db5a223e5ec42bcaf23667955165d4b4bf22e0622dcfd407933c530d3e3b339f"
       },
       "src/human-task-grading.js": {
-        "bytes": 7273,
-        "sha256": "e6de3a049eba9a5853eaaa03b1e0c354652fa27194f54b432498cc6eb27bc51d"
+        "bytes": 8129,
+        "sha256": "4240954ccefdf7b5a21fde2034a7c922faa3614017a1de278ceec3aca92699cf"
       },
       "src/human-task-observer.js": {
         "bytes": 2274,
@@ -148,8 +148,8 @@
         "sha256": "dd367d1a606aff3951519ea3365a1ca2b920ab78473f92149d2a97627f81cb52"
       },
       "src/main.js": {
-        "bytes": 22025,
-        "sha256": "48d751c932f11be5ee97598d37a557a0b944a1a464b86b8736cd9a07f2c1a6f2"
+        "bytes": 22386,
+        "sha256": "50d221da9c43af61694e90d8131f000c229ff1c9c7198f2101bd967a960c439e"
       },
       "src/model-availability-refresh.js": {
         "bytes": 1085,
@@ -404,13 +404,13 @@
   "captures": [
     {
       "theme": "light",
-      "sha256": "a8077468198b281a0dad0799786177b2d771f6cc2a5b27a32e1f520d3e0e2dd2",
-      "bytes": 68432
+      "sha256": "0d64e23622f8e4d9dbe46907c8a02a46e8e53bd4dce236d38acce53bbaaf1979",
+      "bytes": 68977
     },
     {
       "theme": "dark",
-      "sha256": "13b4e25984fbd66f4c257eb7b0dc5dd85f366287d19aaff58b8c46482e2774bd",
-      "bytes": 65629
+      "sha256": "ef5bd275a7732cdcd8186e9d85bf76d3f872c9416d1dce7d661d52ee87dcf2c9",
+      "bytes": 62710
     }
   ],
   "platform": "macOS ARM64",

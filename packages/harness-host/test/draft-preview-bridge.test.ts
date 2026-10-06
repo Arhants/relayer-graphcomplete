@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -30,7 +30,7 @@ afterEach(async () => {
 });
 
 /** Fakes the graph server for the host's own reads; host routes use real HTTP. */
-function stubGraphServer(host: () => string | undefined): void {
+function stubGraphServer(host: () => string | undefined, acceptOnInput = true): void {
   let accepted = false;
   vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
     const hostUrl = host();
@@ -41,7 +41,7 @@ function stubGraphServer(host: () => string | undefined): void {
         ? json({ nodeId: 1, rootAction: null, rootLayer: { layer: { id: 3, nodes: [], edges: [], state: "accepted" }, nodes: [], edges: [], actions: [] } })
         : json({ error: { code: "completion_not_found" } }, 404);
     }
-    if (url.endsWith("/api/graph/input")) accepted = true;
+    if (url.endsWith("/api/graph/input")) accepted = acceptOnInput;
     return json(url.endsWith("/api/graph/input")
       ? { interaction: { id: 1, kind: "user-interaction", icon: "user", title: "Question", detail: "Question", state: "accepted" }, contexts: [] }
       : { node: { id: 1, kind: "user-interaction", icon: "user", title: "Question", detail: "Question", state: "accepted" } });
@@ -51,11 +51,12 @@ function stubGraphServer(host: () => string | undefined): void {
 async function startHost(
   harnessConfiguration: HarnessConfiguration,
   renderer: DraftPreviewRenderer | undefined,
-  complete: (context: HarnessRunContext, running: RunningHarnessHost) => Promise<void>,
+  complete: (context: HarnessRunContext, running: RunningHarnessHost, signal: AbortSignal | undefined) => Promise<void>,
+  acceptOnInput = true,
 ): Promise<{ running: RunningHarnessHost; directory: string }> {
   const directory = await mkdtemp(join(tmpdir(), "relayer-draft-preview-"));
   let running: RunningHarnessHost | undefined;
-  stubGraphServer(() => running?.url);
+  stubGraphServer(() => running?.url, acceptOnInput);
   running = await startHarnessHost({
     stateFile: join(directory, "sessions.json"),
     controlToken: "control",
@@ -64,7 +65,7 @@ async function startHost(
       policy: { mode: "required", requiredFeatures: {}, includeNativeArtifacts: false, maxBytesPerTurn: 100_000, maxEventsPerTurn: 100 },
     },
     ...(renderer === undefined ? {} : { draftPreviews: { token: PREVIEW_TOKEN, renderer } }),
-    implementations: { test: () => ({ complete: (context) => complete(context, running!), state: () => ({}) }) },
+    implementations: { test: () => ({ complete: (context, signal) => complete(context, running!, signal), state: () => ({}) }) },
   });
   const started = running;
   cleanup.push(async () => {
@@ -122,6 +123,36 @@ describe("draft preview render bridge", () => {
     expect(events).toContain('"type":"graph.preview"');
     expect(events).toContain('"outcome":"rendered"');
     expect(events).not.toContain(Buffer.from(PNG).toString("base64"));
+  });
+
+  it.each(["success", "failure", "cancel"] as const)("removes saved programs after %s settles", async (outcome) => {
+    let programFolder!: string;
+    let started!: () => void;
+    const ready = new Promise<void>((resolve) => { started = resolve; });
+    const { running } = await startHost(configuration, undefined, async (context, _host, signal) => {
+      programFolder = context.graph.acquireCapability().programDirectory!;
+      await mkdir(join(programFolder, "programs"), { recursive: true });
+      await writeFile(join(programFolder, "programs", "saved.mjs"), "// saved graph program");
+      if (outcome === "cancel") {
+        if (signal === undefined) throw new Error("cancellation signal missing");
+        const waiting = new Promise<never>((_resolve, reject) => {
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        });
+        started();
+        await waiting;
+      }
+      started();
+      if (outcome === "failure") throw new Error("failed after saving");
+    }, outcome === "success");
+    const completing = running.host.complete(1, 1, graph);
+    if (outcome === "cancel") {
+      await ready;
+      expect(await readFile(join(programFolder, "programs", "saved.mjs"), "utf8")).toContain("saved graph program");
+      expect(running.host.cancel(1, 1)).toBe(true);
+    }
+    if (outcome === "success") await completing;
+    else await expect(completing).rejects.toThrow(outcome === "cancel" ? "cancelled" : "failed after saving");
+    await expect(stat(programFolder)).rejects.toThrow();
   });
 
   it.each([

@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -44,12 +44,14 @@ describe("applyGraphProgramEdits", () => {
 
   it.each([
     ["no edits", [], "non-empty array"],
+    ["a missing edit", new Array(1), "non-empty find string"],
     ["an empty find", [{ find: "", replace: "x" }], "non-empty find string"],
     ["a missing match", [{ find: "zzz", replace: "x" }], "was not found in that program"],
+    ["an overlapping match", [{ find: "aa", replace: "x" }], "appears more than once"],
     ["an ambiguous match", [{ find: "a", replace: "x" }], "appears more than once"],
   ])("refuses %s with a clear error", (_case, edits, message) => {
-    expect(() => applyGraphProgramEdits("a a\n", edits)).toThrow(GraphProgramEditError);
-    expect(() => applyGraphProgramEdits("a a\n", edits)).toThrow(message);
+    expect(() => applyGraphProgramEdits("aaa a\n", edits)).toThrow(GraphProgramEditError);
+    expect(() => applyGraphProgramEdits("aaa a\n", edits)).toThrow(message);
   });
 });
 
@@ -117,6 +119,56 @@ await rerunGraphProgram(${JSON.stringify(id)}, edits);
     const result = await runStdinProgram(twice, folder);
     expect(result.code).toBe(0);
     expect(result.stdout.match(/ran:Edge writes are batched/g)).toHaveLength(2);
+  });
+
+  it("keeps concurrent reruns associated with their own program after asynchronous work", async () => {
+    const folder = await programFolder();
+    const first = PROGRAM.replace('const graph =', 'await new Promise(resolve => setTimeout(resolve, 40));\nconst graph =');
+    const second = PROGRAM.replace('const graph =', 'await new Promise(resolve => setTimeout(resolve, 120));\nconst graph =').replace('are serial', 'are parallel');
+    await runStdinProgram(first, folder);
+    await runStdinProgram(second, folder);
+    const firstPatched = first.replace('are serial', 'are repaired');
+    const secondPatched = second.replace('are parallel', 'are independent');
+    const concurrent = `import { rerunGraphProgram } from "${CLIENT}";
+await Promise.all([
+  rerunGraphProgram("${graphProgramId(first)}", [{ find: "are serial", replace: "are repaired" }]),
+  rerunGraphProgram("${graphProgramId(second)}", [{ find: "are parallel", replace: "are independent" }]),
+]);
+`;
+    const result = await runStdinProgram(concurrent, folder);
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain(`graph program id: ${graphProgramId(firstPatched)}\nran:Edge writes are repaired`);
+    expect(result.stdout).toContain(`graph program id: ${graphProgramId(secondPatched)}\nran:Edge writes are independent`);
+    expect(await readFile(join(folder, "programs", `${graphProgramId(firstPatched)}.mjs`), "utf8")).toBe(firstPatched);
+    expect(await readFile(join(folder, "programs", `${graphProgramId(secondPatched)}.mjs`), "utf8")).toBe(secondPatched);
+  });
+
+  it("refuses a short-id collision without replacing the original program", async () => {
+    const folder = await programFolder();
+    const first = "// graph program 79916\n";
+    const second = "// graph program 142722\n";
+    const id = graphProgramId(first);
+    expect(graphProgramId(second)).toBe(id);
+    const remember = (source: string) => `import { RelayerGraphClient } from "${CLIENT}";
+process._eval = ${JSON.stringify(source)};
+RelayerGraphClient.fromEnv();
+`;
+    expect((await runStdinProgram(remember(first), folder)).stdout).toBe(`graph program id: ${id}\n`);
+    expect((await runStdinProgram(remember(second), folder)).stdout).toContain("unavailable (could not save)");
+    expect(await readFile(join(folder, "programs", `${id}.mjs`), "utf8")).toBe(first);
+    expect(await readdir(join(folder, "programs"))).toEqual([`${id}.mjs`]);
+  });
+
+  it("refuses corrupted saved source before executing or publishing a patch", async () => {
+    const folder = await programFolder();
+    const id = graphProgramId(PROGRAM);
+    await runStdinProgram(PROGRAM, folder);
+    await writeFile(join(folder, "programs", `${id}.mjs`), PROGRAM.replace("are serial", "are corrupted"));
+    const result = await runStdinProgram(patch(id, '[{ find: "are corrupted", replace: "are repaired" }]'), folder);
+    expect(result.code).not.toBe(0);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toContain("no longer matches its id");
+    expect(await readdir(join(folder, "programs"))).toEqual([`${id}.mjs`]);
   });
 
   it("runs a full program unchanged when the host granted no folder, and says why edits are off", async () => {

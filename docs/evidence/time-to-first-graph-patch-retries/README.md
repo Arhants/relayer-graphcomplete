@@ -4,17 +4,17 @@ Date: 2026-10-05. Source: branch `patch-retries` (graph-client, harness-host and
 
 ## Scope
 
-Show that a retry can send edits to a named saved graph program instead of retyping it, through the real harness host and graph server, and measure what that does to time to first graph on a real model. No quality claim beyond the deterministic judge passing. Follow-up proposals (outline first, per-node detail) are not tested here.
+Show that a retry can send edits to a named saved graph program instead of retyping it, through the real harness host and graph server, and measure what that does to time to first graph on a real model. Acceptance and deterministic judge results establish structural conformance only; they establish neither model quality nor efficacy. Follow-up proposals (outline first, per-node detail) are not tested here.
 
 ## Checkpoint map
 
 | Changed seam | Promise | Observation |
 | --- | --- | --- |
-| Graph client `fromEnv()` and `rerunGraphProgram` | Each program that reaches `fromEnv()` is saved under its own id and printed; a patch names that id, applies in order, one match per find; a missing id or bad match fails before anything runs; a crash before `fromEnv()` is not saved | `packages/graph-client/test/program.test.ts` (real `node --input-type=module` stdin runs) |
-| Harness host per-turn program path | Granted to every run as a path (created on first save), removed with the turn | `packages/harness-host/test/draft-preview-bridge.test.ts` |
-| Codex and Claude env and prompts | Fallback heredoc teaches named edits only when a folder is granted; pinned launcher does not; env var passed only when granted; edits recognized only in the same heredoc form | `codex-basic.test.ts`, `claude-basic.test.ts` |
-| Whole path, zero inference | Rejected program, patch heredoc, accepted graph, folder gone, through the real host and Rust graph server | `test/graph-program-patch-rerun-e2e.test.mjs` |
-| Whole path, real model | A live Codex turn uses the patch on its own and the graph is accepted | `runs/` below, 8 traces |
+| Graph client `fromEnv()` and `rerunGraphProgram` | Each save publishes complete bytes without replacement; identical bytes may reuse an id and collisions fail closed. Concurrent imports retain their own ids. A patch names a verified saved source, applies in order, one match per find including overlapping matches; a missing id, corrupted source or bad match fails before anything runs; a crash before `fromEnv()` is not saved | `packages/graph-client/test/program.test.ts` (real `node --input-type=module` stdin runs) |
+| Harness host per-turn program path | Granted to every run as a path (created on first save), actual saved files removed after success, failure, or settled cancellation | `packages/harness-host/test/draft-preview-bridge.test.ts` |
+| Codex and Claude env and prompts | Fallback heredoc teaches named edits only when a folder is granted; pinned launcher does not; env var passed only when granted; edits recognized only in the same heredoc form; repair guidance forbids rerunning successful or unknown submissions and repeating workspace effects | `codex-basic.test.ts`, `claude-basic.test.ts` |
+| Whole path, zero inference | Rejected program with partial writes, named whole-program patch preserving stable keys, accepted graph, lost submit acknowledgement recovery, rejection of edits after acceptance, folder gone, through the real host and Rust graph server | `test/graph-program-patch-rerun-e2e.test.mjs` |
+| Earlier shared-program API, real model | A live Codex turn uses a shared-program patch on its own and the graph is accepted; this does not observe final named-program identity | `runs/` below, 8 traces |
 
 ## Live runs
 
@@ -45,14 +45,22 @@ The Sept 28 traces behind the research doc (`docs/evidence/issue-517-attached-na
 
 ## What this does and does not show
 
-- It shows the mechanism works end to end with a real model, that the model picks it up from the prompt alone, and that every patched run was accepted.
+- It shows the earlier shared-program mechanism was used end to end by a real model and every run accepted. It does not prove final named IDs, isolation, model quality, or efficacy.
 - Four runs per branch is a small sample. The ranges overlap. The `patch-retries` runs were less variable and had no slow outlier, while `main` had one 561 s run caused by large rewrites. Do not read the medians as a measured speedup; read them as consistent with the mechanism removing the large-rewrite cost.
-- `patch-retries` runs had more rejections (15 vs 8). The patches were cheap enough that the model iterated in smaller steps. Time to accepted still came out lower or equal.
+- `patch-retries` runs had more rejections (15 vs 8). The baseline contains 17 authoring executions with 8 failures; the patch cohort contains 24 executions (4 full programs and 20 patches) with 15 failures. These are descriptive counts, not efficacy or quality proof. All eight runs accepted.
 - The case is a one-turn overview prompt, not an everyday task or the external ten-case catalog. The external cases are long coding tasks that end with the same graph-authoring step; they were not run.
 - One machine, one day, one model. No Claude runs.
 
-## Verification actually run on this source
+## Historical verification reported by the original author (exact snapshot unspecified)
 
 - `npm run build`: passed (Rust from source including Ladybug, 13 min).
 - `npm run check`: the `cargo test --workspace` chapter failed on 4 `relayer-app-server` git-environment tests at full parallelism on this laptop (2 s git timeout; issue #434). The same 357 tests pass at `--test-threads=4`, and no Rust changed on the branch. Every later chapter was then run by hand: `check:graph-crash-reconciliation`, `cargo build`, `build:packages`, `tsc --noEmit`, workspace checks, `vitest run` (3,433 passed, 20 failed), `test:codex-secret-boundary`, `lint:ladybug-receipt`, `prd:check-readability` all passed except the 20 Vitest failures, which are all environmental and also fail on `main` here: Python 3.9 on this Mac (`prime-visual-authoring`, `prime-agent`, `graph-search-client-parity-e2e`, `prime-visual-integration`), the Prime macOS sandbox boundary, rustup having no default toolchain at the time (`ci-affected-plan`, `ci-compile-inputs`, fixed by `rustup default`), `ci-lbug-artifact` under contention (passes alone) and one Mach-O probe in `evidence-capture-integrity` against this Node 23 binary (the repo pins Node 22).
 - Python unit tests: not run, Python 3.9 cannot import the client (`str | X`).
+
+## Local reliability review checkpoints (2026-10-06)
+
+Product meaning comes from PRD §§4.2, 11.3–11.5 and ADRs 0006/0008: draft repair preserves stable identities, accepted history is immutable, terminal capabilities cannot write, and trusted supervision recovers persisted acceptance. Named program storage is a harness execution aid; it owns neither graph acceptance nor recursion.
+
+The added failure boundaries have distinct observations rather than overlapping micro-tests: program tests cover asynchronous identity attribution, overlapping exact matches, immutable collision refusal and corrupted-source rejection; the host bridge creates saved files and observes removal on successful, failed and cancelled execution; the process fixture observes real partial-write repair, loss of a committed submit response and terminal-write rejection. Existing host tests independently cover unknown provider failures and idempotent accepted-output adoption. Prompt assertions observe both shipped fallback harnesses. No tests were deleted.
+
+Required verification: focused program/harness tests during edits; the named zero-inference process fixture after runtime preparation; full `npm run check` and `npm run build` as deterministic fallback and handoff gates. No paid/live, packaged-app or release proof is authorized. Historical results above are not current verification. Final local results and exact source identity belong in the local handoff record, not this historical ledger.

@@ -1,3 +1,4 @@
+import { verifyWindowsRustDebugIdentity } from "./windows-rust-debug.mjs";
 import { createHash } from "node:crypto";
 import { execFile, spawn } from "node:child_process";
 import { createReadStream } from "node:fs";
@@ -26,6 +27,7 @@ import { desktopTargetByKey } from "../shared/target.mjs";
 import { exactKeys } from "../shared/telemetry-validation.mjs";
 
 import { copySignedSymbols, verifySignedSnapshot } from "../packaging/signed-native-cache.mjs";
+import { windowsRustPdbPath } from "./windows-rust-debug.mjs";
 
 const RELEASE_ID_PREFIX = "ai.relayer.desktop@";
 const RELEASE_COMMIT_PATTERN = /^[a-f0-9]{40}$/u;
@@ -209,7 +211,7 @@ async function readPackagedSource({ packagedApplication, platform, modulePath })
   const entry = packagedAsarEntry(modulePath);
   if (!entry) throw new Error(`Desktop telemetry has no packaged source mapping for ${modulePath}.`);
   try {
-    return extractFile(resolve(resources, "app.asar"), entry);
+    return extractFile(resolve(resources, "app.asar"), join(...entry.split("/")));
   } catch {
     throw new Error(`Desktop telemetry packaged source is missing: ${modulePath}.`);
   }
@@ -219,13 +221,6 @@ function parseMacDebugIds(output) {
   return [...String(output || "").matchAll(/UUID:\s*([a-f0-9-]{36})\s*\(/giu)]
     .map((match) => match[1].toLowerCase())
     .sort();
-}
-
-function parseWindowsDebugId(output) {
-  const text = String(output || "");
-  const guid = /(?:PDB)?GUID:\s*[({]?([a-f0-9-]{36})[)}]?/iu.exec(text)?.[1]?.toLowerCase();
-  const age = /(?:PDB)?Age:\s*(\d+)/iu.exec(text)?.[1];
-  return guid && age ? `${guid}-${age}` : null;
 }
 
 async function correlateNativeDebugIdentity({ contract, resources, sourceBinary, debugPath, capture }) {
@@ -242,15 +237,7 @@ async function correlateNativeDebugIdentity({ contract, resources, sourceBinary,
     }
     return { packagedBinary, debugId: packagedIds.join(",") };
   }
-  const [packaged, debug] = await Promise.all([
-    capture("llvm-readobj", ["--coff-debug-directory", packagedBinary]),
-    capture("llvm-pdbutil", ["dump", "-summary", debugPath]),
-  ]);
-  const packagedId = parseWindowsDebugId(packaged.stdout);
-  const debugId = parseWindowsDebugId(debug.stdout);
-  if (!packagedId || packagedId !== debugId) {
-    throw new Error("Desktop telemetry PDB identity does not match the packaged Rust executable.");
-  }
+  const debugId = await verifyWindowsRustDebugIdentity(packagedBinary, debugPath, capture);
   return { packagedBinary, debugId };
 }
 
@@ -322,7 +309,7 @@ export async function prepareDesktopTelemetryArtifacts({
     for (const binary of selectedRustBinaries) {
       const stem = basename(binary).replace(/\.exe$/iu, "");
       const destination = resolve(debugRoot, `${stem}.pdb`);
-      await copyFile(resolve(dirname(binary), `${stem}.pdb`), destination);
+      await copyFile(windowsRustPdbPath(binary), destination);
       const identity = await correlateNativeDebugIdentity({ contract, resources, sourceBinary: binary, debugPath: destination, capture });
       nativeDebugIdentities.push({
         binary: normalizedRelativePath(relative(resources, identity.packagedBinary)),
@@ -470,7 +457,7 @@ export function createDesktopTelemetryUploadPlan({ manifest, environment = proce
     throw new Error("Desktop telemetry upload target is not the approved Sentry project.");
   }
   const sentryCliBinary = requiredEnvironment(environment, "SENTRY_CLI_BINARY");
-  if (!isAbsolute(sentryCliBinary) || !/(?:^|[/\\])sentry-cli(?:\.cmd)?$/u.test(sentryCliBinary)) {
+  if (!isAbsolute(sentryCliBinary) || !/(?:^|[/\\])sentry-cli(?:\.exe)?$/u.test(sentryCliBinary)) {
     throw new Error("Desktop telemetry upload requires the absolute pinned Sentry CLI binary.");
   }
   if (manifest.release !== `${RELEASE_ID_PREFIX}${manifest.version}+${sourceCommit}`

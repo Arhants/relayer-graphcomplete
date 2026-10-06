@@ -8,9 +8,9 @@ This runbook covers the operator-controlled steps around the code-owned release 
 | --- | --- | --- | --- | --- |
 | `macos-arm64` | Developer ID DMG and updater ZIP | `desktop/macos/arm64/beta-mac.yml` | `desktop/macos/arm64/latest-mac.yml` | Physical or remote Apple Silicon Mac |
 | `macos-x64` | Developer ID DMG and updater ZIP | `desktop/macos/x64/beta-mac.yml` | `desktop/macos/x64/latest-mac.yml` | GitHub `macos-15-intel`; physical Intel Mac remains stronger final proof |
-| `windows-x64` | **Blocked; pipeline disabled.** Azure Artifact Signing NSIS installer is implemented but unverified. | `desktop/windows/x64/beta.yml` | `desktop/windows/x64/latest.yml` | Interactive Windows 11 Azure Virtual Desktop |
+| `windows-x64` | **Candidate qualification pending.** Independent manual Azure Artifact Signing NSIS workflow; native signing and VM acceptance remain unverified. | `desktop/windows/x64/beta.yml` | `desktop/windows/x64/latest.yml` | Interactive Windows 11 Azure Virtual Desktop |
 
-Enabled targets for a version come from one commit. Preview publication and Stable promotion happen independently per target. Windows is disabled until the exact publisher variable exists, Azure signing succeeds, and the interactive canary passes.
+Each candidate seals its own source commit. macOS and Windows manage versions independently. Preview publication and Stable promotion happen independently per target. Windows is disabled until the exact publisher variable exists, Azure signing succeeds, and the interactive canary passes.
 
 Every signed Preview and Stable candidate uses `https://share.relayerlabs.ai`.
 Stable promotion reuses the signed Preview bytes, so their sealed service origin
@@ -36,7 +36,7 @@ The intended Azure resources are:
 
 - Artifact Signing account: `relayercodesigning`
 - Region endpoint: `https://eus.codesigning.azure.net/`
-- Public Trust certificate profile: `relayer-public-trust`
+- Public Trust certificate profile: `relayer-windows`
 - GitHub environment: `desktop-production-windows`
 - GitHub repository: `vishaltandale00/relayer-graphcomplete`
 
@@ -58,11 +58,13 @@ Set these non-secret variables on `desktop-production-windows` after the profile
 AZURE_TENANT_ID
 AZURE_CLIENT_ID
 AZURE_SUBSCRIPTION_ID
-RELAYER_WINDOWS_CERTIFICATE_PROFILE=relayer-public-trust
+RELAYER_WINDOWS_CERTIFICATE_PROFILE=relayer-windows
 RELAYER_WINDOWS_PUBLISHER_NAME=<exact validated certificate publisher>
 ```
 
 The Windows job uses the pinned official Azure login action to exchange GitHub's environment-bound OIDC assertion for a short-lived Azure CLI session. Electron-builder's Artifact Signing module consumes that session. No Azure client secret or exported signing certificate belongs in GitHub.
+
+Before either cold Windows build, `node scripts/check-windows-signature-runtime.mjs` exercises the production signature query through the workflow's `pwsh` to Node child process. The Windows PowerShell verifier removes inherited `PSModulePath` only from its own child environment, allowing compatible built-in modules to load. The read-only probe requires a valid Microsoft system executable signature and rejects its different publisher; it cannot qualify Relayer signing or replace the final application, Rust-server and installer signature gates.
 
 ## Update publication authority
 
@@ -147,18 +149,33 @@ This rollout completed with native canary workflow `32350071508` and Stable prom
 
 Do not promote the bootstrap version to Stable. Apple Silicon Preview `0.2.9` and Stable `0.2.4` remain valid independent feed history; `0.2.7` is the historical first target-aware Apple Silicon candidate. The immutable `desktop-v0.2.6` tag predates the target-aware publisher and is not an Intel or Windows bootstrap candidate.
 
-### Windows rollout blocker
+### Windows candidate and rollout
 
-The Windows workflow path is implemented but disabled. Use this sequence:
+Windows owns `desktop/windows-version.json`, starting at `0.2.0`. macOS keeps its existing package version and `desktop-v*` tags. Windows reserves `desktop-windows-v*` tags; no Windows publication workflow or tag is enabled in the candidate milestone.
 
-1. Complete identity validation and set the exact `RELAYER_WINDOWS_PUBLISHER_NAME` value.
-2. Enable only the Windows candidate job and run the Windows-inclusive authority audit.
-3. Run the manual workflow and verify the Azure-signed installer and receipt. Manual runs cannot publish.
-4. Add Windows Preview publication and publish two new reviewed Windows versions.
-5. Prove the bootstrap-to-target update in the interactive Windows 11 AVD session.
-6. Allow Windows Stable promotion only after the committed canary evidence passes review.
+`Windows Desktop Candidate` runs unsigned native qualification only on pull requests labeled `windows-qualification`, regardless of changed paths. It grants no signing identity to that job. A manual run from main additionally requires successful exact-source main CI, signs through `desktop-production-windows`, verifies the signed application and installer, uploads telemetry, and seals its candidate artifact. It cannot change an update feed. Main CI and macOS release jobs have no dependency on this workflow.
 
-The manual run cannot publish. The tag run rejects a tag/version mismatch and a commit outside `origin/main`.
+The unprivileged manual-main qualification job builds release native inputs once, packages those exact bytes unsigned, and repeats the native lifecycle. It preserves two EXEs, matching PDBs, and a verified manifest as a private build-input artifact. The protected package job authenticates that current run/attempt/source artifact before Azure login and writes its existing same-job handoff. After fresh login it obtains the Artifact Signing resource token; packaging rechecks the license and handoff, then performs existing assembly, lifecycle, signature, telemetry, and sealing gates without recompilation. Required handoff rejection stops signing. No handoff grants publication authority.
+
+Both Windows jobs run the complete telemetry-artifact fixture file in the combined cache/telemetry preflight after locked dependency installation and before long native preparation or adoption. The real nested-ASAR/default-discovery scenario checks canonical source-map identity and exact packaged source bytes, alongside the existing native debug-ID, tampering, credential and upload-authority boundaries. ASAR extraction paths follow the executing host separator; source-map module names remain canonical repository paths. Fixture archives await payload stream completion before inspection. This maps the telemetry lookup and early workflow gates to TEL-010 and PRD 14.2/14.3; the hosted Windows pass and actual signed-candidate upload/sealing remain separate required evidence.
+
+Windows copies the native release directory with a filter naming only the two Rust EXEs. electron-builder's single-file resource mappings bypass its signing transformer; filtered directory copies invoke the existing Azure signing path on the packaged copies without mutating the handoff inputs or including PDBs. The `routes both copied Rust executables` scenario in `test/windows-candidate.test.mjs` exercises the pinned builder's actual matcher, copy, and signing-transformer implementations, including source preservation, exact executable inventory, and signing-failure propagation. Its signing callback is a deterministic fixture; the Windows runner's application and installer Authenticode gates remain required proof of actual signing.
+
+Both Windows jobs launch the locked `@sentry/cli-win32-x64` executable through Node with `--version` before native compilation, without upload credentials. Telemetry uses that same native executable and argument arrays: direct Node spawning cannot execute a Windows `.cmd` shim without a shell. The upload plan admits the native `.exe` and rejects the unsupported shim while retaining source, target, project and credential checks. This startup probe does not establish actual telemetry upload.
+
+Both Windows jobs run the real-ASAR packaged-contract scenario before native compilation. The verifier canonicalizes backslashes and leading separators for the entire inventory, preserving updater presence and deferred Prime/Codex/Claude runtime exclusions on Windows. The same scenario retains exact source metadata and sealed feed rejection. It uses the actual ASAR producer on the runner and also exercises Windows-form inventory through the production verifier; local acceptance is not hosted Windows proof.
+
+Before either Windows native build, `node scripts/check-windows-rust-symbols.mjs` compiles two dependency-free targets with the pinned Rust toolchain and MSVC. It checks the real EXE/PDB outputs through the same source-path resolver used by handoff and telemetry: Cargo retains hyphens in EXE names and uses underscores in PDB names. Telemetry copies those source PDBs to its existing hyphenated manifest paths, then correlates their GUID and age with the packaged EXEs. This probe is Windows-only; local fixtures do not substitute for its compiler proof.
+
+The native source route uses MSVC, pinned Ladybug and static OpenSSL, locked offline Cargo, PE architecture/import verification for both Rust executables, and a packaged graph-server create/lock/shutdown/reopen test. Manual main runs may reuse verified compatible Windows native artifacts; every hit repeats unsigned packaging and lifecycle proof. Labeled PRs retain the separate cold unsigned qualification recipe. Never relax the main-source gate to sign pull-request code.
+
+1. Configure the active profile and exact certificate subject. Verify the OIDC federation and profile-scoped signer role.
+2. Run the Windows-inclusive authority audit and unsigned Windows native qualification.
+3. Merge the reviewed candidate implementation, wait for main CI, and dispatch the manual Windows workflow.
+4. Download the signed artifact by immutable ID; preserve its run, attempt, digest, source, version, and receipt.
+5. Test that installer in the interactive Windows 11 VM before enabling Windows publication.
+6. In the later publication change, protect Windows tags and enable the target feed. Publish two reviewed versions and prove the VM update.
+7. Promote Windows Stable only after committed canary evidence passes review.
 
 ## Native macOS canaries
 
@@ -274,3 +291,9 @@ confirmation: promote-<target key>-X.Y.Z
 ```
 
 Promotion revalidates the committed evidence, immutable Preview receipt, historical manifest, and every public artifact byte. It moves only that target's Stable pointer and never rebuilds or re-signs the application.
+
+### Windows native cache operation
+
+See [the Windows cache contract](agents/ci.md#windows-release-native-build-reuse) and [checkpoint ledger](evidence/windows-native-cache/README.md). A new manual dispatch is the supported signing fix loop: compatible native binaries can be restored from an earlier successful native job even when later signing failed. Rerunning only failed package jobs cannot adopt a previous attempt's artifact; dispatch a new run or rerun all required jobs. Never weaken the attempt binding.
+
+The optional `force_native_rebuild` dispatch input bypasses binary reuse while retaining dependency/preparation/compiler acceleration, so the fallback can be measured. Record actual compiler statistics and stage durations. A cache hit or fixture pass alone does not establish a latency gain, signing success, installation, or release acceptance.

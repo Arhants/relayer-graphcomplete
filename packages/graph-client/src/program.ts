@@ -1,5 +1,6 @@
-import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { createHash, randomUUID } from "node:crypto";
+import { linkSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -17,11 +18,11 @@ const ID_PATTERN = /^[0-9a-f]{8}$/;
 
 /**
  * The program this process is running, once it is known. A stdin program is
- * known from `process._eval`; a patched program is known because
- * `rerunGraphProgram` saved it before importing it. Both share this module
- * instance, since the patched program imports the same client URL.
+ * known from `process._eval`; a patched program carries execution-local context
+ * through its import, so asynchronous and nested reruns retain their own identity.
  */
-let activeProgram: { readonly id: string; readonly source: string } | undefined;
+type SavedProgram = { readonly id: string; readonly source: string };
+const runningProgram = new AsyncLocalStorage<SavedProgram>();
 let importGeneration = 0;
 
 /** A short content hash. The same text always has the same id, so a repeat is harmless. */
@@ -40,7 +41,22 @@ function programPath(directory: string, id: string): string {
 
 function saveProgram(directory: string, id: string, source: string): void {
   mkdirSync(join(directory, "programs"), { recursive: true, mode: 0o700 });
-  writeFileSync(programPath(directory, id), source, { mode: 0o600 });
+  const destination = programPath(directory, id);
+  const temporary = `${destination}.${randomUUID()}.tmp`;
+  writeFileSync(temporary, source, { mode: 0o600, flag: "wx" });
+  try {
+    try {
+      // Publish complete bytes without replacing an existing named program.
+      linkSync(temporary, destination);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      if (readFileSync(destination, "utf8") !== source) {
+        throw new GraphProgramEditError(`Saved program id ${id} already names different bytes. Rerun the full program.`);
+      }
+    }
+  } finally {
+    unlinkSync(temporary);
+  }
 }
 
 /**
@@ -52,6 +68,7 @@ function saveProgram(directory: string, id: string, source: string): void {
  */
 export function rememberGraphProgram(directory: string | undefined): void {
   if (directory === undefined) return;
+  let activeProgram = runningProgram.getStore();
   if (activeProgram === undefined) {
     const source = stdinProgramSource();
     if (source === undefined) {
@@ -74,7 +91,7 @@ export function applyGraphProgramEdits(program: string, edits: readonly GraphPro
     throw new GraphProgramEditError("rerunGraphProgram needs a non-empty array of { find, replace } edits.");
   }
   let patched = program;
-  edits.forEach((edit, index) => {
+  for (const [index, edit] of edits.entries()) {
     const label = `Edit ${index + 1}`;
     if (typeof edit?.find !== "string" || edit.find === "" || typeof edit.replace !== "string") {
       throw new GraphProgramEditError(`${label} needs a non-empty find string and a replace string.`);
@@ -83,11 +100,11 @@ export function applyGraphProgramEdits(program: string, edits: readonly GraphPro
     if (first === -1) {
       throw new GraphProgramEditError(`${label}: find text was not found in that program. Copy it exactly from the program with this id, or rerun the full program.`);
     }
-    if (patched.indexOf(edit.find, first + edit.find.length) !== -1) {
+    if (patched.indexOf(edit.find, first + 1) !== -1) {
       throw new GraphProgramEditError(`${label}: find text appears more than once in that program. Include more surrounding lines so it matches one place.`);
     }
     patched = patched.slice(0, first) + edit.replace + patched.slice(first + edit.find.length);
-  });
+  }
   return patched;
 }
 
@@ -113,16 +130,16 @@ export async function rerunGraphProgram(
   } catch {
     throw new GraphProgramEditError(`No saved program has id ${id} in this run. Use the id printed by the program you want to edit; a program that crashed before printing one must be rerun in full.`);
   }
+  if (graphProgramId(previous) !== id) {
+    throw new GraphProgramEditError(`Saved program ${id} no longer matches its id. Rerun the full program.`);
+  }
   const patched = applyGraphProgramEdits(previous, edits);
   const patchedId = graphProgramId(patched);
   saveProgram(directory, patchedId, patched);
   console.log(`graph program ${id} edited -> running as ${patchedId}`);
-  const before = activeProgram;
-  activeProgram = { id: patchedId, source: patched };
-  try {
-    // A query keeps import() from returning a cached module when the same text runs twice.
+  // Context follows each import independently, including concurrent and nested reruns.
+  // A query keeps import() from returning a cached module when the same text runs twice.
+  await runningProgram.run({ id: patchedId, source: patched }, async () => {
     await import(`${pathToFileURL(programPath(directory, patchedId)).href}?run=${++importGeneration}`);
-  } finally {
-    activeProgram = before;
-  }
+  });
 }

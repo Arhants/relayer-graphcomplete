@@ -811,6 +811,8 @@ describe("CodexBasicHarness", () => {
     expect(submitted[0]?.environment.RELAYER_GRAPH_PREVIEW_DIR).toBe("/tmp/previews-1");
     expect(submitted[0]?.environment.RELAYER_GRAPH_PROGRAM_DIR).toBe("/tmp/programs-1");
     expect(submitted[0]?.prompt).toContain("rerunGraphProgram(\"<id>\"");
+    expect(submitted[0]?.prompt).toContain("Rerun only for an explicit repairable graph rejection");
+    expect(submitted[0]?.prompt).toContain("outcome is unknown, do not rerun");
     await harness.complete(plain);
     expect(submitted[1]?.environment).not.toHaveProperty("RELAYER_GRAPH_PROGRAM_DIR");
     expect(submitted[1]?.prompt).not.toContain("rerunGraphProgram");

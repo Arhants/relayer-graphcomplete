@@ -750,6 +750,7 @@ describe("ClaudeBasicHarness", () => {
       expect(previewed.call.options.env.RELAYER_GRAPH_PREVIEW_DIR).toBe("/tmp/previews-1");
       expect(previewed.call.options.env.RELAYER_GRAPH_PROGRAM_DIR).toBe("/tmp/programs-1");
       // Claude runs the fallback heredoc, so a granted folder lets it name a program and send edits.
+      expect(previewed.call.prompt).toContain("outcome is unknown, do not rerun");
       expect(previewed.call.prompt).toContain('await rerunGraphProgram("<id>", [{ find: "exact text from that program", replace: "fixed text" }])');
       expect(previewed.call.options.allowedTools).toEqual(allowedTools);
       expect(previewed.call.options.mcpServers).toHaveProperty("relayer_graph_preview");

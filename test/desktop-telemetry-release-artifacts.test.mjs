@@ -1,6 +1,10 @@
 import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { finished } from "node:stream/promises";
+import { SentryCli } from "@sentry/cli";
 
 import { createPackage } from "@electron/asar";
 import { describe, expect, it, vi } from "vitest";
@@ -41,8 +45,40 @@ describe("desktop telemetry release artifacts", () => {
     expect(lock.packages[""].devDependencies["@sentry/cli"]).toBe("3.7.0");
     expect(lock.packages["node_modules/@sentry/cli"]).toMatchObject({ version: "3.7.0", dev: true });
     const workflow = parseYaml(await readFile(new URL("../.github/workflows/desktop-signed-preview.yml", import.meta.url), "utf8"));
-    for (const name of ["package-macos", "package-windows"]) {
-      const steps = workflow.jobs[name].steps;
+    const windowsWorkflow = parseYaml(await readFile(new URL("../.github/workflows/desktop-windows-candidate.yml", import.meta.url), "utf8"));
+    const nativeCli = "${{ github.workspace }}\\node_modules\\@sentry\\cli-win32-x64\\bin\\sentry-cli.exe";
+    expect(lock.packages["node_modules/@sentry/cli-win32-x64"]).toMatchObject({ version: "3.7.0", optional: true });
+    expect(lock.packages["node_modules/@sentry/cli-win32-x64"].integrity).toMatch(/^sha512-/);
+    const upload = windowsWorkflow.jobs.package.steps.find(step => step.run === "node desktop/release/telemetry-artifacts.mjs");
+    expect(upload.env.SENTRY_CLI_BINARY).toBe(nativeCli);
+    for (const job of [windowsWorkflow.jobs.qualify, windowsWorkflow.jobs.package]) {
+      const probe = job.steps.findIndex(step => step.name === "Verify pinned Windows telemetry CLI startup");
+      const cold = job.steps.findIndex(step => step.run?.includes("cargo fetch") || step.run?.includes("windows-native-build.mjs adopt"));
+      expect(probe).toBeGreaterThan(job.steps.findIndex(step => step.run === "npm ci"));
+      expect(cold).toBeGreaterThan(probe);
+      const telemetry = job.steps.findIndex(step => step.name === "Verify Windows native cache transfer and handoff");
+      expect(telemetry).toBeGreaterThan(job.steps.findIndex(step => step.run === "npm ci"));
+      expect(job.steps[telemetry].run).toBe("node node_modules/vitest/vitest.mjs run test/windows-native-cache.test.mjs test/desktop-telemetry-release-artifacts.test.mjs");
+      expect(job.steps[telemetry].env?.SENTRY_AUTH_TOKEN).toBeUndefined();
+      expect(job.env?.SENTRY_AUTH_TOKEN).toBeUndefined();
+      for (const [index, step] of job.steps.entries()) {
+        if (step.run?.includes("cargo fetch") || step.run?.includes("windows-native-build.mjs qualify") || step.run?.includes("windows-native-build.mjs adopt")) {
+          expect(index).toBeGreaterThan(telemetry);
+        }
+        if (index <= telemetry) expect(step.env?.SENTRY_AUTH_TOKEN).toBeUndefined();
+      }
+      expect(job.steps[probe].env).toEqual({ SENTRY_CLI_BINARY: nativeCli });
+      expect(job.steps[probe].run).toContain("spawnSync(process.env.SENTRY_CLI_BINARY,['--version'],{stdio:'inherit'})");
+      const script = job.steps[probe].run.slice('node -e "'.length, -1);
+      const environment = { ...process.env, SENTRY_CLI_BINARY: SentryCli.getPath() };
+      delete environment.SENTRY_AUTH_TOKEN;
+      const { stdout } = await promisify(execFile)(process.execPath, ["-e", script], { env: environment });
+      expect(stdout).toContain("sentry-cli 3.7.0");
+      await expect(promisify(execFile)(process.execPath, ["-e", script], {
+        env: { ...environment, SENTRY_CLI_BINARY: join(tmpdir(), "missing-relayer-sentry-cli.exe") },
+      })).rejects.toThrow();
+    }
+    for (const steps of [workflow.jobs["package-macos"].steps, windowsWorkflow.jobs.package.steps]) {
       const install = steps.findIndex((step) => step.run === "npm ci");
       const build = steps.findIndex((step) => step.run?.includes("npm run desktop:dist:preview"));
       const upload = steps.findIndex((step) => step.run === "node desktop/release/telemetry-artifacts.mjs");
@@ -76,7 +112,7 @@ describe("desktop telemetry release artifacts", () => {
     await writeFile(join(asarSource, "main", "index.mjs"), "export const answer = 42;\n", "utf8");
     await writeFile(join(asarSource, "node_modules", "@relayer", "harness-host", "dist", "index.js"), "export const answer = 42;\n", "utf8");
     await writeFile(join(packagedResources, "renderer", "src", "main.js"), "export const answer = 42;\n", "utf8");
-    await createPackage(asarSource, join(packagedResources, "app.asar"));
+    await finished(await createPackage(asarSource, join(packagedResources, "app.asar")), { cleanup: true });
     const rustBinary = join(root, "target", "aarch64-apple-darwin", "release", "relayer-app-server");
     const packagedRustBinary = join(packagedResources, "bin", "relayer-app-server");
     await mkdir(join(rustBinary, ".."), { recursive: true });
@@ -163,7 +199,7 @@ describe("desktop telemetry release artifacts", () => {
     })).rejects.toThrow("dSYM UUID");
   });
 
-  it("correlates the packaged Windows PE CodeView identity with its PDB", async () => {
+  it("correlates Windows PDBs and reads nested packaged source maps through native ASAR paths", async () => {
     const root = await mkdtemp(join(tmpdir(), "relayer-telemetry-windows-symbols-"));
     const outputRoot = join(root, "desktop", "dist", "telemetry");
     const packagedApplication = join(root, "desktop", "dist", "win-unpacked");
@@ -174,17 +210,28 @@ describe("desktop telemetry release artifacts", () => {
     await writeFile(join(root, "desktop", "main", "index.mjs"), "export const answer = 42;\n", "utf8");
     await writeFile(join(asarSource, "main", "index.mjs"), "export const answer = 42;\n", "utf8");
     await mkdir(resources, { recursive: true });
-    await createPackage(asarSource, join(resources, "app.asar"));
+    await mkdir(join(resources, "renderer"), { recursive: true });
+    for (const directory of [join(root, "desktop/main/credentials"), join(asarSource, "main/credentials")]) {
+      await mkdir(directory, { recursive: true });
+      await writeFile(join(directory, "codex-credential-adapter.mjs"), "export const credentialAdapter = 42;\n");
+    }
+    await finished(await createPackage(asarSource, join(resources, "app.asar")), { cleanup: true });
     const rustBinary = join(root, "target", "x86_64-pc-windows-msvc", "release", "relayer-app-server.exe");
     await mkdir(join(rustBinary, ".."), { recursive: true });
     await mkdir(join(resources, "bin"), { recursive: true });
     await writeFile(rustBinary, "pe", "utf8");
-    await writeFile(join(rustBinary, "..", "relayer-app-server.pdb"), "pdb", "utf8");
+    await writeFile(join(rustBinary, "..", "relayer_app_server.pdb"), "app pdb", "utf8");
     await writeFile(join(resources, "bin", "relayer-app-server.exe"), "pe", "utf8");
+    const graphBinary = join(rustBinary, "..", "relayer-graph-server.exe");
+    await writeFile(graphBinary, "graph pe", "utf8");
+    await writeFile(join(rustBinary, "..", "relayer_graph_server.pdb"), "graph pdb", "utf8");
+    await writeFile(join(resources, "bin", "relayer-graph-server.exe"), "graph pe", "utf8");
     const guid = "87654321-4321-4321-4321-cba987654321";
-    const capture = vi.fn(async (command) => ({
-      stdout: command === "llvm-readobj" ? `PDBGUID: {${guid}}\nPDBAge: 3\n` : `Guid: ${guid}\nAge: 3\n`,
-    }));
+    const graphGuid = "12345678-1234-1234-1234-123456789abc";
+    const capture = vi.fn(async (command, args) => {
+      const identity = args.at(-1).includes("relayer-graph-server") ? graphGuid : guid;
+      return { stdout: command === "llvm-readobj" ? `PDBGUID: {${identity}}\nPDBAge: 3\n` : `Guid: ${identity}\nAge: 3\n` };
+    });
     const manifest = await prepareDesktopTelemetryArtifacts({
       contract: contract({
         targetKey: "windows-x64",
@@ -196,12 +243,30 @@ describe("desktop telemetry release artifacts", () => {
       repositoryRoot: root,
       outputRoot,
       packagedApplication,
-      sourceGroups: [["electron", "desktop/main/index.mjs"]],
-      rustBinaries: [rustBinary],
+      rustBinaries: [rustBinary, graphBinary],
       capture,
     });
-    expect(manifest.nativeDebugIdentities[0].debugId).toBe(`${guid}-3`);
-    expect(capture).toHaveBeenCalledWith("llvm-readobj", expect.arrayContaining([expect.stringMatching(/relayer-app-server\.exe$/u)]));
+    expect(manifest.sourceMaps.map(entry => [entry.component, entry.module])).toEqual([
+      ["electron", "desktop/main/credentials/codex-credential-adapter.mjs"],
+      ["electron", "desktop/main/index.mjs"],
+    ]);
+    const nestedSource = manifest.sourceMaps[0];
+    expect(await readFile(join(outputRoot, nestedSource.source.path), "utf8")).toBe("export const credentialAdapter = 42;\n");
+    expect(JSON.parse(await readFile(join(outputRoot, nestedSource.path), "utf8"))).toMatchObject({
+      sources: ["desktop/main/credentials/codex-credential-adapter.mjs"],
+      sourcesContent: ["export const credentialAdapter = 42;\n"],
+    });
+    expect(await verifyDesktopTelemetryArtifacts({ outputRoot })).toEqual(manifest);
+    expect(manifest.nativeDebugIdentities).toEqual([
+      { binary: "bin/relayer-app-server.exe", debug: "debug/relayer-app-server.pdb", debugId: `${guid}-3` },
+      { binary: "bin/relayer-graph-server.exe", debug: "debug/relayer-graph-server.pdb", debugId: `${graphGuid}-3` },
+    ]);
+    for (const [name, contents] of [["relayer-app-server", "app pdb"], ["relayer-graph-server", "graph pdb"]]) {
+      const copiedPdb = join(outputRoot, "debug", `${name}.pdb`);
+      expect(await readFile(copiedPdb, "utf8")).toBe(contents);
+      expect(capture).toHaveBeenCalledWith("llvm-readobj", ["--coff-debug-directory", join(resources, "bin", `${name}.exe`)], { timeout: 15_000, maxBuffer: 4 * 1024 * 1024 });
+      expect(capture).toHaveBeenCalledWith("llvm-pdbutil", ["dump", "-summary", copiedPdb], { timeout: 15_000, maxBuffer: 4 * 1024 * 1024 });
+    }
 
     const mismatchedCapture = vi.fn(async (command) => ({
       stdout: command === "llvm-readobj" ? `PDBGUID: {${guid}}\nPDBAge: 3\n` : `Guid: ${guid}\nAge: 4\n`,
@@ -271,6 +336,13 @@ describe("desktop telemetry release artifacts", () => {
       SENTRY_ORG: "relayer-labs-llc",
       SENTRY_PROJECT: "graphcomplete-desktop",
     };
+    const nativeCli = "/opt/relayer/node_modules/@sentry/cli-win32-x64/bin/sentry-cli.exe";
+    const nativePlan = createDesktopTelemetryUploadPlan({ manifest,
+      environment: { ...environment, SENTRY_CLI_BINARY: nativeCli }, artifactsRoot: "/tmp/telemetry" });
+    expect(nativePlan.every(step => step.command === nativeCli)).toBe(true);
+    expect(() => createDesktopTelemetryUploadPlan({ manifest,
+      environment: { ...environment, SENTRY_CLI_BINARY: "/opt/relayer/node_modules/.bin/sentry-cli.cmd" },
+      artifactsRoot: "/tmp/telemetry" })).toThrow("absolute pinned Sentry CLI binary");
     const plan = createDesktopTelemetryUploadPlan({ manifest, environment, artifactsRoot: "/tmp/telemetry" });
     expect(plan).toHaveLength(4);
     expect(plan.flatMap((step) => step.args)).toContain(manifest.release);

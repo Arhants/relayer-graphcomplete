@@ -96,7 +96,7 @@
     { "exact": "docs/graph-query-v1.md", "package": "relayer-graph-core" }
   ],
   "npmOwners": [
-    { "prefix": "packages/eval-runner/", "package": "@relayer/eval-runner", "vitestFiles": ["packages/eval-runner/test", "test/eval-app-integration.test.mjs"] },
+    { "prefix": "packages/eval-runner/", "package": "@relayer/eval-runner", "vitestFiles": ["packages/eval-runner/test", "test/eval-app-integration.test.mjs", "test/eval-task-actor.test.mjs", "test/eval-task-actor-errors.test.mjs"] },
     { "prefix": "packages/visual-assets/", "package": "@relayer/visual-assets", "vitestFiles": ["packages/visual-assets/test"] },
     {
       "prefix": "packages/graph-client/",
@@ -116,9 +116,13 @@
         "test/composer-context-state.test.mjs",
         "test/composer-provider-lifecycle.test.mjs",
         "test/desktop-release-main-ci-check.test.mjs",
+        "test/windows-candidate.test.mjs",
+        "test/windows-native-cache.test.mjs",
+        "test/ladybug-packaged-lifecycle.test.mjs",
         "test/desktop-shell.test.mjs",
         "test/eval-web-host.test.mjs",
         "test/eval-human-task.test.mjs",
+        "test/eval-task-actor.test.mjs", "test/eval-task-actor-errors.test.mjs", "test/eval-setup-registry.test.mjs",
         "test/eval-provider-setup.test.mjs",
         "test/eval-service-simulated-user.test.mjs",
         "test/eval-service-human-model.test.mjs",
@@ -150,6 +154,17 @@
     }
   ],
   "chapterOwners": [
+    {"exact": "desktop/release/build-native-release.mjs", "chapters": ["vitest", "packaging"], "vitestFiles": ["test/windows-native-cache.test.mjs", "test/windows-candidate.test.mjs", "test/signed-native-cache.test.mjs", "test/desktop-telemetry-release-artifacts.test.mjs"]},
+    {"exact": "desktop/release/windows-native-build.mjs", "chapters": ["vitest", "packaging"], "vitestFiles": ["test/windows-native-cache.test.mjs", "test/windows-candidate.test.mjs", "test/signed-native-cache.test.mjs", "test/desktop-telemetry-release-artifacts.test.mjs"]},
+    {"exact": "desktop/release/windows-native-cache.mjs", "chapters": ["vitest", "packaging"], "vitestFiles": ["test/windows-native-cache.test.mjs", "test/windows-candidate.test.mjs", "test/signed-native-cache.test.mjs", "test/desktop-telemetry-release-artifacts.test.mjs"]},
+    {"exact": "desktop/release/windows-native-identity.mjs", "chapters": ["vitest", "packaging"], "vitestFiles": ["test/windows-native-cache.test.mjs", "test/windows-candidate.test.mjs", "test/signed-native-cache.test.mjs", "test/desktop-telemetry-release-artifacts.test.mjs"]},
+    { "exact": "desktop/release/verify-windows-app.mjs", "chapters": ["vitest", "packaging"], "vitestFiles": ["test/desktop-shell.test.mjs", "test/windows-candidate.test.mjs"] },
+    { "exact": "scripts/check-windows-signature-runtime.mjs", "chapters": ["vitest", "packaging"], "vitestFiles": ["test/desktop-shell.test.mjs", "test/windows-candidate.test.mjs"] },
+    { "exact": "desktop/release/windows-rust-debug.mjs", "chapters": ["vitest", "packaging"], "vitestFiles": ["test/windows-candidate.test.mjs", "test/desktop-telemetry-release-artifacts.test.mjs"] },
+    { "exact": "desktop/release/windows-native-handoff.mjs", "chapters": ["vitest", "packaging"], "vitestFiles": ["test/windows-candidate.test.mjs", "test/desktop-telemetry-release-artifacts.test.mjs"] },
+    { "exact": "desktop/release/telemetry-artifacts.mjs", "chapters": ["vitest", "packaging"], "vitestFiles": ["test/windows-candidate.test.mjs", "test/desktop-telemetry-release-artifacts.test.mjs"] },
+    { "exact": "crates/relayer-graph-server/build.rs", "chapters": ["vitest", "packaging"], "vitestFiles": ["test/windows-candidate.test.mjs", "test/ladybug-packaged-lifecycle.test.mjs"] },
+    { "exact": "crates/relayer-graph-server/build_support/openssl_link.rs", "chapters": ["vitest", "packaging"], "vitestFiles": ["test/windows-candidate.test.mjs", "test/ladybug-packaged-lifecycle.test.mjs"] },
     {
       "prefix": "python/relayer-graph/src/",
       "chapters": ["python", "vitest", "packaging"],
@@ -174,7 +189,7 @@
     { "prefix": "docs/agents/", "chapters": ["vitest"], "vitestFiles": ["test/documentation-product-boundary.test.mjs"] },
     { "prefix": "docs/decisions/", "chapters": ["vitest", "prd"], "vitestFiles": ["test/documentation-product-boundary.test.mjs"] },
     { "exact": "docs/architecture.md", "chapters": ["vitest", "prd"], "vitestFiles": ["test/documentation-product-boundary.test.mjs"] },
-    { "exact": ".gitattributes", "chapters": ["vitest"], "vitestFiles": ["test/ladybug-packaged-lifecycle.test.mjs", "test/prime-agent-packaging.test.mjs"] },
+    { "exact": ".gitattributes", "chapters": ["vitest"], "vitestFiles": ["test/ladybug-packaged-lifecycle.test.mjs", "test/prime-agent-packaging.test.mjs", "test/windows-candidate.test.mjs"] },
     { "exact": ".gitignore", "chapters": [] },
     { "exact": "LICENSE", "chapters": [] },
     { "exact": "CONTRIBUTING.md", "chapters": [] },
@@ -195,6 +210,7 @@
     { "exact": "docs/provider-model-family-harness-test-matrix.md", "chapters": [] }
   ],
   "scriptOwners": [
+    { "exact": "scripts/check-windows-rust-symbols.mjs", "chapters": ["vitest", "packaging"], "vitestFiles": ["test/windows-candidate.test.mjs", "test/desktop-telemetry-release-artifacts.test.mjs"] },
     { "exact": "scripts/fixtures/share-action-details.mjs", "chapters": ["vitest"], "vitestFiles": ["test/public-share-viewer.test.mjs", "test/conversation-export-eval-e2e.test.mjs"] },
     { "exact": "scripts/fixtures/public-share-embed.mjs", "chapters": ["vitest"], "vitestFiles": ["test/public-share-embed.test.mjs", "test/public-share-viewer.test.mjs"] },
     { "exact": "scripts/capture-public-share-embed-evidence.mjs", "chapters": ["vitest"], "vitestFiles": ["test/public-share-embed.test.mjs", "test/public-share-viewer.test.mjs"] },
@@ -214,7 +230,7 @@
     { "exact": "scripts/run-telemetry-evidence.mjs", "chapters": ["vitest"], "vitestFiles": ["test/telemetry-evidence.test.mjs"] },
     { "exact": "scripts/prepare-ladybug-source.mjs", "chapters": ["vitest", "packaging", "receipts"], "vitestFiles": ["test/ladybug-packaged-lifecycle.test.mjs", "test/ladybug-native-receipts.test.mjs", "test/ladybug-source-build.test.mjs"] },
     { "exact": "scripts/ci/lbug-native-source-contract.mjs", "chapters": ["vitest"], "vitestFiles": ["test/ci-lbug-artifact.test.mjs"] },
-    { "exact": "scripts/capture-ladybug-packaged-lifecycle.mjs", "chapters": ["vitest"], "vitestFiles": ["test/ladybug-packaged-lifecycle.test.mjs"] },
+    { "exact": "scripts/capture-ladybug-packaged-lifecycle.mjs", "chapters": ["vitest", "packaging"], "vitestFiles": ["test/ladybug-packaged-lifecycle.test.mjs", "test/desktop-shell.test.mjs"] },
     { "exact": "scripts/audit-desktop-release-authority.mjs", "chapters": ["vitest"], "vitestFiles": ["test/desktop-shell.test.mjs"] },
     { "exact": "scripts/capture-packaged-prime-family-evidence.mjs", "chapters": ["vitest"], "vitestFiles": ["test/prime-family-evidence-contract.test.mjs"] },
     { "exact": "scripts/prime-evidence/contract-matrix.mjs", "chapters": ["vitest"], "vitestFiles": ["test/prime-family-evidence-contract.test.mjs"] },

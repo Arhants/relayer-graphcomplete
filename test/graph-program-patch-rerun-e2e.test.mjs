@@ -38,8 +38,17 @@ async function runProgram(program, environment) {
   }
 }
 
-const fullProgram = (interactionNodeId) => `import { RelayerGraphClient, NodeObject, LayerObject, LayerLayoutObject, NodePlacementObject } from "${client}";
+const fullProgram = (interactionNodeId, outcome = "repair") => `import { RelayerGraphClient, NodeObject, LayerObject, LayerLayoutObject, NodePlacementObject } from "${client}";
 const graph = RelayerGraphClient.fromEnv();
+${outcome === "lost-ack" ? `const originalFetch = globalThis.fetch;
+globalThis.fetch = async (...args) => {
+  const response = await originalFetch(...args);
+  if (String(args[0]).endsWith("/api/graph/submit") && response.ok) {
+    await response.arrayBuffer();
+    throw new TypeError("lost submit acknowledgement after commit");
+  }
+  return response;
+};` : ""}
 const answer = new NodeObject("info", "Patched answer", "The second run of this program was a patch.", "concept", "answer");
 await graph.submitNode(answer);
 const layer = new LayerObject([answer], [], new LayerLayoutObject([new NodePlacementObject(answer, 0.5, 0.5)], "default"), "answer-layer");
@@ -54,7 +63,7 @@ await rerunGraphProgram(${JSON.stringify(id)}, [{
 }]);
 `;
 
-function fixtureFactory(state) {
+function fixtureFactory(state, outcome) {
   return () => ({
     traceSupport: () => ({ prompt: "none", messages: "none", reasoningSummaries: "none", modelCalls: "none", toolCalls: "none", usage: "none", childStreams: "none", nativeArtifacts: "none" }),
     state: () => ({}),
@@ -68,18 +77,26 @@ function fixtureFactory(state) {
         RELAYER_NODE_ID: String(capability.nodeId),
         RELAYER_GRAPH_PROGRAM_DIR: capability.programDirectory,
       };
-      state.first = await runProgram(fullProgram(context.inputGraph.id), environment);
+      state.first = await runProgram(fullProgram(context.inputGraph.id, outcome), environment);
       // The model reads the id from the program's own output, exactly as the prompt says.
       state.firstId = /graph program id: ([0-9a-f]{8})/.exec(state.first.stdout)?.[1];
       state.savedFirst = await readFile(join(capability.programDirectory, "programs", `${state.firstId}.mjs`), "utf8");
       state.second = await runProgram(patchProgram(context.inputGraph.id, state.firstId), environment);
       state.secondId = /running as ([0-9a-f]{8})/.exec(state.second.stdout)?.[1];
       state.savedSecond = await readFile(join(capability.programDirectory, "programs", `${state.secondId}.mjs`), "utf8");
+      if (outcome === "after-accept") {
+        state.third = await runProgram(`import { rerunGraphProgram } from "${client}";
+await rerunGraphProgram("${state.secondId}", [{ find: "Patched answer", replace: "Unauthorized revision" }]);
+`, environment);
+        if (state.third.code === 0) throw new Error("accepted graph unexpectedly changed");
+        throw new Error("rerun rejected after graph acceptance");
+      }
+      if (state.second.code !== 0) throw new Error(state.second.stderr);
     },
   });
 }
 
-it("rejects the first program, accepts the patched rerun, and keeps the model's writes at zero", async () => {
+it.each(["repair", "lost-ack", "after-accept"])("preserves named repair and accepted graph authority for %s", async (outcome) => {
   const directory = await mkdtemp(join(tmpdir(), "relayer-patch-rerun-e2e-"));
   directories.push(directory);
   const projectPath = join(directory, "project");
@@ -91,7 +108,7 @@ it("rejects the first program, accepts the patched rerun, and keeps the model's 
     userDataDirectory: directory,
     graphServerBinary: join(root, "target/debug/relayer-graph-server"),
     configurationPaths: [configurationPath],
-    additionalImplementations: { "fixture.patch-rerun": fixtureFactory(state) },
+    additionalImplementations: { "fixture.patch-rerun": fixtureFactory(state, outcome) },
     acquireProviderExecution: async (providerId) => ({
       definition: { id: providerId, adapterId: "codex-subscription", accessContract: "managed-runtime@1" },
       descriptor: { adapterId: "codex-subscription", accessContract: "managed-runtime@1", implementationVersion: "1" },
@@ -126,9 +143,16 @@ it("rejects the first program, accepts the patched rerun, and keeps the model's 
   expect(state.first.code).not.toBe(0);
   expect(state.first.stderr).toMatch(/root/i);
   expect(state.firstId).toMatch(/^[0-9a-f]{8}$/);
-  expect(state.savedFirst).toBe(fullProgram(detail.interactions[0].graphNodeId));
+  expect(state.savedFirst).toBe(fullProgram(detail.interactions[0].graphNodeId, outcome));
   // The patch ran the edited program with the same clientKeys and saved it under its own id.
-  expect(state.second).toMatchObject({ code: 0 });
+  if (outcome === "lost-ack") {
+    expect(state.second.code).not.toBe(0);
+    expect(state.second.stderr).toContain("lost submit acknowledgement after commit");
+  } else expect(state.second).toMatchObject({ code: 0 });
+  if (outcome === "after-accept") {
+    expect(state.third.code).not.toBe(0);
+    expect(state.third.stderr).toContain("authority_generation_expired");
+  }
   expect(state.second.stdout).toContain(`graph program id: ${state.secondId}`);
   expect(state.savedSecond).toContain('clientKey: "root"');
   expect(state.savedSecond).not.toContain("rerunGraphProgram");
