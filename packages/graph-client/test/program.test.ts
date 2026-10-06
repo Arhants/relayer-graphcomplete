@@ -9,10 +9,11 @@ import { GraphProgramEditError, applyGraphProgramEdits, graphProgramId } from ".
 
 const execFileAsync = promisify(execFile);
 const CLIENT = pathToFileURL(join(import.meta.dirname, "../dist/index.js")).href;
-const ENVIRONMENT = { RELAYER_GRAPH_URL: "http://127.0.0.1:1", RELAYER_GRAPH_TOKEN: "token", RELAYER_NODE_ID: "1" };
+const ENVIRONMENT = { RELAYER_GRAPH_URL: "http://127.0.0.1:1", RELAYER_GRAPH_TOKEN: "token", RELAYER_NODE_ID: "1", RELAYER_GRAPH_AUTHORING_ERRORS: "1" };
 
 const PROGRAM = `import { RelayerGraphClient } from "${CLIENT}";
 const graph = RelayerGraphClient.fromEnv();
+if (!graph.capability.authoringErrors) throw new Error("diagnostics opt-in lost");
 const title = "Edge writes are serial";
 console.log("ran:" + title);
 `;

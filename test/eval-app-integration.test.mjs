@@ -1014,6 +1014,13 @@ describe("Relayer Eval application service", () => {
       referenceActionId: expect.any(Number),
     });
     expect(execution.turns[1].caseEvidence).not.toHaveProperty("anchor");
+    expect(execution.turns.map((turn) => turn.authoringErrors)).toEqual([
+      expect.objectContaining({ observed: 0, total: null, coverage: "partial" }),
+      expect.objectContaining({ observed: 0, total: null, coverage: "partial" }),
+    ]);
+    const persisted = JSON.parse(await readFile(join(dataDirectory, "eval-data", "test-runs.json"), "utf8"));
+    expect(JSON.stringify(persisted)).toContain('"authoringErrors"');
+
     const secondTrace = await evalService.candidateTraceContext(
       execution.id,
       execution.turns[1].interactionId,
@@ -1362,6 +1369,7 @@ describe("Relayer Eval application service", () => {
     const corruptedExecution = corruptedCompleted.executions[0];
     expect(corruptedCompleted.status).toBe("failed");
     expect(corruptedExecution.promotable).toBe(false);
+    expect(corruptedExecution.turns[1].authoringErrors).toMatchObject({ observed: null, coverage: "unavailable", reasons: ["ledger_invalid_or_unreadable"] });
     expect(corruptedExecution.turns.flatMap((turn) => turn.deterministicChecks)).toEqual(expect.arrayContaining([
       expect.objectContaining({
         name: expect.stringContaining("case-evidence"),
@@ -1924,6 +1932,8 @@ describe("Relayer Eval application service", () => {
       const failureCompleted = await waitForCompletedRun(evalService, failureRun.id);
       const turn = failureCompleted.executions[0].turns[0];
       expect(turn.candidateTrace.status).toBe("failed");
+      expect(failureCompleted.executions[0].promotable).toBe(false);
+      expect(turn.authoringErrors).toMatchObject({ observed: 0, total: null, coverage: "partial" });
       if (failure === "ledger-partial") {
         expect(turn.timing).toMatchObject({ acceptedSeconds: null, graphWriteRejections: null, programRuns: { failed: 1 } });
       } else {

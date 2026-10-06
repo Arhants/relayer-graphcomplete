@@ -1269,6 +1269,7 @@ export class HarnessHost {
       ...capability,
       programDirectory,
       ...(previewDirectory === undefined ? {} : { previewDirectory }),
+      ...(traceContext === undefined ? {} : { authoringErrors: true }),
     });
     if (previewDirectory !== undefined) this.previewTraces.set(interactionNodeId, traceSink);
     const observedTrace = new EffectObservingTraceSink(traceSink);

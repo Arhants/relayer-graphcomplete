@@ -1,3 +1,4 @@
+import { markAuthoringTransportError, observeAuthoringMethods } from "./authoring-errors.js";
 import { isImageIcon, type GraphIcon } from "./image-icons.js";
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
@@ -30,6 +31,7 @@ export class RelayerGraphClient {
     this.capability = { ...capability, url: capability.url.replace(/\/$/, "") };
     this.icons = new GraphIcons((path, init) => this.request<unknown>(path, init));
     this.visualAssets = new GraphVisualAssets((path, init) => this.request<unknown>(path, init));
+    return observeAuthoringMethods(this, this.capability, (error) => error instanceof GraphApiError);
   }
 
   static fromEnv(environment: NodeJS.ProcessEnv = process.env): RelayerGraphClient {
@@ -46,6 +48,7 @@ export class RelayerGraphClient {
       url, token, nodeId: node,
       ...(previewDirectory ? { previewDirectory } : {}),
       ...(programDirectory ? { programDirectory } : {}),
+      ...(environment.RELAYER_GRAPH_AUTHORING_ERRORS === "1" ? { authoringErrors: true } : {}),
     });
   }
 
@@ -425,16 +428,16 @@ export class RelayerGraphClient {
   }
 
   private async request<T>(path: string, init: RequestInit = {}, errorKind: "api" | "query" = "api"): Promise<T> {
-    this.requestScope?.beforeRequest(path);
+    try { this.requestScope?.beforeRequest(path); } catch (error) { markAuthoringTransportError(error); throw error; }
     const response = await fetch(`${this.capability.url}${path}`, {
       ...init,
       ...(this.requestScope === undefined ? {} : {
         signal: init.signal ? AbortSignal.any([this.requestScope.signal, init.signal]) : this.requestScope.signal,
       }),
       headers: { "content-type": "application/json", authorization: `Bearer ${this.capability.token}`, ...init.headers },
-    });
+    }).catch((error: unknown) => { markAuthoringTransportError(error); throw error; });
     const body = await response.json().catch(() => ({})) as T & GraphApiErrorBody & GraphQueryErrorBody;
-    this.requestScope?.beforeRequest(path);
+    try { this.requestScope?.beforeRequest(path); } catch (error) { markAuthoringTransportError(error); throw error; }
     if (!response.ok) {
       if (errorKind === "query" && isGraphQueryErrorBody(body)) {
         throw new GraphQueryError(

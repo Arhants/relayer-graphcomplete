@@ -69,6 +69,7 @@ import {
   buildAcceptedReviewTopology,
   gradeAcceptedReviewTopology,
 } from "./simulated-user-judge.mjs";
+import { authoringErrorsFromTraceDirectory, unavailableAuthoringErrors } from "./authoring-errors.mjs";
 import { GRAPH_SEARCH_EVAL_TARGET } from "./configuration-paths.mjs";
 import { graphTimingFromTrace } from "./graph-timing.mjs";
 
@@ -2250,12 +2251,14 @@ export class EvalService {
         deterministicChecks: [],
         deterministicPassed: false,
         judgeResults: [],
+        authoringErrors: copy(execution.authoringErrorMetrics?.[String(interaction.id)] ?? unavailableAuthoringErrors()),
         candidateTrace: copy(execution.candidateTraceCaptures?.[String(interaction.id)] || disabledCandidateTrace()),
         // Time to first graph and repair counts, read from the trace. Null when there is no trace.
         timing: copy(execution.graphTimings?.[String(interaction.id)] ?? null),
         ...(artifact === null ? {} : { artifact: copy(artifact) }),
       }));
       delete execution.candidateTraceCaptures;
+      delete execution.authoringErrorMetrics;
       delete execution.graphTimings;
       execution.promotable = execution.turns.every((turn) => !this.candidateTraceRequired || turn.candidateTrace.status === "complete");
       if (definition.requiredChecks?.includes("agent-authored-complete")) {
@@ -3031,6 +3034,7 @@ export class EvalService {
             acceptedNodes: copy(acceptedNodes),
             resultCompletionStatus: invocation.resultCompletionStatus,
             execution: copy(invocation.execution || null),
+            authoringErrors: copy(execution.authoringErrorMetrics?.[String(child.id)] ?? unavailableAuthoringErrors()),
             candidateTrace: copy(execution.candidateTraceCaptures?.[String(child.id)] || disabledCandidateTrace()),
             projectionObservations: copy(
               execution.currentProjectionEvidence?.observations?.filter((observation) => (
@@ -3160,6 +3164,12 @@ export class EvalService {
             || Date.now() >= deadline) throw error;
           await new Promise((wait) => setTimeout(wait, 50));
         }
+      }
+      execution.authoringErrorMetrics ||= {};
+      try {
+        execution.authoringErrorMetrics[String(interaction.id)] = await authoringErrorsFromTraceDirectory(targetDirectory, descriptor, interaction.graphNodeId);
+      } catch {
+        execution.authoringErrorMetrics[String(interaction.id)] = unavailableAuthoringErrors("ledger_invalid_or_unreadable");
       }
       execution.graphTimings ||= {};
       execution.graphTimings[String(interaction.id)] = await graphTimingFromTraceDirectory(targetDirectory, interaction.createdAt, descriptor, {
