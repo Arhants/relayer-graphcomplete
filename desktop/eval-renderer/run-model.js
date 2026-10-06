@@ -344,10 +344,10 @@ function timingProjection(turn, index) {
     turnIndex: turn.turnIndex ?? index,
     firstGraph: seconds(timing.firstGraphSeconds),
     accepted: seconds(timing.acceptedSeconds),
-    rejections: timing.graphWriteRejections ?? 0,
+    rejections: timing.graphWriteRejections ?? "—",
     programs: runs === null || runs === undefined
-      ? "not a program harness"
-      : `${runs.programs} program${runs.programs === 1 ? "" : "s"}, ${runs.patches} patch${runs.patches === 1 ? "" : "es"}, ${runs.failed} failed`,
+      ? "unavailable"
+      : `${runs.programs} program${runs.programs === 1 ? "" : "s"}, ${runs.patches} patch${runs.patches === 1 ? "" : "es"}, ${runs.failed ?? "unknown"} failed`,
   };
 }
 

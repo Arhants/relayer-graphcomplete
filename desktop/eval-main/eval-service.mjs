@@ -526,10 +526,37 @@ function childHasDurableExecution(child, configuration, configurationDigest) {
 }
 
 /** Reads a turn's timing from its exported trace. A missing ledger still yields the program counts. */
-export async function graphTimingFromTraceDirectory(directory, sentAt) {
-  const lines = async (name) => (await readFile(join(directory, name), "utf8").catch(() => ""))
-    .split("\n").filter(Boolean).map((line) => JSON.parse(line));
-  return graphTimingFromTrace({ sentAt: Number(sentAt), events: await lines("events.jsonl"), graphOperations: await lines("graph-operations.jsonl") });
+export async function graphTimingFromTraceDirectory(directory, sentAt, descriptor = {}, identity = {}) {
+  const lines = async (name, artifact) => {
+    try {
+      const bytes = await readFile(join(directory, name));
+      if (artifact?.status !== "complete" || artifact.truncated === true
+        || artifact.sha256 !== sha256(bytes) || artifact.byteLength !== bytes.byteLength) return null;
+      const records = bytes.toString("utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line));
+      if (artifact.eventCount !== records.length || records.some((record) => record === null || typeof record !== "object" || Array.isArray(record))) return null;
+      if (name === "graph-operations.jsonl" && (artifact.truncated !== false || records.some((record) =>
+        record.schemaVersion !== 1 || !Number.isSafeInteger(record.sequence) || record.sequence < 1
+        || typeof record.method !== "string" || typeof record.path !== "string" || !Number.isSafeInteger(record.status)
+        || (identity.interactionNodeId !== undefined && record.interactionNodeId !== identity.interactionNodeId)))) return null;
+      return records;
+    } catch { return null; }
+  };
+  const manifest = await readFile(join(directory, "manifest.json"), "utf8")
+    .then((text) => JSON.parse(text)).catch(() => null);
+  const eventsArtifact = manifest?.artifacts?.events;
+  const providerArtifactMatches = manifest?.schemaVersion === 1
+    && manifest?.format === "relayer-harness-trace-v1" && manifest.format === descriptor.format
+    && typeof descriptor.traceId === "string" && manifest?.traceId === descriptor.traceId
+    && eventsArtifact?.ref === "events.jsonl"
+    && ["sha256", "byteLength", "eventCount"].every((key) => eventsArtifact?.[key] === descriptor[key]);
+  const providerIdentityMatches = (identity.interactionNodeId === undefined || manifest?.interactionNodeId === identity.interactionNodeId)
+    && (identity.productInteractionId === undefined || manifest?.productInteractionId === identity.productInteractionId)
+    && Object.entries(identity.correlation ?? {}).every(([key, value]) => manifest?.correlation?.[key] === value);
+  const events = await lines("events.jsonl", { ...descriptor,
+    status: manifest?.status, truncated: manifest?.truncated });
+  const graphOperations = await lines("graph-operations.jsonl", descriptor.graphOperations);
+  return graphTimingFromTrace({ sentAt, events: events ?? [], graphOperations: graphOperations ?? [],
+    eventsComplete: events !== null && providerArtifactMatches && providerIdentityMatches && manifest?.achievedCoverage?.toolCalls === "full", ledgerComplete: graphOperations !== null });
 }
 
 export async function validateCandidateTrace(directory, descriptor, interaction, correlation, { requireComplete = false } = {}) {
@@ -2566,9 +2593,9 @@ export class EvalService {
     return thread;
   }
 
-  async completionJudgeArtifactEvidence(prepared, { signal } = {}) {
+  async completionJudgeArtifactEvidence(prepared, { signal, contract = "completion-evidence-v1" } = {}) {
     await abortable(signal, () => this.assertHumanTaskCatalog(prepared));
-    return completionArtifactEvidence(prepared.execution.fixture?.workspaceDirectory, { signal });
+    return completionArtifactEvidence(prepared.execution.fixture?.workspaceDirectory, { signal, contract, baseline: prepared.execution.fixture?.seededCommit ?? prepared.execution.fixture?.upstreamCommit ?? (/^[a-f0-9]{40,64}$/.test(prepared.execution.fixture?.sourceRevision ?? "") ? prepared.execution.fixture.sourceRevision : undefined) });
   }
 
   async gradeHumanTaskStep(prepared, step, { signal } = {}) {
@@ -3134,6 +3161,10 @@ export class EvalService {
           await new Promise((wait) => setTimeout(wait, 50));
         }
       }
+      execution.graphTimings ||= {};
+      execution.graphTimings[String(interaction.id)] = await graphTimingFromTraceDirectory(targetDirectory, interaction.createdAt, descriptor, {
+        interactionNodeId: interaction.graphNodeId, productInteractionId: interaction.id, correlation,
+      });
       const completionBrokerAvailable = await validateCandidateTrace(
         targetDirectory,
         descriptor,
@@ -3144,8 +3175,6 @@ export class EvalService {
             || execution.testCaseId === RECURSIVE_GRAPH_MEMORY_CASE_ID,
         },
       );
-      execution.graphTimings ||= {};
-      execution.graphTimings[String(interaction.id)] = await graphTimingFromTraceDirectory(targetDirectory, interaction.createdAt);
       execution.candidateTraceCaptures ||= {};
       execution.candidateTraceCaptures[String(interaction.id)] = {
         ...copy(descriptor),

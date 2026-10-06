@@ -13,13 +13,13 @@ const heredoc = (body) => `node --input-type=module <<'RELAYER_GRAPH_PROGRAM'\n$
 describe("time to first graph from a candidate trace", () => {
   it("measures send to first visible graph and to accepted, and counts repairs", () => {
     const timing = graphTimingFromTrace({
-      sentAt: T0,
+      sentAt: T0, ledgerComplete: true, eventsComplete: true,
       graphOperations: [
         op("GET", "/api/graph/input", 200, 1),
         op("POST", "/api/graph/nodes", 200, 60),
         op("POST", "/api/graph/nodes", 400, 61), // one rejected write
         op("POST", "/api/graph/layers", 200, 62),
-        op("POST", "/api/graph/current/transitions", 200, 70), // first visible graph
+        { ...op("POST", "/api/graph/current/transitions", 200, 70), transitionKind: "advance" }, // first visible graph
         op("POST", "/api/graph/actions", 422, 80), // another rejection
         op("POST", "/api/graph/submit", 409, 90), // rejected submit is not acceptance
         op("POST", "/api/graph/submit", 200, 100.25),
@@ -44,13 +44,32 @@ describe("time to first graph from a candidate trace", () => {
   });
 
   it("reports nulls, not zeros, when nothing was published or no programs were seen", () => {
-    const timing = graphTimingFromTrace({ sentAt: "not a time", graphOperations: [op("POST", "/api/graph/nodes", 200, 5)], events: [] });
+    const timing = graphTimingFromTrace({ sentAt: "not a time", ledgerComplete: true, eventsComplete: true, graphOperations: [op("POST", "/api/graph/nodes", 200, 5)], events: [] });
     expect(timing).toMatchObject({ sentAt: null, firstGraphAt: null, acceptedAt: null, firstGraphSeconds: null, acceptedSeconds: null, graphWriteRejections: 0, programRuns: null });
   });
 
   it("treats a terminal submit as the first visible graph when nothing was advanced before it", () => {
-    const timing = graphTimingFromTrace({ sentAt: T0, graphOperations: [op("POST", "/api/graph/submit", 200, 42)], events: [] });
+    const timing = graphTimingFromTrace({ sentAt: T0, ledgerComplete: true, eventsComplete: true, graphOperations: [op("POST", "/api/graph/submit", 200, 42)], events: [] });
     expect(timing.firstGraphSeconds).toBe(42);
     expect(timing.acceptedSeconds).toBe(42);
   });
+  it("distinguishes advance, temporal return, stop and legacy unknown transitions", () => {
+    const measure = (operations) => graphTimingFromTrace({ sentAt: String(T0), events: [],
+      graphOperations: operations, ledgerComplete: true, eventsComplete: true });
+    const transition = (kind, seconds) => ({ ...op("POST", "/api/graph/current/transitions", 200, seconds), transitionKind: kind });
+    expect(measure([transition("stop", 4)])).toMatchObject({ firstGraphSeconds: null, acceptedSeconds: null });
+    expect(measure([transition(undefined, 4)])).toMatchObject({ firstGraphSeconds: null, acceptedSeconds: null });
+    expect(measure([transition("return", 8), transition("advance", 5)])).toMatchObject({ firstGraphSeconds: 5, acceptedSeconds: 8 });
+  });
+
+  it("keeps partial and missing evidence unknown independently", () => {
+    expect(graphTimingFromTrace({ sentAt: T0, graphOperations: [op("POST", "/api/graph/submit", 200, 5)], events: [] }))
+      .toMatchObject({ firstGraphSeconds: null, acceptedSeconds: null, graphWriteRejections: null, programRuns: null });
+  });
+
+  it("keeps absent command exit outcomes unknown", () => {
+    expect(graphTimingFromTrace({ sentAt: T0, eventsComplete: true, ledgerComplete: true, graphOperations: [],
+      events: [command(heredoc("probe"), undefined, 3)] }).programRuns.failed).toBeNull();
+  });
+
 });

@@ -304,7 +304,7 @@ describe("Eval dashboard run presentation", () => {
     const withoutTrace = projectExecutionDossier(run, { ...execution, turns: [{ ...execution.turns[0], timing: null }] });
     expect(withoutTrace.timing).toEqual([]);
     const fixtureHarness = projectExecutionDossier(run, { ...execution, turns: [{ ...execution.turns[0], timing: { schemaVersion: 1, firstGraphSeconds: null, acceptedSeconds: 3.2, graphWriteRejections: 0, programRuns: null } }] });
-    expect(fixtureHarness.timing).toEqual([{ turnIndex: 0, firstGraph: "—", accepted: "3.2 s", rejections: 0, programs: "not a program harness" }]);
+    expect(fixtureHarness.timing).toEqual([{ turnIndex: 0, firstGraph: "—", accepted: "3.2 s", rejections: 0, programs: "unavailable" }]);
   });
 
   it("projects legacy executions without manufacturing numeric scores", () => {

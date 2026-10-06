@@ -15,12 +15,14 @@ import { createHumanTaskSurface } from "../desktop/eval-main/web-host.mjs";
 const cleanups = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); });
 const action = (kind, extra = {}) => ({ kind, ref: "visible", value: "", reason: "", satisfaction: null, comment: "", endpointStatus: "incomplete", remainingWork: "Route undecided", ...extra });
-async function fixture({ decide, maxActions = 8, busy = false, failWrite = false, navigateOnly = false, retry = false, timeoutMs = 900000, planCount = 1, maxCompletions = 2, controlErrors = [], completionJudge = null, judgeEvaluate = null } = {}) {
+async function fixture({ decide, maxActions = 8, busy = false, failWrite = false, navigateOnly = false, retry = false, timeoutMs = 900000, planCount = 1, maxCompletions = 2, controlErrors = [], completionJudge = null, judgeEvaluate = null, voluntaryStop = false } = {}) {
   const directory = await mkdtemp(join(tmpdir(), "task-actor-test-"));
   cleanups.push(() => rm(directory, { recursive: true, force: true }));
   const turns = [{ id: 1, completionStatus: busy ? "running" : retry ? "not_started" : "accepted", ...(retry ? { latestAttempt: { id: 91, outcome: "model_failed" } } : {}) }];
   const dispatches = [];
-  const setupRegistry = completionJudge ? { selected: () => ({ ...defaultActorSetup(), id: "judge-gated-setup", settings: { ...defaultActorSetup().settings, maxActions }, behaviorContract: { ...defaultActorSetup().behaviorContract, completionJudge } }) } : null;
+  const behavior = { ...defaultActorSetup().behaviorContract, completionJudge };
+  if (!voluntaryStop) { behavior.id = "task-actor-v4"; delete behavior.participantMayStopIncomplete; }
+  const setupRegistry = completionJudge ? { selected: () => ({ ...defaultActorSetup(), id: "judge-gated-setup", settings: { ...defaultActorSetup().settings, maxActions }, behaviorContract: behavior }) } : null;
   const options = { setupRegistry, stateFile: join(directory, "tasks.json"), productSession: { origin: "http://product.invalid", cookie: { name: "control", value: "secret" }, readOnlyCookie: { name: "read", value: "only" } },
     evalService: {
       prepareHumanTask: async () => ({ name: "Task", humanBrief: "PRIVATE BRIEF", humanRubric: "SECRET RUBRIC", execution: { harnessConfigurationName: "fixture", projectId: 1, modelResolution: {} }, plan: Array.from({ length: planCount }, () => ({ name: "Task", prompts: ["Help me plan a trip"] })) }),
@@ -288,15 +290,30 @@ it("stores screenshots outside hot session state and verifies them on reopen and
   const f = await fixture({ busy: true });
   const screenshot = Buffer.from("fixture screenshot bytes").toString("base64");
   const event = await f.tasks.actorEvent(f.id, "actor_observation", { observation: { screenshot, text: "visible" } });
+  const { setupDigest } = await import("../desktop/eval-main/setup-registry.mjs");
+  const input = { request: "Check delivery", screenshot, actorFinish: { kind: "finish" } };
+  const packet = await f.tasks.actorEvent(f.id, "actor_completion_evidence", { observationEventId: event.id, input, inputDigest: setupDigest(input) });
+  const repeated = await f.tasks.actorEvent(f.id, "actor_completion_evidence", { observationEventId: event.id, input, inputDigest: setupDigest(input) });
+  const { readdir } = await import("node:fs/promises");
+  expect(await readdir(join(f.options.stateFile, "..", "actor-screenshots"))).toEqual([`${packet.input.screenshot.sha256}.png`]);
+  expect(await f.tasks.completionJudgeInput(f.id, repeated.id)).toEqual(input);
+  expect(packet.inputEncoding).toBe("screenshot-reference-v1");
+  expect(await f.tasks.completionJudgeInput(f.id, packet.id)).toEqual(input);
+  await expect(f.tasks.actorEvent(f.id, "actor_completion_evidence", { observationEventId: event.id, input: { ...input, request: "changed" }, inputDigest: setupDigest(input) })).rejects.toThrow("binding");
   expect(event.observation).not.toHaveProperty("screenshot");
   expect(await readFile(f.options.stateFile, "utf8")).not.toContain(screenshot);
   await f.actors.stop(f.id);
   const reopened = await new HumanTaskService(f.options).open();
+  expect(await reopened.completionJudgeInput(f.id, packet.id)).toEqual(input);
   expect(await reopened.actorScreenshot(f.id, event.id)).toBe(`data:image/png;base64,${screenshot}`);
   const exported = await reopened.export(f.id);
   expect(exported.bundle.actorScreenshots).toEqual([expect.objectContaining({ eventId: event.id, dataUrl: `data:image/png;base64,${screenshot}` })]);
+  const stored = exported.bundle.session.events.find(e => e.id === packet.id);
+  expect(stored.input.screenshot.sha256).toBe(exported.bundle.actorScreenshots[0].sha256);
+  expect((await readFile(exported.path, "utf8")).split(screenshot).length - 1).toBe(1);
   const frozen = await readFile(exported.path, "utf8");
   await writeFile(join(f.options.stateFile, "..", "actor-screenshots", `${event.observation.screenshotArtifact.sha256}.png`), "corrupted");
+  await expect(reopened.completionJudgeInput(f.id, packet.id)).rejects.toThrow("integrity");
   await expect(reopened.export(f.id)).rejects.toThrow("integrity");
   expect(await readFile(exported.path, "utf8")).toBe(frozen);
 });
@@ -554,4 +571,31 @@ it("stops at the completion budget after recording a rejected final-turn judgmen
   expect(task.events.some(event => event.kind === "actor_error")).toBe(false);
   expect(f.browser.act).not.toHaveBeenCalled();
   expect(f.seen).toHaveLength(1);
+});
+
+it.each(["incomplete", "uncertain", "complete"])("new actor contract preserves an unfinished participant stop despite judge verdict %s", async verdict => {
+  const f = await fixture({ voluntaryStop: true, completionJudge: COMPLETION_JUDGE_SPEC,
+    decide: () => action("finish", { reason: "satisfied", satisfaction: 3, endpointStatus: "uncertain", remainingWork: "I cannot supply my monitor measurements yet." }),
+    judgeEvaluate: async () => ({ verdict, evidenceExplanation: "Fit still depends on unavailable measurements.", continuationHint: verdict === "complete" ? "" : "Please check the fit.", usage: null }) });
+  await f.done;
+  expect(f.judge.evaluate).toHaveBeenCalledOnce();
+  expect(f.browser.act).not.toHaveBeenCalled();
+  const task = f.tasks.get(f.id);
+  expect(task.termination).toMatchObject({ reason: "satisfied", success: null, endpointAttainment: "not_claimed", actorClaim: { endpointStatus: "uncertain", remainingWork: expect.stringContaining("measurements") } });
+  expect(task.events.find(e => e.kind === "actor_completion_judgment").verdict).toBe(verdict);
+});
+
+it("reads historical inline completion screenshots with their original digest after reopen", async () => {
+  const f = await fixture({ busy: true });
+  const { setupDigest } = await import("../desktop/eval-main/setup-registry.mjs");
+  const screenshot = Buffer.from("legacy screenshot").toString("base64");
+  const observation = await f.tasks.actorEvent(f.id, "actor_observation", { observation: { screenshot } });
+  const input = { request: "Legacy", screenshot, actorFinish: { kind: "finish" } };
+  const packet = await f.tasks.actorEvent(f.id, "actor_completion_evidence", { observationEventId: observation.id, input, inputDigest: setupDigest(input) });
+  const historical = f.tasks.find(f.id).events.find(e => e.id === packet.id);
+  historical.input = input; delete historical.inputEncoding;
+  await f.tasks.persist(); await f.actors.stop(f.id);
+  const reopened = await new HumanTaskService(f.options).open();
+  expect(await reopened.completionJudgeInput(f.id, packet.id)).toEqual(input);
+  expect((await reopened.export(f.id)).bundle.session.events.find(e => e.id === packet.id).input).toEqual(input);
 });
