@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { finished } from "node:stream/promises";
 import { SentryCli } from "@sentry/cli";
 
 import { createPackage } from "@electron/asar";
@@ -52,9 +53,20 @@ describe("desktop telemetry release artifacts", () => {
     expect(upload.env.SENTRY_CLI_BINARY).toBe(nativeCli);
     for (const job of [windowsWorkflow.jobs.qualify, windowsWorkflow.jobs.package]) {
       const probe = job.steps.findIndex(step => step.name === "Verify pinned Windows telemetry CLI startup");
-      const cold = job.steps.findIndex(step => step.run?.includes("cargo fetch") || step.run?.includes("--prepare-windows-native"));
+      const cold = job.steps.findIndex(step => step.run?.includes("cargo fetch") || step.run?.includes("windows-native-build.mjs adopt"));
       expect(probe).toBeGreaterThan(job.steps.findIndex(step => step.run === "npm ci"));
       expect(cold).toBeGreaterThan(probe);
+      const telemetry = job.steps.findIndex(step => step.name === "Verify Windows native cache transfer and handoff");
+      expect(telemetry).toBeGreaterThan(job.steps.findIndex(step => step.run === "npm ci"));
+      expect(job.steps[telemetry].run).toBe("node node_modules/vitest/vitest.mjs run test/windows-native-cache.test.mjs test/desktop-telemetry-release-artifacts.test.mjs");
+      expect(job.steps[telemetry].env?.SENTRY_AUTH_TOKEN).toBeUndefined();
+      expect(job.env?.SENTRY_AUTH_TOKEN).toBeUndefined();
+      for (const [index, step] of job.steps.entries()) {
+        if (step.run?.includes("cargo fetch") || step.run?.includes("windows-native-build.mjs qualify") || step.run?.includes("windows-native-build.mjs adopt")) {
+          expect(index).toBeGreaterThan(telemetry);
+        }
+        if (index <= telemetry) expect(step.env?.SENTRY_AUTH_TOKEN).toBeUndefined();
+      }
       expect(job.steps[probe].env).toEqual({ SENTRY_CLI_BINARY: nativeCli });
       expect(job.steps[probe].run).toContain("spawnSync(process.env.SENTRY_CLI_BINARY,['--version'],{stdio:'inherit'})");
       const script = job.steps[probe].run.slice('node -e "'.length, -1);
@@ -100,7 +112,7 @@ describe("desktop telemetry release artifacts", () => {
     await writeFile(join(asarSource, "main", "index.mjs"), "export const answer = 42;\n", "utf8");
     await writeFile(join(asarSource, "node_modules", "@relayer", "harness-host", "dist", "index.js"), "export const answer = 42;\n", "utf8");
     await writeFile(join(packagedResources, "renderer", "src", "main.js"), "export const answer = 42;\n", "utf8");
-    await createPackage(asarSource, join(packagedResources, "app.asar"));
+    await finished(await createPackage(asarSource, join(packagedResources, "app.asar")), { cleanup: true });
     const rustBinary = join(root, "target", "aarch64-apple-darwin", "release", "relayer-app-server");
     const packagedRustBinary = join(packagedResources, "bin", "relayer-app-server");
     await mkdir(join(rustBinary, ".."), { recursive: true });
@@ -187,7 +199,7 @@ describe("desktop telemetry release artifacts", () => {
     })).rejects.toThrow("dSYM UUID");
   });
 
-  it("correlates the packaged Windows PE CodeView identity with its PDB", async () => {
+  it("correlates Windows PDBs and reads nested packaged source maps through native ASAR paths", async () => {
     const root = await mkdtemp(join(tmpdir(), "relayer-telemetry-windows-symbols-"));
     const outputRoot = join(root, "desktop", "dist", "telemetry");
     const packagedApplication = join(root, "desktop", "dist", "win-unpacked");
@@ -198,7 +210,12 @@ describe("desktop telemetry release artifacts", () => {
     await writeFile(join(root, "desktop", "main", "index.mjs"), "export const answer = 42;\n", "utf8");
     await writeFile(join(asarSource, "main", "index.mjs"), "export const answer = 42;\n", "utf8");
     await mkdir(resources, { recursive: true });
-    await createPackage(asarSource, join(resources, "app.asar"));
+    await mkdir(join(resources, "renderer"), { recursive: true });
+    for (const directory of [join(root, "desktop/main/credentials"), join(asarSource, "main/credentials")]) {
+      await mkdir(directory, { recursive: true });
+      await writeFile(join(directory, "codex-credential-adapter.mjs"), "export const credentialAdapter = 42;\n");
+    }
+    await finished(await createPackage(asarSource, join(resources, "app.asar")), { cleanup: true });
     const rustBinary = join(root, "target", "x86_64-pc-windows-msvc", "release", "relayer-app-server.exe");
     await mkdir(join(rustBinary, ".."), { recursive: true });
     await mkdir(join(resources, "bin"), { recursive: true });
@@ -226,10 +243,20 @@ describe("desktop telemetry release artifacts", () => {
       repositoryRoot: root,
       outputRoot,
       packagedApplication,
-      sourceGroups: [["electron", "desktop/main/index.mjs"]],
       rustBinaries: [rustBinary, graphBinary],
       capture,
     });
+    expect(manifest.sourceMaps.map(entry => [entry.component, entry.module])).toEqual([
+      ["electron", "desktop/main/credentials/codex-credential-adapter.mjs"],
+      ["electron", "desktop/main/index.mjs"],
+    ]);
+    const nestedSource = manifest.sourceMaps[0];
+    expect(await readFile(join(outputRoot, nestedSource.source.path), "utf8")).toBe("export const credentialAdapter = 42;\n");
+    expect(JSON.parse(await readFile(join(outputRoot, nestedSource.path), "utf8"))).toMatchObject({
+      sources: ["desktop/main/credentials/codex-credential-adapter.mjs"],
+      sourcesContent: ["export const credentialAdapter = 42;\n"],
+    });
+    expect(await verifyDesktopTelemetryArtifacts({ outputRoot })).toEqual(manifest);
     expect(manifest.nativeDebugIdentities).toEqual([
       { binary: "bin/relayer-app-server.exe", debug: "debug/relayer-app-server.pdb", debugId: `${guid}-3` },
       { binary: "bin/relayer-graph-server.exe", debug: "debug/relayer-graph-server.pdb", debugId: `${graphGuid}-3` },
@@ -237,8 +264,8 @@ describe("desktop telemetry release artifacts", () => {
     for (const [name, contents] of [["relayer-app-server", "app pdb"], ["relayer-graph-server", "graph pdb"]]) {
       const copiedPdb = join(outputRoot, "debug", `${name}.pdb`);
       expect(await readFile(copiedPdb, "utf8")).toBe(contents);
-      expect(capture).toHaveBeenCalledWith("llvm-readobj", ["--coff-debug-directory", join(resources, "bin", `${name}.exe`)]);
-      expect(capture).toHaveBeenCalledWith("llvm-pdbutil", ["dump", "-summary", copiedPdb]);
+      expect(capture).toHaveBeenCalledWith("llvm-readobj", ["--coff-debug-directory", join(resources, "bin", `${name}.exe`)], { timeout: 15_000, maxBuffer: 4 * 1024 * 1024 });
+      expect(capture).toHaveBeenCalledWith("llvm-pdbutil", ["dump", "-summary", copiedPdb], { timeout: 15_000, maxBuffer: 4 * 1024 * 1024 });
     }
 
     const mismatchedCapture = vi.fn(async (command) => ({

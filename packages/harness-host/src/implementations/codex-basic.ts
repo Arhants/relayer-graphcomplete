@@ -1,3 +1,4 @@
+import { appOwnedNodeCommand, appOwnedNodeInstructions } from "./graph-authoring-command.js";
 import { threadIconGuidance } from "./thread-icon-guidance.js";
 import { type GraphCapability, type GraphNode } from "@relayer/graph-client";
 import { createHash, randomUUID } from "node:crypto";
@@ -48,7 +49,7 @@ const ATTACHED_NAVIGATION_GUIDANCE = "Gated attached navigation: the server may 
 export const CODEX_BASIC_KEY = "codex.basic";
 
 const SAFE_SUBPROCESS_ENVIRONMENT = new Set([
-  "PATH", "PATHEXT", "SystemRoot", "SYSTEMROOT", "WINDIR", "ComSpec", "COMSPEC",
+  "PATH", "Path", "PATHEXT", "SystemRoot", "SYSTEMROOT", "WINDIR", "ComSpec", "COMSPEC",
   "TMPDIR", "TEMP", "TMP", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "SHELL",
 ]);
 const CODEX_MANAGED_RUNTIME_ENVIRONMENT = new Set([
@@ -142,6 +143,7 @@ export interface CodexBasicDependencies {
   readonly clientModuleUrl?: string;
   readonly completeModuleUrl?: string;
   readonly graphAuthoringLauncherPath?: string;
+  readonly graphAuthoringNodePath?: string;
   readonly codexPathOverride?: string;
   readonly browserMcpRuntime?: {
     readonly executable: string;
@@ -184,6 +186,7 @@ interface ResolvedCodexPermission {
 interface CodexTraceState {
   readonly collaborationSpans: Map<string, HarnessTraceSpan>;
   readonly graphAuthoringCommandIds: Set<string>;
+  readonly graphAuthoringNodePath?: string;
   readonly fallbackGraphAuthoringEnabled: boolean;
 }
 
@@ -381,6 +384,7 @@ export class CodexBasicHarness implements Harness {
     const traceState: CodexTraceState = {
       collaborationSpans: new Map(),
       graphAuthoringCommandIds: new Set(),
+      ...(this.dependencies.graphAuthoringNodePath ? { graphAuthoringNodePath: this.dependencies.graphAuthoringNodePath.replaceAll("\\", "/") } : {}),
       fallbackGraphAuthoringEnabled: this.dependencies.graphAuthoringLauncherPath === undefined,
     };
     // The host's per-turn force-stop kills this turn's app-server process group, exactly as a
@@ -553,11 +557,20 @@ export class CodexBasicHarness implements Harness {
     // Never let a stale parent environment silently restore that broader
     // authoring path now that graph execution uses the zero-argument launcher.
     delete environment.RELAYER_GRAPH_AUTHORING_NODE;
+    // Windows environment keys are case-insensitive; keep only one PATH alias.
+    if (environment.Path !== undefined) { environment.PATH = environment.Path; delete environment.Path; }
     environment.RELAYER_GRAPH_URL = graph.url;
+    delete environment.RELAYER_GRAPH_AUTHORING_ERRORS;
+    if (graph.authoringErrors) environment.RELAYER_GRAPH_AUTHORING_ERRORS = "1";
     environment.RELAYER_GRAPH_TOKEN = graph.token;
     environment.RELAYER_NODE_ID = String(graph.nodeId);
     delete environment.RELAYER_GRAPH_PREVIEW_DIR;
     if (graph.previewDirectory !== undefined) environment.RELAYER_GRAPH_PREVIEW_DIR = graph.previewDirectory;
+    delete environment.RELAYER_GRAPH_PROGRAM_DIR;
+    // The pinned launcher strips the environment and reads no files, so only the fallback heredoc gets it.
+    if (graph.programDirectory !== undefined && this.dependencies.graphAuthoringLauncherPath === undefined) {
+      environment.RELAYER_GRAPH_PROGRAM_DIR = graph.programDirectory;
+    }
     if (completionBroker !== undefined) {
       environment.RELAYER_COMPLETE_URL = completionBroker.url;
       environment.RELAYER_COMPLETE_TOKEN = completionBroker.token;
@@ -745,7 +758,7 @@ ${ATTACHED_NAVIGATION_GUIDANCE}
 For a full Node Detail replacement accompanying an authorized addition, first call await graph.getNodePresentation(nodeId) to read the current node, revision, and actions. Author a complete compiled NodeObject presentation with the persistent node's existing clientKey, preserving every existing action binding and adding usable controls for the new actions. Call await graph.replaceNodePresentation(nodeId, revision, presentationBuilder); this stages presentation only, not the builder's title/detail. Retain original action clientKey, kind, and sourceLayer provenance when rebuilding controls; new actions with omitted provenance must omit it in their bindings too. On stale_presentation_revision, reread and repair the full presentation against the current actions. Do not synthesize supplemental controls. If retained rich HTML cannot expose a new action, provide an explicit full replacement before submitting.
 
 
-Use executable JavaScript and the Relayer graph client. Do not return a JSON graph in chat. Run exactly ${launcher}${launcherArgumentsClause}, including the displayed double quotes, and pass the program through standard input using a shell-native single-quoted here-document delimited by exactly RELAYER_GRAPH_PROGRAM;${launcherClause} never place authored graph code in a --eval argument, and do not create a script in either the project checkout or a temporary directory. ${this.dependencies.graphAuthoringLauncherPath ? "Request Codex sandbox escalation for this exact launcher command; Relayer preauthorizes only this pinned internal launcher, which applies its own narrower graph sandbox." : ""} The quoted here-document must prevent the provider shell from expanding environment variables in the program. Import from:
+Use executable JavaScript and the Relayer graph client. Do not return a JSON graph in chat. ${this.dependencies.graphAuthoringNodePath ? appOwnedNodeInstructions(this.dependencies.graphAuthoringNodePath) + " Import from:" : `Run exactly ${launcher}${launcherArgumentsClause}, including the displayed double quotes, and pass the program through standard input using a shell-native single-quoted here-document delimited by exactly RELAYER_GRAPH_PROGRAM;${launcherClause} never place authored graph code in a --eval argument, and do not create a script in either the project checkout or a temporary directory. ${this.dependencies.graphAuthoringLauncherPath ? "Request Codex sandbox escalation for this exact launcher command; Relayer preauthorizes only this pinned internal launcher, which applies its own narrower graph sandbox." : ""} The quoted here-document must prevent the provider shell from expanding environment variables in the program. Import from:`}
 ${this.clientModuleUrl}
 ${pinnedExecutionClause}
 
@@ -786,7 +799,7 @@ Choose variants with the available inspector space in mind: chips and pills suit
 
 Navigate and invoke actions are first-class options, not requirements for every node. Use them where they materially improve the answer, and submit every referenced node, edge, and layer before adding its action.
 
-If a graph call rejects an object or graph.submit reports a repairable issue, edit the same program and rerun it with the same clientKey values. Stable keys make the whole-program rerun update the same drafts instead of creating duplicates when each object's identity-owning context stays unchanged. An action's clientKey is scoped to its source node: keep every draft action on the same source node during repair, because moving it creates a different action and leaves the original draft behind. Do not add fake navigate or reference actions merely to make abandoned draft layers reachable. Only when graph.submit identifies a genuinely abandoned orphan draft, recover with graph.discardLayer(layer); this preserves that layer as stopped history without discarding its nodes, edges, actions, or child layers. The graph is complete only after graph.submit succeeds.`;
+${graphProgramRepairGuidance(programEditsAvailable(context, this.dependencies.graphAuthoringLauncherPath), "If a graph call rejects an object or graph.submit reports a repairable issue")} Stable keys make a rerun, whole or edited, update the same drafts instead of creating duplicates when each object's identity-owning context stays unchanged. An action's clientKey is scoped to its source node: keep every draft action on the same source node during repair, because moving it creates a different action and leaves the original draft behind. Do not add fake navigate or reference actions merely to make abandoned draft layers reachable. Only when graph.submit identifies a genuinely abandoned orphan draft, recover with graph.discardLayer(layer); this preserves that layer as stopped history without discarding its nodes, edges, actions, or child layers. The graph is complete only after graph.submit succeeds.`;
   }
 
   private layeredNavigationPrompt(context: HarnessRunContext, includePersonalPresentation: boolean): string {
@@ -798,10 +811,15 @@ If a graph call rejects an object or graph.submit reports a repairable issue, ed
       "Codex",
       includePersonalPresentation,
       this.context.configuration.graphCapabilityProfile?.search === "query-v1",
+      this.dependencies.graphAuthoringNodePath,
     );
   }
 
   private graphAuthoringCommand(): string {
+    if (this.dependencies.graphAuthoringNodePath !== undefined) {
+      if (this.dependencies.graphAuthoringLauncherPath !== undefined) throw new Error("Graph authoring cannot use both Node and the restricted launcher.");
+      return appOwnedNodeCommand(this.dependencies.graphAuthoringNodePath);
+    }
     return graphAuthoringCommand(this.dependencies.graphAuthoringLauncherPath);
   }
 
@@ -830,6 +848,7 @@ export function buildLayeredNavigationPrompt(
   nativeAgentLabelOrGraphSearchEnabled: string | boolean = "Codex",
   explicitIncludePersonalPresentation = true,
   explicitGraphSearchEnabled = false,
+  graphAuthoringNodePath?: string,
 ): string {
   const completeModuleUrl = typeof completeModuleUrlOrIncludePersonalPresentation === "string"
     ? completeModuleUrlOrIncludePersonalPresentation
@@ -848,7 +867,10 @@ export function buildLayeredNavigationPrompt(
   const normalizedInput = context
     ? renderInteractionInput(context.interactionInput)
     : `Interaction:\n- id: ${interactionNode.id}\n- title: ${interactionNode.title}\n- detail: ${interactionNode.detail}`;
-  const authoringInstructions = graphAuthoringLauncherPath === undefined
+  if (graphAuthoringNodePath !== undefined && graphAuthoringLauncherPath !== undefined) throw new Error("Graph authoring cannot use both Node and the restricted launcher.");
+  const authoringInstructions = graphAuthoringNodePath !== undefined
+    ? `${appOwnedNodeInstructions(graphAuthoringNodePath, nativeAgentLabel === "Claude" ? "bash" : "powershell")} Import RelayerGraphClient, NodeObject, EdgeObject, and LayerObject from:\n${clientModuleUrl}\nThen use RelayerGraphClient.fromEnv(). Submit each referenced object before using it. Keep clientKey values stable when repairing rejected submissions. The final call must be await graph.submit(${interactionNode.id}); call it only after the full response has been authored.`
+    : graphAuthoringLauncherPath === undefined
     ? `Run exactly node --input-type=module with no additional arguments and pass the program through standard input using a shell-native single-quoted here-document delimited by exactly RELAYER_GRAPH_PROGRAM; never place authored graph code in a --eval argument, and do not create a script in either the project checkout or a temporary directory. The quoted here-document must prevent the provider shell from expanding environment variables in the program. Import RelayerGraphClient, NodeObject, EdgeObject, and LayerObject from:\n${clientModuleUrl}\nThen use RelayerGraphClient.fromEnv(). Author in whatever order fits the task. Keep each object's generated clientKey stable when retrying the same rejected submit; create a new object only for a genuinely new graph record. Submit each referenced object before using it. The final graph call must be await graph.submit(${interactionNode.id}); call it only after the full response has been authored.`
     : `Run exactly ${graphAuthoringCommand(graphAuthoringLauncherPath)} with no arguments, including the displayed double quotes, and pass the program through standard input using a shell-native single-quoted here-document delimited by exactly RELAYER_GRAPH_PROGRAM; do not resolve the launcher or Node.js from PATH, never place authored graph code in a --eval argument, and do not create a script in either the project checkout or a temporary directory. Request Codex sandbox escalation for this exact launcher command; Relayer preauthorizes only this pinned internal launcher, which applies its own narrower graph sandbox. The quoted here-document must prevent the provider shell from expanding environment variables in the program. Import from:\n${clientModuleUrl}\n${pinnedExecutionClause(graphAuthoringLauncherPath)}`;
   const graphSearchGuidance = graphSearchEnabled ? `
@@ -928,7 +950,7 @@ ${NODE_ICON_GUIDANCE}
 
 Action variants are "chip", "pill", "wide", or "card". A card requires description; other variants do not accept one.
 
-The graph service enforces exact provenance, target visibility, layer size, expansion cycles, and accepted closure. If a call fails, read every natural-language issue, edit the same program and rerun it with the same clientKey values; stable keys make the whole-program rerun update the same drafts instead of creating duplicates when each object's identity-owning context stays unchanged. An action's clientKey is scoped to its source node: keep every draft action on the same source node during repair, because moving it creates a different action and leaves the original draft behind. Do not add fake navigate or reference actions merely to make abandoned draft layers reachable. Only when graph.submit identifies a genuinely abandoned orphan draft, recover with graph.discardLayer(layer); this preserves that layer as stopped history without discarding its nodes, edges, actions, or child layers. A model turn ending is not completion. A successful graph.submit call is required to complete the GraphComplete response, but it does not by itself complete the underlying user task. Do not submit a plan as though it were completed work. Before final submission, verify that requested workspace effects have actually occurred and represent their real results in the graph.`;
+The graph service enforces exact provenance, target visibility, layer size, expansion cycles, and accepted closure. ${graphProgramRepairGuidance(programEditsAvailable(context, graphAuthoringLauncherPath), "If a call fails, read every natural-language issue")} Stable keys make a rerun, whole or edited, update the same drafts instead of creating duplicates when each object's identity-owning context stays unchanged. An action's clientKey is scoped to its source node: keep every draft action on the same source node during repair, because moving it creates a different action and leaves the original draft behind. Do not add fake navigate or reference actions merely to make abandoned draft layers reachable. Only when graph.submit identifies a genuinely abandoned orphan draft, recover with graph.discardLayer(layer); this preserves that layer as stopped history without discarding its nodes, edges, actions, or child layers. A model turn ending is not completion. A successful graph.submit call is required to complete the GraphComplete response, but it does not by itself complete the underlying user task. Do not submit a plan as though it were completed work. Before final submission, verify that requested workspace effects have actually occurred and represent their real results in the graph.`;
 }
 
 /** How each harness looks at a preview PNG (PRD §11.10). */
@@ -964,6 +986,17 @@ function graphAuthoringCommand(launcher: string | undefined): string {
     throw new Error("The graph-authoring launcher must be a shell-safe absolute path.");
   }
   return JSON.stringify(launcher);
+}
+
+/** Program edits need the host's folder and the fallback heredoc; the pinned launcher strips the environment and reads no files. */
+export function programEditsAvailable(context: HarnessRunContext | undefined, launcher: string | undefined): boolean {
+  return launcher === undefined && context?.graph.acquireCapability().programDirectory !== undefined;
+}
+
+/** How to repair a failed program: by sending edits to a saved program when the run supports it, else by retyping it. */
+export function graphProgramRepairGuidance(editsAvailable: boolean, lead: string): string {
+  if (!editsAvailable) return `${lead}, edit the same program and rerun it with the same clientKey values.`;
+  return `${lead}, fix the program and rerun it with the same clientKey values. Do not retype the whole program for a small fix. Every program prints "graph program id: <id>" when it starts. Through the same heredoc, run a short program that imports rerunGraphProgram from the same module and calls await rerunGraphProgram("<id>", [{ find: "exact text from that program", replace: "fixed text" }]). In that patch heredoc, call rerunGraphProgram directly; do not call RelayerGraphClient.fromEnv(), which would save the patch wrapper under its own id. Each find must match exactly one place in that program; edits apply in order; the edited program runs and prints its own id, which is the one to edit next. A program that crashed before printing an id has no saved copy: rerun it in full. If an id or a find does not match, nothing runs and the error says so. Rerun only for an explicit repairable graph rejection. If submission succeeded, or its response was lost and the outcome is unknown, do not rerun the program or repeat workspace effects; let the host recover the persisted outcome.`;
 }
 
 function pinnedExecutionClause(launcher: string | undefined): string {
@@ -1058,13 +1091,15 @@ function rememberGraphAuthoringCommand(state: CodexTraceState, params: unknown):
       ? item.commandActions.flatMap((action) => isRecord(action) ? [action.command] : [])
       : []),
   ];
-  if (commands.some((command) => pinnedGraphAuthoringLauncher(command) !== undefined
+  if (commands.some((command) => (typeof command === "string" && state.graphAuthoringNodePath !== undefined && command.replaceAll("\\", "/").replaceAll("''", "'").toLowerCase().includes(state.graphAuthoringNodePath.toLowerCase()) && command.includes("--input-type=module"))
+    || pinnedGraphAuthoringLauncher(command) !== undefined
     || (state.fallbackGraphAuthoringEnabled && isFallbackGraphAuthoringCommand(command)))) {
     state.graphAuthoringCommandIds.add(id);
   }
 }
 
-function isFallbackGraphAuthoringCommand(command: unknown): boolean {
+/** The one fallback command form: a stdin heredoc, whether it carries a full program or edits. */
+export function isFallbackGraphAuthoringCommand(command: unknown): boolean {
   if (typeof command !== "string") return false;
   const input = command.trim();
   return /^node[ \t]+--input-type=module[ \t]+<<'RELAYER_GRAPH_PROGRAM'[ \t]*\r?\n/.test(input);

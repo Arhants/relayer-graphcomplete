@@ -275,6 +275,9 @@ export function projectExecutionDossier(run, execution) {
     mechanism: {
       checks: humanComparisonRequired ? legacyGates.map(gateProjection) : [],
     },
+    timing: asArray(execution.turns).flatMap((turn, index) => (
+      turn?.timing ? [timingProjection(turn, index)] : []
+    )),
     presentation: {
       ...cell.presentation,
       comprehensionScore: finiteScore(presentation.comprehensionScore),
@@ -305,6 +308,18 @@ export function projectExecutionDossier(run, execution) {
         : asArray(presentation.layers).flatMap((layer) => asArray(layer?.evidenceRefs)))
         .map(evidenceRefLabel),
     },
+    authoringErrors: [
+      ...asArray(execution.turns).map((turn) => ({ ...turn, kind: "turn" })),
+      ...semanticChildren.map((child) => ({ ...child, kind: "child" })),
+      ...Object.keys(execution.authoringErrorMetrics ?? {})
+        .filter((interactionId) => ![...asArray(execution.turns), ...semanticChildren].some((turn) => String(turn.interactionId) === interactionId))
+        .map((interactionId) => ({ interactionId, kind: "captured" })),
+    ].map((turn) => ({
+      kind: turn.kind,
+      interactionId: turn.interactionId,
+      ...(turn.kind === "child" ? { sourceInteractionId: turn.sourceInteractionId, sourceActionId: turn.sourceActionId } : {}),
+      ...(turn.authoringErrors ?? execution.authoringErrorMetrics?.[turn.interactionId] ?? { schemaVersion: 1, coverage: "unavailable", total: null, observed: null, byCause: {}, reasons: ["not_recorded"] }),
+    })),
     recursiveComplete: {
       declared: execution.harnessConfiguration?.complete !== undefined,
       configured: execution.harnessConfiguration?.complete?.agentAuthored === true,
@@ -329,6 +344,22 @@ export function projectExecutionDossier(run, execution) {
       importedJudgeEligible: run?.kind === "imported-conversation"
         && asArray(execution.turns).some((turn) => turn.status === "accepted"),
     },
+  };
+}
+
+/** One turn's time to first graph, in the words the dashboard shows. */
+function timingProjection(turn, index) {
+  const timing = turn.timing;
+  const seconds = (value) => (Number.isFinite(value) ? `${value} s` : "—");
+  const runs = timing.programRuns;
+  return {
+    turnIndex: turn.turnIndex ?? index,
+    firstGraph: seconds(timing.firstGraphSeconds),
+    accepted: seconds(timing.acceptedSeconds),
+    rejections: timing.graphWriteRejections ?? "—",
+    programs: runs === null || runs === undefined
+      ? "unavailable"
+      : `${runs.programs} program${runs.programs === 1 ? "" : "s"}, ${runs.patches} patch${runs.patches === 1 ? "" : "es"}, ${runs.failed ?? "unknown"} failed`,
   };
 }
 

@@ -96,6 +96,9 @@
     { "exact": "docs/graph-query-v1.md", "package": "relayer-graph-core" }
   ],
   "npmOwners": [
+    { "exact": "docs/windows-development.md", "package": "relayer-desktop", "packaging": true },
+    { "exact": "scripts/windows-dev-sync.mjs", "package": "relayer-desktop", "packaging": true },
+    { "exact": "scripts/run-windows-dev-loop.mjs", "package": "relayer-desktop", "packaging": true },
     { "prefix": "packages/eval-runner/", "package": "@relayer/eval-runner", "vitestFiles": ["packages/eval-runner/test", "test/eval-app-integration.test.mjs", "test/eval-task-actor.test.mjs", "test/eval-task-actor-errors.test.mjs"] },
     { "prefix": "packages/visual-assets/", "package": "@relayer/visual-assets", "vitestFiles": ["packages/visual-assets/test"] },
     {
@@ -117,6 +120,7 @@
         "test/composer-provider-lifecycle.test.mjs",
         "test/desktop-release-main-ci-check.test.mjs",
         "test/windows-candidate.test.mjs",
+        "test/windows-native-cache.test.mjs",
         "test/ladybug-packaged-lifecycle.test.mjs",
         "test/desktop-shell.test.mjs",
         "test/eval-web-host.test.mjs",
@@ -153,6 +157,10 @@
     }
   ],
   "chapterOwners": [
+    {"exact": "desktop/release/build-native-release.mjs", "chapters": ["vitest", "packaging"], "vitestFiles": ["test/windows-native-cache.test.mjs", "test/windows-candidate.test.mjs", "test/signed-native-cache.test.mjs", "test/desktop-telemetry-release-artifacts.test.mjs"]},
+    {"exact": "desktop/release/windows-native-build.mjs", "chapters": ["vitest", "packaging"], "vitestFiles": ["test/windows-native-cache.test.mjs", "test/windows-candidate.test.mjs", "test/signed-native-cache.test.mjs", "test/desktop-telemetry-release-artifacts.test.mjs"]},
+    {"exact": "desktop/release/windows-native-cache.mjs", "chapters": ["vitest", "packaging"], "vitestFiles": ["test/windows-native-cache.test.mjs", "test/windows-candidate.test.mjs", "test/signed-native-cache.test.mjs", "test/desktop-telemetry-release-artifacts.test.mjs"]},
+    {"exact": "desktop/release/windows-native-identity.mjs", "chapters": ["vitest", "packaging"], "vitestFiles": ["test/windows-native-cache.test.mjs", "test/windows-candidate.test.mjs", "test/signed-native-cache.test.mjs", "test/desktop-telemetry-release-artifacts.test.mjs"]},
     { "exact": "desktop/release/verify-windows-app.mjs", "chapters": ["vitest", "packaging"], "vitestFiles": ["test/desktop-shell.test.mjs", "test/windows-candidate.test.mjs"] },
     { "exact": "scripts/check-windows-signature-runtime.mjs", "chapters": ["vitest", "packaging"], "vitestFiles": ["test/desktop-shell.test.mjs", "test/windows-candidate.test.mjs"] },
     { "exact": "desktop/release/windows-rust-debug.mjs", "chapters": ["vitest", "packaging"], "vitestFiles": ["test/windows-candidate.test.mjs", "test/desktop-telemetry-release-artifacts.test.mjs"] },

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, win32 } from "node:path";
@@ -100,10 +101,20 @@ describe("independent Windows candidate", () => {
       const builder = createDesktopBuilderConfig(f.contract, {
         environment: { RELAYER_CARGO_TARGET_DIR: join(f.repositoryRoot, "target") }, argv: [],
       });
+      const nodeInput = join(f.repositoryRoot, "node-input");
+      const crtInput = join(f.repositoryRoot, "crt-input");
+      await mkdir(nodeInput); await mkdir(crtInput);
+      await writeFile(join(nodeInput, "node.exe"), "official-node-fixture");
+      await writeFile(join(nodeInput, "LICENSE"), "full-node-license-fixture");
+      await writeFile(join(nodeInput, "provenance.json"), "{}");
+      await writeFile(join(crtInput, "vcruntime140.dll"), "microsoft-signed-crt-fixture");
+      await writeFile(join(crtInput, "provenance.json"), "{}");
+      builder.extraResources.find(item => item.to === "node").from = nodeInput;
+      builder.extraResources.find(item => item.to === "bin" && item.filter?.includes("*.dll")).from = crtInput;
       const matchers = getFileMatchers(builder, "extraResources", resources, {
         macroExpander: value => value, customBuildOptions: builder.win,
         globalOutDir: appOutDir, defaultSrc: f.repositoryRoot,
-      }).filter(matcher => matcher.from.startsWith(join(f.repositoryRoot, "target")));
+      }).filter(matcher => [join(f.repositoryRoot, "target"), nodeInput, crtInput].some(prefix => matcher.from.startsWith(prefix)));
       const signed = [];
       const signingPackager = {
         platformSpecificBuildOptions: builder.win,
@@ -116,14 +127,18 @@ describe("independent Windows candidate", () => {
       const transformer = WinPackager.prototype.createTransformerForExtraFiles.call(signingPackager, { appOutDir });
       await copyFiles(matchers, transformer);
       const executables = ["relayer-app-server.exe", "relayer-graph-server.exe"];
-      expect(signed.sort()).toEqual(executables.map(name => join(resources, "bin", name)).sort());
-      expect((await readdir(join(resources, "bin"))).sort()).toEqual(executables.sort());
+      expect(signed.sort()).toEqual([...executables.map(name => join(resources, "bin", name)), join(resources, "node", "node.exe")].sort());
+      expect(await readFile(join(nodeInput, "node.exe"), "utf8")).toBe("official-node-fixture");
+      expect(await readFile(join(resources, "node", "node.exe"), "utf8")).toBe("official-node-fixture\nsigned fixture");
+      expect(await readFile(join(resources, "bin", "vcruntime140.dll"), "utf8")).toBe("microsoft-signed-crt-fixture");
+      expect((await readdir(join(resources, "bin"))).sort()).toEqual([...executables, "vcruntime140.dll", "provenance.json"].sort());
       for (const name of f.names) {
         expect(await readFile(join(f.directory, name), "utf8")).toBe(`native fixture: ${name}`);
       }
       for (const name of executables) {
         expect(await readFile(join(resources, "bin", name), "utf8")).toBe(`native fixture: ${name}\nsigned fixture`);
       }
+      await rm(resources, { recursive: true, force: true });
       signingPackager.signIf = async () => { throw Error("signing rejected"); };
       await expect(copyFiles(matchers, transformer)).rejects.toThrow("signing rejected");
     } finally { await rm(f.repositoryRoot, { recursive: true, force: true }); }
@@ -232,13 +247,15 @@ describe("independent Windows candidate", () => {
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
-  it("checks out canonical generated query contracts with Windows line ending conversion enabled", async () => {
+  it("checks out generated contracts and reviewed native inputs with Windows line ending conversion enabled", async () => {
     const root = await mkdtemp(join(tmpdir(), "windows-contract-checkout-"));
     const generated = "packages/graph-client/src/query-errors.generated.ts";
     const python = "python/relayer-graph/src/relayer_graph/query_errors_generated.py";
     const generator = "packages/graph-client/scripts/generate-query-errors.mjs";
+    const { reviewedBuildConfiguration } = JSON.parse(await readFile(new URL("../scripts/ci/packaging-input-contract.json", import.meta.url), "utf8"));
+    const reviewed = Object.keys(reviewedBuildConfiguration);
     try {
-      for (const file of [".gitattributes", generated, python, generator, "docs/graph-query-v1-errors.json", "crates/relayer-graph-core/src/query/error.rs"]) {
+      for (const file of [".gitattributes", generated, python, generator, "docs/graph-query-v1-errors.json", "crates/relayer-graph-core/src/query/error.rs", ...reviewed]) {
         await mkdir(dirname(join(root, file)), { recursive: true });
         await writeFile(join(root, file), await readFile(new URL(`../${file}`, import.meta.url)));
       }
@@ -249,7 +266,12 @@ describe("independent Windows candidate", () => {
       await git("-c", "user.name=Qualification fixture", "-c", "user.email=fixture@example.invalid", "commit", "--quiet", "-m", "canonical source");
       await rm(join(root, generated));
       await rm(join(root, python));
-      await git("checkout", "--", generated, python);
+      for (const file of reviewed) await rm(join(root, file));
+      await git("checkout", "--", generated, python, ...reviewed);
+      for (const file of reviewed) {
+        const bytes = await readFile(join(root, file));
+        expect(createHash("sha256").update(bytes).digest("hex"), file).toBe(reviewedBuildConfiguration[file]);
+      }
       await execFileAsync(process.execPath, [join(root, generator), "--check"], { cwd: root });
     } finally { await rm(root, { recursive: true, force: true }); }
   });
@@ -315,7 +337,7 @@ describe("independent Windows candidate", () => {
     const workflow = parse(await readFile(new URL("../.github/workflows/desktop-windows-candidate.yml", import.meta.url), "utf8"));
     expect(Object.keys(workflow.on).sort()).toEqual(["pull_request", "workflow_dispatch"]);
     expect(workflow.on.pull_request).toEqual({ types: ["opened", "synchronize", "reopened", "labeled"] });
-    expect(workflow.jobs.qualify.permissions).toEqual({ contents: "read" });
+    expect(workflow.jobs.qualify.permissions).toEqual({ contents: "read", actions: "read" });
     expect(workflow.jobs.qualify.if).toContain("contains(github.event.pull_request.labels.*.name, 'windows-qualification')");
     expect(workflow.jobs.qualify.if).toContain("needs.validate.result == 'success'");
     expect(workflow.jobs.qualify.environment).toBeUndefined();
@@ -329,7 +351,7 @@ describe("independent Windows candidate", () => {
       const signatureProbe = job.steps.findIndex(step => step.run === "node scripts/check-windows-signature-runtime.mjs");
       const probe = job.steps.findIndex(step => step.run === "node scripts/check-windows-rust-symbols.mjs");
       const msvc = job.steps.findIndex(step => step.uses?.startsWith("ilammy/msvc-dev-cmd@"));
-      const coldBuild = job.steps.findIndex(step => step.run?.includes("cargo fetch") || step.run?.includes("--prepare-windows-native"));
+      const coldBuild = job.steps.findIndex(step => step.run?.includes("cargo fetch") || step.run?.includes("windows-native-build.mjs adopt"));
       expect(probe).toBeGreaterThan(msvc);
       expect(msvc).toBeGreaterThan(-1);
       expect(coldBuild).toBeGreaterThan(probe);
@@ -339,7 +361,7 @@ describe("independent Windows candidate", () => {
       expect(coldBuild).toBeGreaterThan(signatureProbe);
     }
     await execFileAsync(process.execPath, ["--check", fileURLToPath(new URL("../scripts/check-windows-signature-runtime.mjs", import.meta.url))]);
-    const preparation = steps.findIndex(step => step.run?.includes("--prepare-windows-native"));
+    const preparation = steps.findIndex(step => step.run?.includes("windows-native-build.mjs adopt"));
     const login = steps.findIndex(step => step.uses?.startsWith("azure/login@"));
     const resourceToken = steps.findIndex(step => step.run?.includes("get-access-token"));
     const packaging = steps.findIndex(step => step.run?.includes("--use-windows-native"));

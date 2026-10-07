@@ -23,7 +23,13 @@ original window. Update the branch to create fresh PR CI when it expires.
 7, 22, 37, and 52, on CI completion, relevant PR changes, and main pushes. Manual
 dispatch on main is also available. It never reruns expensive CI or merges PRs.
 Only the latest CI run associated with this PR and its exact current head can qualify; its current
-attempt must have a successful `check` job. A matching plan artifact from an
+attempt must have a successful `check` job. When GitHub returns an empty PR
+association list (observed for fork runs), selection requires the exact source
+repository ID and name, branch, and head SHA. A nonempty association list never
+uses this fallback. The plan receipt must still bind this PR number, run,
+attempt, head, and tested merge; source identity alone cannot grant success.
+Newest-first selection retains a newer pending or failed run rather than
+borrowing an older success. A matching plan artifact from an
 earlier attempt of that same immutable run is allowed because re-running only
 failed jobs does not repeat a successful plan. This never renews the window.
 Missing/expired evidence, conflicts, unknown mergeability, and per-PR API or
@@ -545,3 +551,13 @@ bytes. Long-lived daemons outside the waited command are not attributed. Nested
 command totals overlap and must not be added together. Compare these summaries
 with existing Cargo unit/concurrency reports and Vitest file/case durations to
 choose a targeted profiler or integration setup/wait/teardown measurement.
+
+## Windows release native build reuse
+
+The independent manual `Windows Desktop Candidate` workflow has three acceleration layers. Qualification builds the actual release/default-features/debug-1 servers once; fresh unsigned packaging, afterPack PE/static-import/notices checks and graph-server create/lock/shutdown/reopen qualify those bytes. A private artifact seals only two EXEs, two GUID/age-matching PDBs and a manifest. Signing adopts that exact current-run input before login without compiling again. Labeled PRs retain their separate cold qualification recipe and cannot produce reusable release-native artifacts.
+
+Cross-run reuse accepts only repository-owned manual-main artifacts with successful exact-source validation and Windows-2025 native qualification jobs. Later signing failure is permitted; native qualification failure is not. Immutable artifact ID/API archive SHA-256, run/attempt/source, exact archive inventory, per-file hashes, x64 PE/static imports, PDB identities and reviewed native/Rust/toolchain/profile inputs must all match. Producer metadata is rechecked after transfer. Same-run adoption is required and fails closed; optional lookup/rejection falls back to exactly one locked/offline source build. Optional lookup has a 120-second overall transport budget; required handoff has 240 seconds. Actual compiler failure is never retried as a cache failure.
+
+Only a binary miss restores main-scoped Cargo/pinned-source downloads, hash-verified static native preparation at its stable runner prefix, and pinned local sccache 0.18.0 objects. Saves and cache service/setup failures remain optional. No PR writes these namespaces. Native identity binds compiler orchestration, actual resolved tools, MSVC/SDK paths and versions, reviewed build-script/configuration closure and case-insensitive ambient override rejection. Renderer, release version, installer and workflow-only changes do not invalidate native binaries. A compiler-orchestration edit intentionally invalidates native preparation and runtime output.
+
+Every consumer repeats licensing, packaging and lifecycle checks; signed assembly, signatures, telemetry and sealing remain fresh. Receipts name either fresh release compilation or verified artifact reuse, never a cold-build claim on a hit. Non-gating compiler JSON statistics are retained for 14 days. `force_native_rebuild` proves the dependency/compiler fallback without modifying native sources. Main/macOS workflows do not depend on these caches or jobs. Source/fixture proof and hosted cold/hit/fallback proof are recorded separately in the [ledger](../evidence/windows-native-cache/README.md).

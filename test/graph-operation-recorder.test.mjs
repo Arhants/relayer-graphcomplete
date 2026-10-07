@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { startGraphOperationRecorder } from "../desktop/main/services/graph-operation-recorder.mjs";
 import { GraphCompleteRuntimeService } from "../desktop/main/services/graphcomplete-runtime.mjs";
@@ -12,11 +12,12 @@ const resources = [];
 const directories = [];
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   for (const resource of resources.splice(0).reverse()) await resource.close();
   for (const directory of directories.splice(0)) await rm(directory, { recursive: true, force: true });
 });
 
-async function startUpstream({ holdNodeResponse = false } = {}) {
+async function startUpstream({ holdNodeResponse = false, rejectVisualAssetOperations = false } = {}) {
   let resolveSlowSearchStarted;
   const slowSearchStarted = new Promise((resolve) => { resolveSlowSearchStarted = resolve; });
   let resolveNodeStarted;
@@ -31,6 +32,11 @@ async function startUpstream({ holdNodeResponse = false } = {}) {
     if ((request.url === "/api/graph/visual-assets/operations"
       || request.url === "/api/control/visual-assets/imports/validate"
       || request.url === "/api/control/conversation-import-stages/test/visual-asset-contents") && request.method === "POST") {
+      if (rejectVisualAssetOperations && request.url === "/api/graph/visual-assets/operations") {
+        response.writeHead(422, { "content-type": "application/json" });
+        response.end(JSON.stringify({ error: { code: "invalid_request" } }));
+        return;
+      }
       response.writeHead(200, { "content-type": "application/json" });
       response.end(JSON.stringify(body));
       return;
@@ -49,6 +55,13 @@ async function startUpstream({ holdNodeResponse = false } = {}) {
     if (request.url === "/api/control/capabilities" && request.method === "DELETE") {
       response.writeHead(200, { "content-type": "application/json" });
       response.end(JSON.stringify({ revoked: 1 }));
+      return;
+    }
+    if (request.url === "/api/graph/current/transitions" && request.method === "POST") {
+      const kind = body.transition.kind;
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ completionId: 17, lifecycle: { advance: "active", return: "succeeded", stop: "stopped" }[kind],
+        currentLayerId: 9, finalLayerId: kind === "return" ? 9 : null, privateField: "private response" }));
       return;
     }
     if (request.url === "/api/graph/nodes" && request.method === "POST") {
@@ -169,6 +182,25 @@ function rawTargetRequest(origin, target) {
 }
 
 describe("desktop graph-operation recorder", () => {
+  it("exports closed transition outcomes without stop reasons or request payloads", async () => {
+    const upstream = await startUpstream();
+    const recorder = await startGraphOperationRecorder({ upstreamUrl: upstream.url });
+    resources.push(recorder);
+    await bindCapability(recorder.url, "transition-token");
+    for (const kind of ["advance", "return", "stop"]) {
+      await jsonRequest(`${recorder.url}/api/graph/current/transitions`, { method: "POST", token: "transition-token",
+        body: { transition: { kind, reason: "private reason" } } });
+    }
+    const target = await createCandidateTraceDirectory();
+    await recorder.exportInteraction(17, target);
+    const text = await readFile(join(target, "graph-operations.jsonl"), "utf8");
+    const records = text.trim().split("\n").map(JSON.parse);
+    expect(records.map((record) => record.transitionKind)).toEqual(["advance", "return", "stop"]);
+    expect(records[1]).toMatchObject({ completionLifecycle: "succeeded", completionRootLayerId: 9 });
+    expect(text).not.toContain("private");
+    expect(text).not.toContain("transition-token");
+  });
+
   it("attributes provider-neutral graph receipts and sequences them by completed response", async () => {
     const upstream = await startUpstream();
     const recorder = await startGraphOperationRecorder({ upstreamUrl: upstream.url });
@@ -636,4 +668,196 @@ it("preserves bounded asset request/response parity without widening ordinary gr
   await expect(jsonRequest(`${recorder.url}/api/graph/visual-assets/operations`, {
     method: "POST", body: { bytesBase64: "x".repeat(12 * 1024 * 1024) },
   })).resolves.toMatchObject({ status: 502 });
+});
+
+
+it("captures caught compiler failures and server origins once without preserving authored text", async () => {
+  const { RelayerGraphClient, NodeObject, html, css } = await import("../packages/graph-client/src/index.ts");
+  const { authoringErrorsFromOperations } = await import("../desktop/eval-main/authoring-errors.mjs");
+  const { graphTimingFromTrace } = await import("../desktop/eval-main/graph-timing.mjs");
+  const upstream = await startUpstream();
+  const recorder = await startGraphOperationRecorder({ upstreamUrl: upstream.url }); resources.push(recorder);
+  const token = "compiler-diagnostic-secret"; await bindCapability(recorder.url, token);
+  const client = new RelayerGraphClient({ url: recorder.url, token, nodeId: 17, authoringErrors: true });
+  const broken = new NodeObject("info", "Private authored title", "Private authored prose", "concept", "broken");
+  broken.detailAuthoring.setComponent("main", html`<p>Private authored prose</p>`, css`p { cursor: pointer; }`);
+  await expect(client.checkpointNodeDetail(broken)).rejects.toThrow();
+  // Same defect in a fresh attempt is another failure.
+  await expect(client.checkpointNodeDetail(broken)).rejects.toThrow();
+  // A checkpoint joining a failed submit sees the same compiler-origin incident.
+  const submission = client.submitNode(broken);
+  const joinedCheckpoint = client.checkpointNodeDetail(broken);
+  await expect(submission).rejects.toThrow();
+  await expect(joinedCheckpoint).rejects.toThrow();
+  // Server failures are already origins, so the client must not emit a duplicate.
+  await expect(client.createEdge(1, 2, "edge")).rejects.toThrow();
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const target = await createCandidateTraceDirectory(); await recorder.exportInteraction(17, target);
+  const text = await readFile(join(target, "graph-operations.jsonl"), "utf8");
+  const records = text.trim().split("\n").map(JSON.parse);
+  expect(authoringErrorsFromOperations(records)).toMatchObject({ observed: 4, total: null, byCause: { compiler: 3, server_rejection: 1 } });
+  expect(graphTimingFromTrace({ sentAt: records[0].observedAt, graphOperations: records, ledgerComplete: true })).toMatchObject({ graphWriteRejections: 1 });
+  expect(text).not.toContain(token); expect(text).not.toContain("Private authored");
+  expect(records.filter((record) => record.authoringError).every((record) => record.authoringError.codes.includes("unsafe_css"))).toBe(true);
+  expect((await jsonRequest(`${recorder.url}/api/graph/authoring-errors`, { method: "POST", token: "wrong", body: {} })).status).toBe(401);
+});
+
+
+it("diagnostic overflow cannot truncate graph proof", async () => {
+  const upstream = await startUpstream();
+  const recorder = await startGraphOperationRecorder({ upstreamUrl: upstream.url, maxEventsPerInteraction: 1, maxAuthoringDiagnosticsPerInteraction: 1 });
+  resources.push(recorder); const token = "bounded-diagnostics"; await bindCapability(recorder.url, token);
+  for (const id of ["00000000-0000-0000-0000-000000000001", "00000000-0000-0000-0000-000000000002"]) {
+    await jsonRequest(`${recorder.url}/api/graph/authoring-errors`, { method: "POST", token,
+      body: { schemaVersion: 1, id, phase: "compiler", codes: ["unsafe_css"] } });
+  }
+  await jsonRequest(`${recorder.url}/api/graph/nodes`, { method: "POST", token, body: { clientKey: "valid" } });
+  const target = await createCandidateTraceDirectory(); const descriptor = await recorder.exportInteraction(17, target);
+  expect(descriptor).toMatchObject({ status: "complete", promotable: true, truncated: false, eventCount: 2, authoringDiagnosticsDiscarded: 1 });
+  const lines = (await readFile(join(target, "graph-operations.jsonl"), "utf8")).trim().split("\n").map(JSON.parse);
+  expect(lines.at(-1)).toMatchObject({ path: "/api/graph/nodes", status: 201 });
+});
+
+
+it("captures a caught template failure before any graph method is called", async () => {
+  const { html } = await import("../packages/graph-client/src/index.ts");
+  const upstream = await startUpstream(); const recorder = await startGraphOperationRecorder({ upstreamUrl: upstream.url }); resources.push(recorder);
+  const token = "standalone-template-secret"; await bindCapability(recorder.url, token);
+  vi.stubEnv("RELAYER_GRAPH_URL", recorder.url); vi.stubEnv("RELAYER_GRAPH_TOKEN", token);
+  vi.stubEnv("RELAYER_NODE_ID", "17"); vi.stubEnv("RELAYER_GRAPH_AUTHORING_ERRORS", "1");
+  expect(() => html`<section>${html`<p>Nested private prose</p>`}</section>`).toThrow();
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const target = await createCandidateTraceDirectory(); await recorder.exportInteraction(17, target);
+  const text = await readFile(join(target, "graph-operations.jsonl"), "utf8");
+  const events = text.trim().split("\n").map(JSON.parse);
+  expect(events).toHaveLength(1);
+  expect(events[0]).toMatchObject({ authoringError: { phase: "compiler", codes: ["detail_template_nested"] } });
+  expect(text).not.toContain("Nested private prose"); expect(text).not.toContain(token);
+});
+
+it("counts visual-asset mutations while excluding multiplexed reads and retaining only known kinds", async () => {
+  const { authoringErrorsFromOperations } = await import("../desktop/eval-main/authoring-errors.mjs");
+  const upstream = await startUpstream({ rejectVisualAssetOperations: true });
+  const recorder = await startGraphOperationRecorder({ upstreamUrl: upstream.url }); resources.push(recorder);
+  const token = "asset-authoring-secret"; await bindCapability(recorder.url, token);
+  const writes = ["add", "create-tag", "move-tag", "associate", "organize", "archive"];
+  const reads = ["list-assets", "list-tags", "list-registries", "find", "inspect", "download"];
+  const { RelayerGraphClient } = await import("../packages/graph-client/src/index.ts");
+  const assets = new RelayerGraphClient({ url: recorder.url, token, nodeId: 17 }).visualAssets;
+  const scope = { kind: "thread", threadId: 17 };
+  for (const attempt of [
+    () => assets.add({ scope, name: "private asset name", file: { name: "private file", mediaType: "image/png", read: async () => Buffer.from("private bytes") } }),
+    () => assets.createTag({ scope, name: "private tag" }),
+    () => assets.moveTag({ scope, tagId: "private tag", parentTagId: null }),
+    () => assets.associate({ scope, assetId: "private asset" }),
+    () => assets.organize({ scope, assetId: "private asset", addTagIds: [], removeTagIds: [] }),
+    () => assets.archive("private asset", scope),
+    () => assets.listAssets({ scope }), () => assets.listTags({ scope }),
+    () => assets.listRegistries({ scope }), () => assets.find({ scope, tagId: "private tag" }),
+    () => assets.inspect("private asset", scope), () => assets.download("private asset", scope),
+  ]) await expect(attempt()).rejects.toThrow();
+  for (const body of [{ operation: { kind: "private-unknown-kind" } }, { kind: "add" }]) {
+    expect(await jsonRequest(`${recorder.url}/api/graph/visual-assets/operations`, { method: "POST", token, body })).toMatchObject({ status: 422 });
+  }
+  const target = await createCandidateTraceDirectory(); await recorder.exportInteraction(17, target);
+  const text = await readFile(join(target, "graph-operations.jsonl"), "utf8");
+  const records = text.trim().split("\n").map(JSON.parse);
+  expect(records.map((record) => record.visualAssetOperationKind)).toEqual([...writes, ...reads, undefined, undefined]);
+  expect(authoringErrorsFromOperations(records)).toMatchObject({ observed: 6, total: null, byCause: { server_rejection: 6 } });
+  for (const privateValue of [token, "private asset name", "private bytes", "private-unknown-kind"]) expect(text).not.toContain(privateValue);
+});
+
+it("captures recursive preparation and icon-write origins without counting reads or changing publication timing", async () => {
+  const { RelayerGraphClient } = await import("../packages/graph-client/src/index.ts");
+  const { authoringErrorsFromOperations } = await import("../desktop/eval-main/authoring-errors.mjs");
+  const { graphTimingFromTrace } = await import("../desktop/eval-main/graph-timing.mjs");
+  const upstream = await startUpstream();
+  const recorder = await startGraphOperationRecorder({ upstreamUrl: upstream.url }); resources.push(recorder);
+  const token = "recursive-authoring-secret"; await bindCapability(recorder.url, token);
+  const client = new RelayerGraphClient({ url: recorder.url, token, nodeId: 17, authoringErrors: true });
+  await expect(client.prepareComplete({})).rejects.toThrow();
+  await expect(client.prepareComplete(123)).rejects.toThrow();
+  await expect(client.proposeThreadIcon("private icon proposal")).rejects.toThrow();
+  await expect(client.getNode(999)).rejects.toThrow();
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const target = await createCandidateTraceDirectory(); await recorder.exportInteraction(17, target);
+  const text = await readFile(join(target, "graph-operations.jsonl"), "utf8");
+  const records = text.trim().split("\n").map(JSON.parse);
+  expect(authoringErrorsFromOperations(records)).toMatchObject({ observed: 3, total: null, byCause: { client: 1, server_rejection: 2 } });
+  expect(graphTimingFromTrace({ sentAt: records[0].observedAt, graphOperations: records, ledgerComplete: true })).toMatchObject({ graphWriteRejections: 0 });
+  expect(text).not.toContain(token); expect(text).not.toContain("private icon proposal");
+});
+
+
+it.each([false, true])("settles partially transmitted diagnostics independently of graph proof (timeout=%s)", async (timeout) => {
+  const upstream = await startUpstream();
+  const recorder = await startGraphOperationRecorder({ upstreamUrl: upstream.url, settleTimeoutMs: timeout ? 30 : 1_000 });
+  resources.push(recorder);
+  const token = "partial-body-diagnostic";
+  await bindCapability(recorder.url, token);
+  const body = JSON.stringify({ schemaVersion: 1, id: "00000000-0000-0000-0000-000000000001", phase: "compiler", codes: ["unsafe_css"] });
+  const request = httpRequest(`${recorder.url}/api/graph/authoring-errors`, { method: "POST", headers: {
+    authorization: `Bearer ${token}`, "content-type": "application/json", "content-length": Buffer.byteLength(body), expect: "100-continue",
+  } });
+  const response = new Promise((resolve) => {
+    request.on("response", (response) => { response.resume(); response.on("end", () => resolve(response.statusCode)); });
+    request.on("error", () => resolve("aborted"));
+  });
+  const started = new Promise((resolve) => request.once("continue", resolve));
+  request.flushHeaders();
+  await started; // Server has entered the real request handler, before the body can finish.
+  request.write(body.slice(0, 10));
+  const target = await createCandidateTraceDirectory();
+  const exportWork = recorder.exportInteraction(17, target);
+  if (!timeout) request.end(body.slice(10));
+  const descriptor = await exportWork;
+  expect(await response).toBe(timeout ? "aborted" : 202);
+  expect(descriptor).toMatchObject({ status: "complete", promotable: true, truncated: false, eventCount: timeout ? 0 : 1 });
+  if (timeout) expect(descriptor.authoringDiagnosticsDiscarded).toBe(1);
+  else expect(descriptor.authoringDiagnosticsDiscarded).toBeUndefined();
+});
+
+it("restricts candidate-supplied diagnostic codes and authenticates completion attribution", async () => {
+  const upstream = await startUpstream();
+  const recorder = await startGraphOperationRecorder({ upstreamUrl: upstream.url }); resources.push(recorder);
+  const token = "private_identifier_text"; await bindCapability(recorder.url, token);
+  const diagnostic = { schemaVersion: 1, id: "00000000-0000-0000-0000-000000000001", phase: "compiler", codes: ["unsafe_css"] };
+  for (const body of [{ ...diagnostic, codes: ["private_authored_prose"] }, { ...diagnostic, codes: [token] },
+    { ...diagnostic, phase: "server" }, { ...diagnostic, interactionNodeId: 99 }, { ...diagnostic, phase: "client" }]) {
+    expect((await jsonRequest(`${recorder.url}/api/graph/authoring-errors`, { method: "POST", token, body })).status).toBe(400);
+  }
+  expect((await jsonRequest(`${recorder.url}/api/graph/authoring-errors`, { method: "POST", token: "foreign", body: diagnostic })).status).toBe(401);
+  const { reportAuthoringError } = await import("../packages/graph-client/src/authoring-errors.ts");
+  // An unsupported compiler issue must become a fixed fallback, even if it resembles a safe identifier.
+  const fetchOriginal = globalThis.fetch;
+  let settled;
+  const sent = new Promise((resolve) => { settled = resolve; });
+  vi.stubGlobal("fetch", async (...args) => { const response = await fetchOriginal(...args); settled(response.status); return response; });
+  try {
+    reportAuthoringError({ url: recorder.url, token, nodeId: 17, authoringErrors: true }, new Error("private prose"), ["private_authored_prose"]);
+    expect(await sent).toBe(202);
+  } finally { vi.stubGlobal("fetch", fetchOriginal); }
+  const target = await createCandidateTraceDirectory(); await recorder.exportInteraction(17, target);
+  const text = await readFile(join(target, "graph-operations.jsonl"), "utf8");
+  const record = JSON.parse(text.trim());
+  expect(record).toMatchObject({ interactionNodeId: 17, authoringError: { phase: "compiler", codes: ["compiler_validation"] } });
+  expect(text).not.toContain("private");
+});
+
+
+it("bounds an attributed graph request stalled before its body finishes", async () => {
+  const upstream = await startUpstream();
+  const recorder = await startGraphOperationRecorder({ upstreamUrl: upstream.url, settleTimeoutMs: 30 }); resources.push(recorder);
+  const token = "stalled-graph-body"; await bindCapability(recorder.url, token);
+  const request = httpRequest(`${recorder.url}/api/graph/nodes`, { method: "POST", headers: {
+    authorization: `Bearer ${token}`, "content-length": 100, expect: "100-continue",
+  } });
+  const aborted = new Promise((resolve) => request.once("error", resolve));
+  const started = new Promise((resolve) => request.once("continue", resolve));
+  request.flushHeaders(); await started; request.write("{");
+  const target = await createCandidateTraceDirectory();
+  const descriptor = await recorder.exportInteraction(17, target);
+  await aborted;
+  expect(descriptor).toMatchObject({ status: "partial", promotable: false, truncated: true, eventCount: 0, discardedEvents: 1 });
+  expect(descriptor.authoringDiagnosticsDiscarded).toBeUndefined();
 });

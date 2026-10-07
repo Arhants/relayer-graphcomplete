@@ -7,7 +7,8 @@ import { describe, expect, it, vi } from "vitest";
 import { loadHarnessConfiguration } from "../src/configuration.js";
 import { createNoopHarnessTraceSink, HarnessTraceStore } from "../src/trace.js";
 import type { CodexAppServerTurnOptions } from "../src/implementations/codex-app-server.js";
-import { buildLayeredNavigationPrompt, CODEX_PREVIEW_VIEWING, CodexBasicHarness, draftPreviewGuidance, type CodexBasicDependencies } from "../src/implementations/codex-basic.js";
+import { buildLayeredNavigationPrompt, CODEX_PREVIEW_VIEWING, CodexBasicHarness, draftPreviewGuidance, isFallbackGraphAuthoringCommand, type CodexBasicDependencies } from "../src/implementations/codex-basic.js";
+import { isExactGraphAuthoringLauncherCommand } from "../src/implementations/codex-approvals.js";
 import type { HarnessConfiguration, HarnessRunContext, HarnessTraceEvent, HarnessTraceEventInput, HarnessTracePolicy, HarnessTraceSink } from "../src/types.js";
 
 const repositoryRoot = resolve(fileURLToPath(new URL("../../../", import.meta.url)));
@@ -606,6 +607,9 @@ describe("CodexBasicHarness", () => {
         expect(submittedPrompt).toContain("ordinary Codex workspace tools under the configured permission policy");
         expect(submittedPrompt).toContain("LayerLayoutObject takes the placements array, the edge shape and an optional array of edge routes");
         expect(submittedPrompt).toContain("never assign layout.version");
+        // The pinned launcher strips the environment and reads no files, so it keeps whole reruns.
+        expect(submittedPrompt).toContain("edit the same program and rerun it with the same clientKey values");
+        expect(submittedPrompt).not.toContain("rerunGraphProgram");
         expect(submittedEnvironment.RELAYER_GRAPH_AUTHORING_NODE).toBeUndefined();
       }
     } finally {
@@ -620,6 +624,27 @@ describe("CodexBasicHarness", () => {
       runAppServerTurn: async () => ({ threadId: "unused", turnId: "unused", status: "completed" }),
     });
     await expect(harness.complete(runContext(1, "token"))).rejects.toThrow("launcher must be a shell-safe absolute path");
+  });
+
+  it("uses the app-owned Windows Node executable in both authoring prompts", async () => {
+    for (const promptProfile of [undefined, "layered-navigation-v1"] as const) {
+      let prompt = "";
+      const harness = new CodexBasicHarness({ ...context("auto"), configuration: {
+        ...codexBasicConfiguration, settings: { ...codexBasicConfiguration.settings, ...(promptProfile ? { promptProfile } : {}) },
+      } }, {
+        codexPathOverride: "/managed/codex",
+        graphAuthoringNodePath: "C:\\Users\\Test User\\Relayer\\resources\\node\\node.exe",
+        runAppServerTurn: async options => {
+          prompt = options.prompt;
+          return { threadId: "codex-thread", turnId: "turn-1", status: "completed" };
+        },
+      });
+      await harness.complete(runContext(1, "token"));
+      expect(prompt).toContain("'C:/Users/Test User/Relayer/resources/node/node.exe' --input-type=module");
+      expect(prompt).toContain("do not resolve Node.js from PATH");
+      expect(prompt).toContain("PowerShell");
+      expect(prompt).not.toContain("preauthorizes only this pinned internal launcher");
+    }
   });
 
   it("allows the default graph-authoring Node executable to resolve from PATH", async () => {
@@ -642,12 +667,17 @@ describe("CodexBasicHarness", () => {
         },
       });
 
-      await harness.complete(runContext(1, "token"));
+      await harness.complete(withProgramDirectory(runContext(1, "token")));
 
       expect(submittedPrompt).toContain("Run exactly node --input-type=module");
       expect(submittedPrompt).toContain("delimited by exactly RELAYER_GRAPH_PROGRAM");
       expect(submittedPrompt).toContain("do not create a script in either the project checkout or a temporary directory");
       expect(submittedPrompt).not.toContain("do not resolve Node.js from PATH");
+      // A retry names the program that printed its id and sends edits through the same heredoc.
+      expect(submittedPrompt).toContain("Do not retype the whole program for a small fix");
+      expect(submittedPrompt).toContain('await rerunGraphProgram("<id>", [{ find: "exact text from that program", replace: "fixed text" }])');
+      expect(submittedPrompt).toContain("Each find must match exactly one place in that program");
+      expect(submittedPrompt).toContain("A program that crashed before printing an id has no saved copy");
       expect(submittedEnvironment).not.toHaveProperty("RELAYER_GRAPH_AUTHORING_NODE");
     }
   });
@@ -791,7 +821,7 @@ describe("CodexBasicHarness", () => {
     expect(prompt).not.toContain("sourceLayerId");
   });
 
-  it("passes the preview folder and teaches previews only when the host granted one", async () => {
+  it("passes the preview and program folders, and teaches previews only when the host granted one", async () => {
     const submitted: CodexAppServerTurnOptions[] = [];
     const harness = harnessFixture("auto", async (options) => {
       submitted.push(options);
@@ -799,12 +829,32 @@ describe("CodexBasicHarness", () => {
       return { threadId: "codex-thread", turnId: "turn-1", status: "completed" };
     });
     const plain = runContext(1, "token");
-    const previewed = { ...plain, graph: { ...plain.graph, acquireCapability: () => ({ ...plain.graph.acquireCapability(), previewDirectory: "/tmp/previews-1" }) } };
+    const previewed = { ...plain, graph: { ...plain.graph, acquireCapability: () => ({ ...plain.graph.acquireCapability(), previewDirectory: "/tmp/previews-1", programDirectory: "/tmp/programs-1" }) } };
 
     await harness.complete(previewed);
     expect(submitted[0]?.environment.RELAYER_GRAPH_PREVIEW_DIR).toBe("/tmp/previews-1");
+    expect(submitted[0]?.environment.RELAYER_GRAPH_PROGRAM_DIR).toBe("/tmp/programs-1");
+    expect(submitted[0]?.prompt).toContain("rerunGraphProgram(\"<id>\"");
+    expect(submitted[0]?.prompt).toContain("Rerun only for an explicit repairable graph rejection");
+    expect(submitted[0]?.prompt).toContain("outcome is unknown, do not rerun");
+    await harness.complete(plain);
+    expect(submitted[1]?.environment).not.toHaveProperty("RELAYER_GRAPH_PROGRAM_DIR");
+    expect(submitted[1]?.prompt).not.toContain("rerunGraphProgram");
     expect(buildLayeredNavigationPrompt(previewed, "@relayer/graph-client")).toContain(draftPreviewGuidance(CODEX_PREVIEW_VIEWING));
     expect(buildLayeredNavigationPrompt(plain, "@relayer/graph-client")).not.toContain("Draft previews are on");
+    expect(buildLayeredNavigationPrompt(plain, "@relayer/graph-client")).not.toContain("rerunGraphProgram");
+  });
+
+  it("recognizes a program edit only in the same heredoc form as a full program", () => {
+    const patch = "import { rerunGraphProgram } from \"file:///client/index.js\";\nawait rerunGraphProgram(\"a1b2c3d4\", [{ find: \"a\", replace: \"b\" }]);\n";
+    const launcher = "/immutable/runtime/graph-authoring-launcher";
+    expect(isFallbackGraphAuthoringCommand(`node --input-type=module <<'RELAYER_GRAPH_PROGRAM'\n${patch}RELAYER_GRAPH_PROGRAM`)).toBe(true);
+    expect(isExactGraphAuthoringLauncherCommand(`"${launcher}" <<'RELAYER_GRAPH_PROGRAM'\n${patch}RELAYER_GRAPH_PROGRAM`, launcher)).toBe(true);
+    // Edits never open another command form: no script file, no --eval, no redirected file.
+    expect(isFallbackGraphAuthoringCommand("node /tmp/relayer-graph-programs-x/program.mjs")).toBe(false);
+    expect(isFallbackGraphAuthoringCommand(`node --input-type=module --eval '${patch}'`)).toBe(false);
+    expect(isFallbackGraphAuthoringCommand("node --input-type=module < /tmp/relayer-graph-programs-x/program.mjs")).toBe(false);
+    expect(isExactGraphAuthoringLauncherCommand(`"${launcher}" /tmp/relayer-graph-programs-x/program.mjs`, launcher)).toBe(false);
   });
 
   it("teaches capability-scoped bounded search and typed references through executable JavaScript", () => {
@@ -1657,11 +1707,11 @@ describe("CodexBasicHarness", () => {
     expect(trace.openedStreams).toBe(0);
   });
 
-  it("redacts propagated personal presentation guidance from Codex collaboration traces", async () => {
+  it.each([undefined, "C:/Users/Test User/Relayer/resources/node/node.exe"])("redacts propagated personal presentation guidance from Codex collaboration traces (%s)", async (graphAuthoringNodePath) => {
     const trace = recordingTrace();
     const preferenceDetail = "The user prefers central layers that are immediately decision-useful. Never repeat OPENAI_API_KEY=secret.";
     const rendered = `Personal graph presentation preferences:\n\nDecision-useful center: ${preferenceDetail}`;
-    const harness = harnessFixture("auto", async (options) => {
+    const harness = new CodexBasicHarness(context("auto"), { codexPathOverride: "/managed/codex", ...(graphAuthoringNodePath === undefined ? {} : { graphAuthoringNodePath }), runAppServerTurn: async (options) => {
       options.onThreadId("streamed-thread");
       options.onNotification?.("item/started", { item: {
         id: "graph-child",
@@ -1690,7 +1740,7 @@ describe("CodexBasicHarness", () => {
       options.onNotification?.("item/started", { item: {
         id: "graph-command",
         type: "commandExecution",
-        command: "node --input-type=module <<'RELAYER_GRAPH_PROGRAM'\n// Decision-useful center\nawait graph.submit(1);\nRELAYER_GRAPH_PROGRAM",
+        command: graphAuthoringNodePath ? `@'\n// Decision-useful center\nawait graph.submit(1);\n'@ | & "${graphAuthoringNodePath.toLowerCase()}" --input-type=module` : "node --input-type=module <<'RELAYER_GRAPH_PROGRAM'\n// Decision-useful center\nawait graph.submit(1);\nRELAYER_GRAPH_PROGRAM",
         aggregatedOutput: "Decision-useful center",
       } });
       options.onNotification?.("item/started", { item: {
@@ -1708,12 +1758,12 @@ describe("CodexBasicHarness", () => {
         delta: "Decision-useful center",
       });
       return { threadId: "streamed-thread", turnId: "turn-1", status: "completed" };
-    });
+    } });
     const baseContext = personalPresentationRunContext(true);
     const presentation = baseContext.personalPresentation!;
     const firstLayer = presentation.graph.layers[0]!;
     const firstNode = firstLayer.nodes[0]!;
-    const context: HarnessRunContext = {
+    const privatePresentationContext: HarnessRunContext = {
       ...baseContext,
       personalPresentation: {
         ...presentation,
@@ -1731,7 +1781,7 @@ describe("CodexBasicHarness", () => {
       },
     };
 
-    await harness.complete({ ...context, trace: trace.sink });
+    await harness.complete({ ...privatePresentationContext, trace: trace.sink });
 
     const echoEvents = trace.events.filter((event) => !["unrelated-command", "unrelated-node-heredoc"].includes(event.providerEventId ?? ""));
     const serializedEchoes = JSON.stringify(echoEvents);
@@ -1940,6 +1990,16 @@ function runContext(id: number, token: string, trace: HarnessTraceSink = createN
     },
     trace,
     approvals: { request: async () => { throw new Error("unused approval channel"); } },
+  };
+}
+
+function withProgramDirectory(context: HarnessRunContext, programDirectory = "/tmp/programs-1"): HarnessRunContext {
+  return {
+    ...context,
+    graph: {
+      ...context.graph,
+      acquireCapability: () => ({ ...context.graph.acquireCapability(), programDirectory }),
+    },
   };
 }
 

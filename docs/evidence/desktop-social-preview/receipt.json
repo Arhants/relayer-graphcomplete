@@ -5,15 +5,15 @@
     "desktop/main/services/share-publish-coordinator.mjs": "f722b04879f31c2ab210c6e1eb2a8bf686af37bea6689cff9f6c4d143728abed",
     "desktop/main/services/share-publish-attempt-store.mjs": "55d555b3e1decc8c543356f66be0c4c1605c7f60dc593287fb84ecd93fb2f7ff",
     "desktop/main/services/share-service-client.mjs": "f30067b00bdb02ac64fbcfc932bafe02428cefd38ef094baa9abf51f5748c501",
-    "desktop/main/index.mjs": "c05f13093122085434fcd3704c894add4c1fa23525bf8ce118de1354a92e7600",
+    "desktop/main/index.mjs": "4aa6e96e59c9b7cac146cb2ea1acb26a6fe241a988fee8427bf0ef0d029d83c7",
     "contracts/share-service-v1/contract.json": "7407c99d32fb04a62ab958257be5525dc3451adc9899d600e07de730dccc89ff",
     "scripts/capture-share-preview-evidence.mjs": "4510e3a54f6b658c2df86b1a06afc8ca2428a36693a93648786bd4e075327562",
     "test/fixtures/social-preview.jsonl": "ff4a4545de49ccc20562f2f763b6a120d87fa37f7703a994abeb71b219a405aa",
-    "desktop/shared/telemetry-module-inventory.mjs": "f1797864f95a5eb19b7b66b3b619a1fd0512b1ed03445a61ed7babfb277abf74"
+    "desktop/shared/telemetry-module-inventory.mjs": "6800385e38f8334445639384b0c46879552ebaa11c348e54f8cfe5a2883a9907"
   },
   "rendererArtifact": {
     "directory": "desktop/renderer",
-    "digest": "25667f6a9fa45ceb756b94e6af8d8c297ab2002229a34fb13d22b13e0a2d2e22",
+    "digest": "44a96a882e48a595bfc720e0f6d9896ab98a3bcc37e3576c1e9cfbcabc4e0bec",
     "files": {
       "assets/relayer-logo.svg": {
         "bytes": 509,
@@ -168,8 +168,8 @@
         "sha256": "ce90a85ee2d9c360eca78c0241e8524d72ad2202452a6b0cdb03c8ef0f1ae463"
       },
       "src/model-picker.js": {
-        "bytes": 26808,
-        "sha256": "11b2000a7c39d8b858ddae68ab01512054de2b8632d9fd29785ea100956fe702"
+        "bytes": 26594,
+        "sha256": "0b4ebf8d93f96479224b9899d3f13b76a546be5db76111a548cbb7b1f70ea6da"
       },
       "src/model-settings-api.js": {
         "bytes": 2103,
@@ -280,8 +280,8 @@
         "sha256": "8e5d307f95b1863fb995606ca32a832de088916716c39476f9d31f2174de002d"
       },
       "src/product-workspace/workspace.js": {
-        "bytes": 268435,
-        "sha256": "dd84e7bedaf283613e66df0d0e0d5f8c12985b2355629f799d0eecb0bc6a6eba"
+        "bytes": 269413,
+        "sha256": "9217435fcad6e4679e5bb42390112e7a095fa488134ef650140437f18885a965"
       },
       "src/project-composer-navigation.js": {
         "bytes": 282,
@@ -404,13 +404,13 @@
   "captures": [
     {
       "theme": "light",
-      "sha256": "0d64e23622f8e4d9dbe46907c8a02a46e8e53bd4dce236d38acce53bbaaf1979",
-      "bytes": 68977
+      "sha256": "a8077468198b281a0dad0799786177b2d771f6cc2a5b27a32e1f520d3e0e2dd2",
+      "bytes": 68432
     },
     {
       "theme": "dark",
-      "sha256": "ef5bd275a7732cdcd8186e9d85bf76d3f872c9416d1dce7d661d52ee87dcf2c9",
-      "bytes": 62710
+      "sha256": "13b4e25984fbd66f4c257eb7b0dc5dd85f366287d19aaff58b8c46482e2774bd",
+      "bytes": 65629
     }
   ],
   "platform": "macOS ARM64",

@@ -72,6 +72,7 @@ export interface ClaudeBasicDependencies {
   readonly loadSdk?: (moduleUrl: string) => Promise<ClaudeSdkModule>;
   readonly clientModuleUrl?: string;
   readonly completeModuleUrl?: string;
+  readonly graphAuthoringNodePath?: string;
   readonly platform?: NodeJS.Platform;
   readonly resolveClaudeRuntime?: () => Promise<ClaudeRuntimeDescriptor>;
 }
@@ -313,6 +314,7 @@ export class ClaudeBasicHarness implements Harness {
       "Claude",
       includePersonalPresentation,
       this.context.configuration.graphCapabilityProfile?.search === "query-v1",
+      this.dependencies.graphAuthoringNodePath,
     );
   }
 }
@@ -413,9 +415,12 @@ function executionEnvironment(
   }
   environment.DISABLE_AUTOUPDATER = "1";
   environment.RELAYER_GRAPH_URL = graph.url;
+  delete environment.RELAYER_GRAPH_AUTHORING_ERRORS;
+  if (graph.authoringErrors) environment.RELAYER_GRAPH_AUTHORING_ERRORS = "1";
   environment.RELAYER_GRAPH_TOKEN = graph.token;
   environment.RELAYER_NODE_ID = String(graph.nodeId);
   if (graph.previewDirectory !== undefined) environment.RELAYER_GRAPH_PREVIEW_DIR = graph.previewDirectory;
+  if (graph.programDirectory !== undefined) environment.RELAYER_GRAPH_PROGRAM_DIR = graph.programDirectory;
   if (completionBroker !== undefined) {
     environment.RELAYER_COMPLETE_URL = completionBroker.url;
     environment.RELAYER_COMPLETE_TOKEN = completionBroker.token;

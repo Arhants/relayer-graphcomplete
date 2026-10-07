@@ -1,3 +1,4 @@
+import { markAuthoringTransportError, observeAuthoringMethods } from "./authoring-errors.js";
 import { isImageIcon, type GraphIcon } from "./image-icons.js";
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
@@ -11,6 +12,7 @@ import { GraphQueryError, isGraphQueryErrorBody, type GraphQueryErrorBody, type 
 import { GraphApiError, type CompletionInputGraph, type CompletionOutput, type CompletionState, type CurrentTransitionReceipt, type GraphAction, type GraphApiErrorBody, type GraphCapability, type GraphEdge, type GraphId, type GraphLayer, type GraphNode, type InteractionInput, type ResolvedLayer, type ResolvedPersonalPresentation, type StopReason } from "./types.js";
 import { GraphIcons } from "./icon-discovery.js";
 import { materializeGraphPreview, type GraphPreview } from "./preview.js";
+import { rememberGraphProgram } from "./program.js";
 import { GraphVisualAssets } from "./visual-assets.js";
 
 /** A committed write, with its advisory draft preview when the run supports one. */
@@ -29,6 +31,7 @@ export class RelayerGraphClient {
     this.capability = { ...capability, url: capability.url.replace(/\/$/, "") };
     this.icons = new GraphIcons((path, init) => this.request<unknown>(path, init));
     this.visualAssets = new GraphVisualAssets((path, init) => this.request<unknown>(path, init));
+    return observeAuthoringMethods(this, this.capability, (error) => error instanceof GraphApiError);
   }
 
   static fromEnv(environment: NodeJS.ProcessEnv = process.env): RelayerGraphClient {
@@ -36,10 +39,17 @@ export class RelayerGraphClient {
     const token = environment.RELAYER_GRAPH_TOKEN;
     const node = Number(environment.RELAYER_NODE_ID);
     const previewDirectory = environment.RELAYER_GRAPH_PREVIEW_DIR;
+    const programDirectory = environment.RELAYER_GRAPH_PROGRAM_DIR;
     if (!url || !token || !Number.isSafeInteger(node) || node < 1) {
       throw new Error("RELAYER_GRAPH_URL, RELAYER_GRAPH_TOKEN, and RELAYER_NODE_ID are required");
     }
-    return new RelayerGraphClient({ url, token, nodeId: node, ...(previewDirectory ? { previewDirectory } : {}) });
+    rememberGraphProgram(programDirectory);
+    return new RelayerGraphClient({
+      url, token, nodeId: node,
+      ...(previewDirectory ? { previewDirectory } : {}),
+      ...(programDirectory ? { programDirectory } : {}),
+      ...(environment.RELAYER_GRAPH_AUTHORING_ERRORS === "1" ? { authoringErrors: true } : {}),
+    });
   }
 
   async getNode(reference: NodeReference): Promise<GraphNode> {
@@ -418,16 +428,16 @@ export class RelayerGraphClient {
   }
 
   private async request<T>(path: string, init: RequestInit = {}, errorKind: "api" | "query" = "api"): Promise<T> {
-    this.requestScope?.beforeRequest(path);
+    try { this.requestScope?.beforeRequest(path); } catch (error) { markAuthoringTransportError(error); throw error; }
     const response = await fetch(`${this.capability.url}${path}`, {
       ...init,
       ...(this.requestScope === undefined ? {} : {
         signal: init.signal ? AbortSignal.any([this.requestScope.signal, init.signal]) : this.requestScope.signal,
       }),
       headers: { "content-type": "application/json", authorization: `Bearer ${this.capability.token}`, ...init.headers },
-    });
+    }).catch((error: unknown) => { markAuthoringTransportError(error); throw error; });
     const body = await response.json().catch(() => ({})) as T & GraphApiErrorBody & GraphQueryErrorBody;
-    this.requestScope?.beforeRequest(path);
+    try { this.requestScope?.beforeRequest(path); } catch (error) { markAuthoringTransportError(error); throw error; }
     if (!response.ok) {
       if (errorKind === "query" && isGraphQueryErrorBody(body)) {
         throw new GraphQueryError(

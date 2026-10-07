@@ -299,6 +299,25 @@ export function sameHarnessExecutionConfiguration(
   });
 }
 
+/** Supported adapters bind previews anew for each completion, outside native resume state. */
+export function canResumeHarnessExecutionConfiguration(
+  previous: HarnessConfiguration,
+  current: HarnessConfiguration,
+): boolean {
+  if (sameHarnessExecutionConfiguration(previous, current)) return true;
+  const previousProfile = resolveGraphCapabilityProfile(previous);
+  const currentProfile = resolveGraphCapabilityProfile(current);
+  if (!["claude.basic", "codex.basic", "prime.agent"].includes(previous.implementation)
+    || previous.implementation !== current.implementation
+    || previousProfile.preview === "enabled" || currentProfile.preview !== "enabled") return false;
+  const { preview: _previousPreview, ...previousWithoutPreview } = previousProfile;
+  const { preview: _currentPreview, ...currentWithoutPreview } = currentProfile;
+  return sameHarnessExecutionConfiguration(
+    { ...previous, graphCapabilityProfile: previousWithoutPreview },
+    { ...current, graphCapabilityProfile: currentWithoutPreview },
+  );
+}
+
 // Codex and Prime presentation settings select the Product pin at thread creation;
 // each run receives its immutable attachment independently of provider resume state.
 function sessionExecutionSettings(configuration: HarnessConfiguration): HarnessConfiguration["settings"] {

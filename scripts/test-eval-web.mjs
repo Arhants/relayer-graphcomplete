@@ -1,5 +1,5 @@
 import { CalibrationService } from "../desktop/eval-main/calibration-service.mjs";
-import { SetupRegistry } from "../desktop/eval-main/setup-registry.mjs";
+import { SetupRegistry, setupDigest } from "../desktop/eval-main/setup-registry.mjs";
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { loadAtomicAnnotationSnapshots } from "../desktop/eval-main/annotation-snapshot-loader.mjs";
@@ -136,6 +136,38 @@ try {
   assert.equal(execution.turns.length, 2);
   await observer.getByText(run.id, { exact: true }).first().waitFor(); // Polling updates an already-open dashboard.
   assert.equal((await rpc(host.url, "getRun", [run.id])).status, "passed");
+  await observer.locator(`[data-execution-detail="${execution.id}"]`).click();
+  const reliability = observer.locator(".dossier-block").filter({ has: observer.getByRole("heading", { name: "Authoring errors per turn" }) });
+  await reliability.waitFor();
+  await reliability.locator(".finding-row").nth(1).waitFor(); // Wait for the observer's terminal-run polling snapshot.
+  assert.equal(await reliability.locator(".finding-row").count(), 2);
+  assert.ok((await reliability.textContent()).includes("Total: unknown"));
+  assert.ok((await reliability.textContent()).includes("0 observed"));
+  await observer.getByRole("heading", { name: "Send to backend publication, per turn" }).waitFor();
+  // Historical child evidence exercises the production dossier without new inference.
+  const childMetrics = await browser.newPage();
+  await childMetrics.route("**/eval-api/listRuns", async (route) => {
+    const response = await route.fetch();
+    const runs = await response.json();
+    const fixtureExecution = runs.find((entry) => entry.id === run.id).executions.find((entry) => entry.id === execution.id);
+    fixtureExecution.authoringErrorMetrics = { 9003: { schemaVersion: 1, observed: 1, total: null, coverage: "partial", byCause: { server_rejection: 1 }, reasons: [] } };
+    fixtureExecution.semanticChildren = [
+      { interactionId: 9001, sourceInteractionId: execution.turns[0].interactionId, sourceActionId: 77,
+        authoringErrors: { schemaVersion: 1, observed: 2, total: null, coverage: "partial", byCause: { compiler: 2 }, reasons: [] } },
+      { interactionId: 9002, sourceInteractionId: execution.turns[1].interactionId, sourceActionId: 78 },
+    ];
+    await route.fulfill({ response, json: runs });
+  });
+  await childMetrics.goto(host.url);
+  await childMetrics.locator(`[data-execution-detail="${execution.id}"]`).click();
+  const childReliability = childMetrics.locator(".dossier-block").filter({ has: childMetrics.getByRole("heading", { name: "Authoring errors per turn" }) });
+  await childReliability.getByText("Child completion 9001: 2 observed", { exact: true }).waitFor();
+  await childReliability.getByText("Child completion 9002: Not recorded", { exact: true }).waitFor();
+  await childReliability.getByText("Captured completion 9003: 1 observed", { exact: true }).waitFor();
+  assert.equal(await childReliability.locator(".finding-row").count(), 5);
+  assert.ok((await childReliability.textContent()).includes(`From turn ${execution.turns[0].interactionId} · action 77`));
+  assert.equal(await childReliability.getByText("0 observed", { exact: false }).count(), 2);
+  await childMetrics.close();
   const reviewUrl = await rpc(host.url, "openReview", [execution.id]);
   const secondReviewUrl = await rpc(host.url, "openReview", [execution.id]);
   assert.notEqual(new URL(secondReviewUrl).origin, new URL(reviewUrl).origin);
@@ -491,10 +523,11 @@ async function proveTaskActor({ browser, service, productSession, data }) {
   let actorCapability;
   const actors = new TaskActorService({ tasks, setupRegistry, resolveRuntime: async () => ({}),
     resolveCompletionJudgeRuntime: async (spec) => { assert.equal(spec.model, "gpt-5.6-sol"); return {}; },
-    createCompletionJudge: async () => ({ close: async () => {}, evaluate: async (evidence) => {
+    createCompletionJudge: async ({ config }) => ({ close: async () => {}, evaluate: async (evidence) => {
       assert.ok(evidence.screenshot, "completion reviewer receives current rendered screenshot");
       assert.ok(!JSON.stringify(evidence).includes(diagnosticDirectory), "diagnostic artifacts never enter completion-judge input");
       completionAssessments++;
+      if (config.evidenceContract?.id === "completion-evidence-v2") return { verdict: "uncertain", evidenceExplanation: "Participant measurements are unavailable; endpoint not confirmed.", continuationHint: "Please check fit when measurements are available.", usage: null };
       return completionAssessments === 1
         ? { verdict: "incomplete", evidenceExplanation: "Fixture reviewer requires one more visible graph inspection.", continuationHint: "Could I check one more part of the plan?", usage: null }
         : { verdict: "complete", evidenceExplanation: "Fixture reviewer accepts the plan after the additional graph inspection.", continuationHint: "", usage: null };
@@ -808,6 +841,7 @@ async function proveTaskActor({ browser, service, productSession, data }) {
       assert.ok(Buffer.from(observation.screenshot, "base64").readUInt32BE(16) > 0);
       assert.ok(!JSON.stringify(observation.controls).includes("Review & grade"));
       const action = { kind: "finish", ref: "", value: "", reason: "satisfied", satisfaction: 3, comment: "The follow-up is good enough.", endpointStatus: "incomplete", remainingWork: "Further choices remain." };
+      if ([5, 7].includes(decision)) Object.assign(action, { reason: "endpoint_reached", endpointStatus: "reached", remainingWork: "" });
       const find = (predicate) => { const control = observation.controls.find(predicate); assert.ok(control, JSON.stringify(observation.controls)); return control.ref; };
       if (decision === 0) Object.assign(action, { kind: "click", ref: find((control) => control.name.includes("Two-worker")) });
       if (decision === 1) Object.assign(action, { kind: "fill", ref: find((control) => control.role === "textarea"), value: "Explain how the workers coordinate." });
@@ -920,7 +954,7 @@ async function proveTaskActor({ browser, service, productSession, data }) {
     await page.locator("#humanTools > summary").click();
     await page.locator("#setupPredecessor").selectOption(baseline.id);
     await until(async () => (await page.locator("#setupEditor").textContent()).includes("Completion reviewer: gpt-5.6-sol"), "pinned reviewer rendered in setup editor");
-    assert.ok((await page.locator("#setupEditor").textContent()).includes("requires its approval to finish"));
+    assert.ok((await page.locator("#setupEditor").textContent()).includes("Endpoint claims require approval"));
     await page.locator("#setupUseCurrentActor").click();
     assert.ok((await page.locator("#setupCompletionReviewer").textContent()).includes("gpt-5.6-sol"));
     assert.equal(await page.locator('#setupPublish [name="promptVersion"]').inputValue(), setupRegistry.catalog().actorDefinition.promptVersion);
@@ -965,10 +999,96 @@ async function proveTaskActor({ browser, service, productSession, data }) {
     assert.equal(fileJudge.configSource.digest, config.digest);
     assert.equal(fileJudge.configSource.contents, config.definition.configSource.contents);
     assert.equal(fileJudge.promptTemplate, config.definition.promptTemplate);
+    await until(async () => (await page.locator("#setupPublished").textContent()).includes(fileJudge.id), "graph config publication lifecycle rendered");
     console.log("PASS judge config file: selected repository YAML, file-only configuration, exact file snapshot and motivating feedback publication");
+    const completionBaseline = setupRegistry.catalog().revisions.find((item) => item.kind === "completion-judge");
+    await page.locator("#setupPredecessor").selectOption(completionBaseline.id);
+    await until(async () => (await page.locator("#setupEditor").textContent()).includes("Completion judge config file"), "completion config editor rendered");
+    assert.equal(await page.locator('#setupPublish [name="model"], #setupPublish [name="exploration"]').count(), 0);
+    assert.equal(await page.locator("#setupPromote").count(), 0);
+    await page.locator("#judgeConfigFile").selectOption("completion-judge-v2.yaml");
+    await until(async () => (await page.locator("#setupEditor").textContent()).includes("completion-judge-v2.yaml"), "v2 completion file selection rendered");
+    await page.locator("#setupFeedbackSession").selectOption(task.id);
+    await page.locator("#setupFeedbackRecords input").first().check();
+    await page.locator("#setupPublish button").click();
+    const completionRevision = await until(() => setupRegistry.catalog().revisions.find((item) => item.kind === "completion-judge" && item.predecessorId === completionBaseline.id), "completion config published");
+    await until(async () => (await page.locator("#setupPublished").textContent()).includes(completionRevision.id), "completion config publication lifecycle rendered");
+    const promotionsBeforeRelease = setupRegistry.catalog().promotions.length;
+    await page.locator('#evaluatorReleasePublish [name="name"]').fill("Frozen browser evaluator");
+    for (const [name, id] of [["actorRevisionId", revision.id], ["completionJudgeRevisionId", completionRevision.id], ["judgeRevisionId", fileJudge.id]]) {
+      await page.locator(`#evaluatorReleasePublish [name="${name}"]`).selectOption(id);
+    }
+    await page.locator("#evaluatorReleasePublish button").click();
+    const evaluatorRelease = await until(() => setupRegistry.catalog().evaluatorReleases.find((item) => item.name === "Frozen browser evaluator"), "evaluator release published");
+    assert.equal(setupRegistry.catalog().promotions.length, promotionsBeforeRelease);
+    await until(async () => (await page.locator("#evaluatorReleasePublished").textContent()).includes(evaluatorRelease.id), "release publication lifecycle rendered");
+    for (const id of ["humanNewTask", "humanAdvanced"]) {
+      if (await page.locator(`#${id}`).getAttribute("open") === null) await page.locator(`#${id} > summary`).click();
+    }
+    await page.locator("#taskMode").selectOption("simulated");
+    await page.locator("#evaluatorRelease").selectOption(evaluatorRelease.id);
+    assert.equal(await page.locator("#completionJudgeRevision").isDisabled(), true);
+    assert.equal(await page.locator("#completionJudgeRevision").inputValue(), completionRevision.id);
+    assert.equal(await page.locator("#actorSetupRevision").isDisabled(), true);
+    assert.equal(await page.locator("#actorSetupRevision").inputValue(), revision.id);
+    await page.locator('#evaluatorReleasePublish [name="name"]').fill("Refresh while release selected");
+    for (const [name, id] of [["actorRevisionId", revision.id], ["completionJudgeRevisionId", completionRevision.id], ["judgeRevisionId", fileJudge.id]]) await page.locator(`#evaluatorReleasePublish [name="${name}"]`).selectOption(id);
+    await page.locator("#evaluatorReleasePublish button").click();
+    await until(() => setupRegistry.catalog().evaluatorReleases.some(item => item.name === "Refresh while release selected"), "catalog refresh while release pinned");
+    await until(async () => (await page.locator("#evaluatorReleasePublished").textContent()).includes("Published"), "release refresh publication rendered");
+    assert.equal(await page.locator("#evaluatorRelease").inputValue(), evaluatorRelease.id);
+    const tasksBeforeRelease = new Set(tasks.list().map(item => item.id));
+    await page.locator("#humanCreate button").click();
+    const releaseTask = await until(() => {
+      const created = tasks.list().find(item => !tasksBeforeRelease.has(item.id));
+      return created && ["completed", "interrupted", "failed"].includes(created.status) ? tasks.get(created.id) : null;
+    }, "release-selected task completed through actual dashboard form");
+    assert.equal(releaseTask.status, "completed", JSON.stringify(releaseTask.events.filter(event => event.kind === "actor_error")));
+    await actors.running.get(releaseTask.id)?.done;
+    assert.deepEqual(releaseTask.evaluatorRelease, evaluatorRelease);
+    assert.deepEqual(releaseTask.actorSetup, revision);
+    assert.deepEqual(releaseTask.completionJudgeSetup, completionRevision);
+    assert.deepEqual(releaseTask.evaluatorRelease.judgeSetup, fileJudge);
+    const releaseExport = await tasks.export(releaseTask.id);
+    assert.deepEqual(releaseExport.bundle.session.evaluatorRelease, evaluatorRelease);
+    const packets = releaseExport.bundle.session.events.filter(event => event.kind === "actor_completion_evidence");
+    assert.equal(packets.length, 1);
+    assert.equal(packets[0].inputDigest, setupDigest(await tasks.completionJudgeInput(releaseTask.id, packets[0].id)));
+    assert.deepEqual(packets[0].judge, completionRevision.spec);
+    assert.equal(packets[0].input.actorFinish.kind, "finish");
+    assert.equal(packets[0].evidenceContract, "completion-evidence-v2");
+    assert.equal(releaseTask.termination.reason, "satisfied");
+    assert.equal(releaseTask.termination.endpointAttainment, "not_claimed");
+    assert.equal(releaseTask.events.find(e => e.kind === "actor_completion_judgment").verdict, "uncertain");
+    assert.ok(packets[0].input.screenshot, "exact screenshot retained at completion inference seam");
+    assert.equal(setupRegistry.catalog().promotions.length, promotionsBeforeRelease);
+    assert.equal(setupRegistry.selected("actor").id, revision.id);
+    await until(async () => (await page.locator("#humanTaskDetail").textContent()).includes("completed ·"), "release task terminal lifecycle rendered");
+    await page.locator("#humanNewTask > summary").click();
+    await page.locator("#evaluatorRelease").selectOption("");
+    assert.equal(await page.locator("#actorSetupRevision").isDisabled(), false);
+    assert.equal(await page.locator("#completionJudgeRevision").isDisabled(), false);
+    assert.equal(await page.locator("#completionJudgeRevision").inputValue(), "");
+    await page.locator("#completionJudgeRevision").selectOption(completionRevision.id);
+    const beforeIndividual = new Set(tasks.list().map(item => item.id));
+    await page.locator("#humanCreate button").click();
+    const individual = await until(() => {
+      const created = tasks.list().find(item => !beforeIndividual.has(item.id));
+      return created && ["completed", "interrupted", "failed"].includes(created.status) ? tasks.get(created.id) : null;
+    }, "independent completion selection completed through actual form");
+    assert.equal(individual.status, "completed");
+    assert.equal(individual.evaluatorRelease, undefined);
+    assert.deepEqual(individual.completionJudgeSetup, completionRevision);
+    const individualExport = await tasks.export(individual.id);
+    assert.deepEqual(individualExport.bundle.session.completionJudgeSetup, completionRevision);
+    assert.equal(setupRegistry.catalog().promotions.length, promotionsBeforeRelease);
+    console.log("PASS independent completion selector: actual form, exact revision/export pin, release locking and unchanged defaults");
+    console.log("PASS evaluator release: file-only completion publication, explicit three-revision release, real form submission with frozen run/export pins and exact stopping evidence; unchanged defaults (fixture inference)");
     await page.locator("#calibrationRefresh").click();
     await until(async () => (await page.locator('#calibrationMember [name="source"]').textContent()).includes(task.id), "calibration sources refreshed");
-    await page.locator('#calibrationMember [name="source"]').selectOption("0");
+    const originalSource = await page.locator('#calibrationMember [name="source"] option').evaluateAll((options, taskId) => options.find(option => option.textContent.includes(taskId))?.value, task.id);
+    assert.ok(originalSource, "original task remains selectable after release run");
+    await page.locator('#calibrationMember [name="source"]').selectOption(originalSource);
     const anchor = task.events.find((event) => event.kind === "actor_action").id;
     await page.locator('#calibrationMember [name="subject"]').selectOption(anchor);
     await page.locator('#calibrationMember [name="value"]').fill("2");
@@ -992,7 +1112,7 @@ async function proveTaskActor({ browser, service, productSession, data }) {
     await page.locator('#calibrationObservation [name="revisionId"]').selectOption(revision.id);
     page.once("dialog", (dialog) => dialog.accept());
     await page.locator("#calibrationRunArm").click();
-    const revised = await until(() => { const latest = tasks.list()[0]; return latest.id !== task.id && latest.status === "completed" ? tasks.get(latest.id) : null; }, "selected actor revision completed in real workspace");
+    const revised = await until(() => { const latest = tasks.list()[0]; return latest.id !== task.id && latest.id !== releaseTask.id && latest.status === "completed" ? tasks.get(latest.id) : null; }, "selected actor revision completed in real workspace");
     assert.equal(revised.actorSetup.id, revision.id);
     assert.ok(revised.events.find((event) => event.kind === "actor_started").prompt.includes("Keep replies brief."));
     await page.locator("#calibrationComparison").selectOption(comparison.id);
