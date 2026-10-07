@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { detailAuthoringReference } from "@relayer/graph-client";
 import { describe, expect, it, vi } from "vitest";
 import { loadHarnessConfiguration } from "../src/configuration.js";
 import { createNoopHarnessTraceSink, HarnessTraceStore } from "../src/trace.js";
@@ -713,6 +714,10 @@ describe("CodexBasicHarness", () => {
       // The two compiler rejections seen most in live traces: quoted gc bindings and disallowed CSS.
       expect(prompt).toContain('<button gc=${detailCapability.expand("open", action)}>Open</button>');
       expect(prompt).toContain("cursor and border-collapse are not in the CSS property allowlist");
+      const allowed = detailAuthoringReference().cssProperties;
+      expect(prompt).toContain(`"cssProperties":${JSON.stringify(allowed)}`);
+      expect(allowed).not.toContain("cursor");
+      expect(allowed).not.toContain("border-collapse");
     },
   );
 
